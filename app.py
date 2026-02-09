@@ -1070,12 +1070,48 @@ def render_command_dashboard():
         
         st.markdown("---")
         
-        # תרשים זרימה של היררכיה
-        st.markdown("### 🏛️ מבנה ארגוני")
-        flowchart = create_hierarchy_flowchart()
-        st.markdown(flowchart, unsafe_allow_html=True)
+        # מדדי בקרה חשובים
+        st.markdown("### 📋 מדדי בקרה מרכזיים")
+        
+        metric_cols = st.columns(4)
+        
+        with metric_cols[0]:
+            # אחוז כשרות תקין
+            if 'k_cert' in df.columns:
+                kosher_ok = len(df[df['k_cert'] == 'כן']) / len(df) * 100 if len(df) > 0 else 0
+                st.metric("✅ כשרות תקינה", f"{kosher_ok:.0f}%", 
+                         delta=f"+{kosher_ok-85:.0f}%" if kosher_ok > 85 else f"{kosher_ok-85:.0f}%",
+                         delta_color="normal" if kosher_ok > 85 else "inverse")
+        
+        with metric_cols[1]:
+            # אחוז עירובין תקינים
+            if 'e_status' in df.columns:
+                eruv_ok = len(df[df['e_status'] == 'תקין']) / len(df) * 100 if len(df) > 0 else 0
+                st.metric("🔵 עירובין תקינים", f"{eruv_ok:.0f}%",
+                         delta=f"+{eruv_ok-90:.0f}%" if eruv_ok > 90 else f"{eruv_ok-90:.0f}%",
+                         delta_color="normal" if eruv_ok > 90 else "inverse")
+        
+        with metric_cols[2]:
+            # ממוצע ניקיון
+            if 's_clean' in df.columns:
+                clean_avg = df['s_clean'].apply(lambda x: {'מצוין': 5, 'טוב': 4, 'בינוני': 3, 'גרוע': 2}.get(x, 0)).mean()
+                st.metric("🧹 ממוצע ניקיון", f"{clean_avg:.1f}/5",
+                         delta=f"+{clean_avg-4:.1f}" if clean_avg > 4 else f"{clean_avg-4:.1f}",
+                         delta_color="normal" if clean_avg > 4 else "inverse")
+        
+        with metric_cols[3]:
+            # מגמת דיווחים
+            if 'date' in df.columns and len(df) > 1:
+                df_sorted = df.sort_values('date')
+                recent_reports = len(df_sorted.tail(7))
+                prev_reports = len(df_sorted.iloc[-14:-7]) if len(df_sorted) >= 14 else 0
+                trend = recent_reports - prev_reports
+                st.metric("📈 דיווחים (7 ימים)", recent_reports,
+                         delta=f"+{trend}" if trend > 0 else f"{trend}" if trend < 0 else "ללא שינוי",
+                         delta_color="normal" if trend >= 0 else "inverse")
         
         st.markdown("---")
+
         
         # גרפים
         col1, col2 = st.columns(2)
@@ -1612,15 +1648,17 @@ def render_unit_report():
                     st.rerun()
                 except Exception as e:
                     error_msg = str(e)
-                    # אם השגיאה היא בגלל latitude/longitude, נסה בלי
-                    if "latitude" in error_msg or "longitude" in error_msg:
+                    # אם השגיאה היא בגלל עמודות שלא קיימות, נסה בלעדיהן
+                    if any(col in error_msg for col in ["latitude", "longitude", "photo_url"]):
                         try:
-                            # הסרת latitude/longitude מהנתונים
+                            # הסרת עמודות שלא קיימות
                             data.pop("latitude", None)
                             data.pop("longitude", None)
+                            data.pop("photo_url", None)
                             supabase.table("reports").insert(data).execute()
                             st.success("✅ הדוח נשלח בהצלחה!")
-                            st.info("ℹ️ המיקום לא נשמר (הטבלה לא תומכת). ניתן להוסיף עמודות latitude ו-longitude ב-Supabase.")
+                            if "photo_url" in error_msg:
+                                st.info("ℹ️ התמונה לא נשמרה (הטבלה לא תומכת). ניתן להוסיף עמודה photo_url ב-Supabase.")
                             clear_cache()
                             time.sleep(2)
                             st.rerun()
