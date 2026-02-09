@@ -1,0 +1,319 @@
+{
+    "users": [
+        {
+            "username": "admin",
+            "password_hash": "$2b$12$vgteAOJjC2aDAWmTEwZ3.unoWqcH86EsIjKHBZ8g/NKGri1o9r5Om",
+            "role": "admin",
+            "full_name": "System Admin",
+            "photo_filename": "avatar.jpg",
+            "description": ""
+        },
+        {
+            "username": "\u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1",
+            "password_hash": "$2b$12$cPcj.BH5B5tTHJpplT.VneTbzY6RoR/pLzh2wnKuzYoUSLSjJnUlG",
+            "role": "mentee",
+            "full_name": "\u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1",
+            "photo_filename": "rahamim.png",
+            "description": "\u05e9\u05dd: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d5\u05d1\n\u05de.\u05d0:5933033\n\u05d9\u05d7\u05d9\u05d3\u05d4: \u05d7\u05d8\u05de\"\u05e8 \u05d1\u05e0\u05d9\u05de\u05d9\u05df\n\u05de\u05e9\u05da \u05d6\u05de\u05df \u05d1\u05d9\u05d7\u05d9\u05d3\u05d4: 5 \u05d7\u05d5\u05d3\u05e9\u05d9\u05dd\n\u05de\u05e9\u05da \u05d6\u05de\u05df \u05d1\u05e7\u05d1\u05e2: \u05d7\u05d5\u05d3\u05e9\u05d9\u05d9\u05dd\n\u05d4\u05db\u05e9\u05e8\u05d4 \u05de\u05e7\u05e6\u05d5\u05e2\u05d9\u05ea: \u05de\u05e9\u05d2\u05d9\u05d7 \u05db\u05e9\u05e8\u05d5\u05ea \"\u05e8\u05d1\u05e0\u05d5\u05ea \u05e8\u05d0\u05e9\u05d9\u05ea \u05dc\u05d9\u05e9\u05e8\u05d0\u05dc\"\n\u05d4\u05db\u05e9\u05e8\u05d4 \u05e6\u05d1\u05d0\u05d9\u05ea: \u05e7\u05d5\u05e8\u05e1 \u05db\u05e0\u05d9\u05e1\u05d4 \u05dc\u05e7\u05d1\u05e2\n\u05d2\u05d9\u05dc: 37\n\u05e1\u05d8\u05d0\u05d8\u05d5\u05e1: \u05e0\u05e9\u05d5\u05d9+5\n\u05ea\"\u05e4: \u05e8\u05d1 \u05d7\u05d8\u05de\u05e8 \u05d1\u05e0\u05d9\u05de\u05d9\u05df \u05d4\u05e8\u05d1 \u05e8\u05d6\u05d9\u05d0\u05dc \u05e2\u05e8\u05d5\u05e1\u05d9\n\n\u05e0\u05e7\u05d5\u05d3\u05d5\u05ea \u05d7\u05d5\u05d6\u05e7\u05d4:\n1.\u05d0\u05d7\u05e8\u05d0\u05d9 \u05d5\u05de\u05e1\u05d5\u05e8 \u05dc\u05ea\u05e4\u05e7\u05d9\u05d3\u05d5.\n2. \u05e9\u05d5\u05d0\u05e3 \u05dc\u05dc\u05de\u05d5\u05d3 \u05d5\u05dc\u05d4\u05ea\u05e7\u05d3\u05dd \u05d1\u05de\u05e7\u05e6\u05d5\u05e2\u05d5.\n3.\u05e0\u05d9\u05db\u05e8 \u05e9\u05de\u05db\u05d9\u05e8 \u05d4\u05d9\u05d8\u05d1 \u05d0\u05ea \u05d2\u05d6\u05e8\u05ea\u05d5 \u05d5\u05ea\u05d7\u05d5\u05de\u05d9 \u05d0\u05d7\u05e8\u05d9\u05d5\u05ea\u05d5.\n4.\u05d9\u05d5\u05d3\u05e2 \u05dc\u05e2\u05d1\u05d5\u05d3 \u05d1\u05e6\u05d5\u05d5\u05ea \u05d5\u05dc\u05e7\u05d1\u05dc \u05de\u05e8\u05d5\u05ea.\n\n\u05e0\u05e7\u05d5\u05d3\u05d5\u05ea \u05d7\u05d5\u05dc\u05e9\u05d4:\n1.\u05e4\u05d9\u05e7\u05d5\u05d3 \u05d5\u05de\u05e0\u05d4\u05d9\u05d2\u05d5\u05ea- \u05e0\u05d3\u05e8\u05e9 \u05dc\u05e7\u05d1\u05dc \u05db\u05dc\u05d9\u05dd \u05dc\u05d4\u05ea\u05de\u05d5\u05d3\u05d3\u05d5\u05d9\u05d5\u05ea \u05e4\u05d9\u05e7\u05d5\u05d3\u05d9\u05d5\u05ea.\n2.\u05ea\u05e7\u05e9\u05d5\u05e8\u05ea \u05e2\u05dd \u05de\u05e4\u05e7\u05d3\u05d9\u05dd \u05d5\u05e7\u05d5\u05dc\u05d2\u05d5\u05ea \u05dc\u05d9\u05d7\u05d9\u05d3\u05d4.\n3.\u05ea\u05db\u05e0\u05d5\u05df \u05d5\u05e0\u05d9\u05d4\u05d5\u05dc \u05e1\u05d3\u05e8\u05d9 \u05e2\u05d3\u05d9\u05e4\u05d5\u05ea."
+        },
+        {
+            "username": "\u05d7\u05d9\u05d9\u05dd \u05de\u05d5\u05d9\u05d0\u05dc",
+            "password_hash": "$2b$12$/7WvxMyXAk8rSnlq6spLdeKBVboWgTVzKRoD/K2ivZ9R3H1vHZIAS",
+            "role": "mentor",
+            "full_name": "\u05d7\u05d9\u05d9\u05dd \u05de\u05d5\u05d9\u05d0\u05dc",
+            "photo_filename": "haim_moyal.png",
+            "description": ""
+        }
+    ],
+    "mentorship_pairs": [
+        {
+            "mentor_username": "\u05d7\u05d9\u05d9\u05dd \u05de\u05d5\u05d9\u05d0\u05dc",
+            "mentee_username": "\u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        }
+    ],
+    "meetings": [],
+    "logs": [
+        {
+            "timestamp": "2026-02-05T01:29:46.568689",
+            "action": "User logged in: admin"
+        },
+        {
+            "timestamp": "2026-02-05T01:32:06.038219",
+            "action": "User added: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T01:32:29.846439",
+            "action": "User added: \u05d7\u05d9\u05d9\u05dd \u05de\u05d5\u05d9\u05d0\u05dc"
+        },
+        {
+            "timestamp": "2026-02-05T01:32:38.264668",
+            "action": "Mentorship assigned: \u05d7\u05d9\u05d9\u05dd \u05de\u05d5\u05d9\u05d0\u05dc -> \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T01:33:56.802039",
+            "action": "User logged out: admin"
+        },
+        {
+            "timestamp": "2026-02-05T01:34:10.049531",
+            "action": "User logged in: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T01:57:16.223417",
+            "action": "User logged in: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T01:59:06.563445",
+            "action": "User logged out: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T01:59:16.943141",
+            "action": "User logged in: admin"
+        },
+        {
+            "timestamp": "2026-02-05T01:59:46.692585",
+            "action": "User updated: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T01:59:56.770435",
+            "action": "User logged out: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:00:11.255544",
+            "action": "User logged in: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:00:16.336284",
+            "action": "User logged out: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:00:25.053458",
+            "action": "User logged in: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:00:55.886673",
+            "action": "User updated: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:01:02.062846",
+            "action": "User logged out: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:01:14.010322",
+            "action": "User logged in: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:07:20.820673",
+            "action": "User logged out: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:08:12.301519",
+            "action": "User logged in: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:13:44.109859",
+            "action": "User logged in: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:18:57.606062",
+            "action": "User logged out: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:19:10.949068",
+            "action": "User logged in: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:21:47.775039",
+            "action": "User logged out: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:25:26.002628",
+            "action": "User logged in: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:25:31.729907",
+            "action": "User logged out: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:25:56.256272",
+            "action": "User logged in: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:27:57.874361",
+            "action": "User logged in: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:28:10.790983",
+            "action": "User logged out: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:28:20.369214",
+            "action": "User logged in: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:31:00.100612",
+            "action": "User logged in: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:32:42.582506",
+            "action": "User logged out: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:32:50.833031",
+            "action": "User logged in: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:33:10.705367",
+            "action": "User logged out: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:33:19.467111",
+            "action": "User logged in: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:33:59.929122",
+            "action": "User logged out: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:34:09.859710",
+            "action": "User logged in: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:34:20.862628",
+            "action": "User logged out: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:34:32.024244",
+            "action": "User logged in: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:35:34.667935",
+            "action": "User logged out: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:35:41.186091",
+            "action": "User logged in: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:35:55.903674",
+            "action": "User logged out: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:36:11.769784",
+            "action": "User logged in: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:36:34.334727",
+            "action": "User updated: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:39:14.773848",
+            "action": "User logged out: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:39:33.348939",
+            "action": "User logged in: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:40:01.339826",
+            "action": "User logged out: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:41:14.494012",
+            "action": "User logged in: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:41:59.319990",
+            "action": "User updated: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:42:01.187199",
+            "action": "User updated: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:42:16.562847",
+            "action": "User logged out: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:42:26.413465",
+            "action": "User logged in: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:42:35.533180",
+            "action": "User logged out: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:42:44.262952",
+            "action": "User logged in: \u05d7\u05d9\u05d9\u05dd \u05de\u05d5\u05d9\u05d0\u05dc"
+        },
+        {
+            "timestamp": "2026-02-05T02:44:08.394841",
+            "action": "User logged out: \u05d7\u05d9\u05d9\u05dd \u05de\u05d5\u05d9\u05d0\u05dc"
+        },
+        {
+            "timestamp": "2026-02-05T02:47:30.812841",
+            "action": "User logged in: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:47:41.462087",
+            "action": "User updated: \u05d7\u05d9\u05d9\u05dd \u05de\u05d5\u05d9\u05d0\u05dc"
+        },
+        {
+            "timestamp": "2026-02-05T02:47:43.226339",
+            "action": "User updated: \u05d7\u05d9\u05d9\u05dd \u05de\u05d5\u05d9\u05d0\u05dc"
+        },
+        {
+            "timestamp": "2026-02-05T02:48:10.613830",
+            "action": "User logged out: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:51:23.054811",
+            "action": "User logged in: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:52:14.481933",
+            "action": "Password changed for: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:52:35.284467",
+            "action": "Password changed for: \u05d7\u05d9\u05d9\u05dd \u05de\u05d5\u05d9\u05d0\u05dc"
+        },
+        {
+            "timestamp": "2026-02-05T02:52:44.674736",
+            "action": "Password changed for: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T02:52:49.434551",
+            "action": "User logged out: admin"
+        },
+        {
+            "timestamp": "2026-02-05T02:53:04.816537",
+            "action": "User logged in: \u05d7\u05d9\u05d9\u05dd \u05de\u05d5\u05d9\u05d0\u05dc"
+        },
+        {
+            "timestamp": "2026-02-05T02:53:55.156622",
+            "action": "User logged out: \u05d7\u05d9\u05d9\u05dd \u05de\u05d5\u05d9\u05d0\u05dc"
+        },
+        {
+            "timestamp": "2026-02-05T02:55:50.559699",
+            "action": "User logged in: admin"
+        },
+        {
+            "timestamp": "2026-02-05T09:34:52.257911",
+            "action": "User logged in: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        },
+        {
+            "timestamp": "2026-02-05T09:37:31.796469",
+            "action": "User logged in: \u05e8\u05d7\u05de\u05d9\u05dd \u05d0\u05d1\u05d0\u05d9\u05d9\u05d1"
+        }
+    ],
+    "config": {
+        "main_title": "\u05de\u05e2\u05e8\u05db\u05ea \u05d7\u05e0\u05d9\u05db\u05d4 - \u05e8\u05d1\u05e0\u05d5\u05ea \u05e6\u05d4\u05f4\u05dc",
+        "mentee_title": "\u05ea\u05d5\u05db\u05e0\u05d9\u05ea \u05d7\u05e0\u05d9\u05db\u05d4 \u05e4\u05d9\u05e7\u05d5\u05d3 \u05de\u05e8\u05db\u05d6",
+        "label_meeting": "\u05e4\u05d2\u05d9\u05e9\u05d4 ",
+        "label_tasks": "\u05de\u05e9\u05d9\u05de\u05d5\u05ea",
+        "label_feedback": "\u05de\u05e9\u05d5\u05d1 / \u05d4\u05e2\u05e8\u05d5\u05ea",
+        "btn_save": "\ud83d\udcbe \u05e9\u05de\u05d5\u05e8 \u05e4\u05d2\u05d9\u05e9\u05d4",
+        "label_role": "\u05ea\u05e4\u05e7\u05d9\u05d3",
+        "label_mentor_of": "..."
+    }
+}

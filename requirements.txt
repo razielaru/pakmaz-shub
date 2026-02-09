@@ -1,0 +1,10 @@
+streamlit
+bcrypt
+pandas
+supabase
+plotly
+watchdog
+Pillow
+pydeck
+streamlit-geolocation
+openpyxl
