@@ -1657,8 +1657,6 @@ def render_unit_report():
                             data.pop("photo_url", None)
                             supabase.table("reports").insert(data).execute()
                             st.success("✅ הדוח נשלח בהצלחה!")
-                            if "photo_url" in error_msg:
-                                st.info("ℹ️ התמונה לא נשמרה (הטבלה לא תומכת). ניתן להוסיף עמודה photo_url ב-Supabase.")
                             clear_cache()
                             time.sleep(2)
                             st.rerun()
@@ -1706,15 +1704,26 @@ def render_unit_report():
                     # יצירת טבלה מעוצבת
                     leaderboard_data = []
                     for idx, (inspector, count) in enumerate(stats['top_inspectors'].items(), 1):
-                        medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"{idx}."
+                        medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"{idx}"
                         leaderboard_data.append({
-                            "מקום": medal,
+                            "#": medal,
                             "שם המבקר": inspector,
-                            "מספר דוחות": count
+                            "דוחות": count
                         })
                     
                     leaderboard_df = pd.DataFrame(leaderboard_data)
-                    st.dataframe(leaderboard_df, use_container_width=True, hide_index=True)
+                    
+                    # תצוגה משופרת עם עיצוב
+                    st.dataframe(
+                        leaderboard_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "#": st.column_config.TextColumn("#", width="small"),
+                            "שם המבקר": st.column_config.TextColumn("שם המבקר", width="large"),
+                            "דוחות": st.column_config.NumberColumn("דוחות", width="medium")
+                        }
+                    )
                     
                     # כפתור הורדת Excel
                     excel_data = create_inspector_excel(unit_df)
@@ -1731,18 +1740,73 @@ def render_unit_report():
             
             # טאב 2: מיקומים
             with stats_tabs[1]:
-                st.markdown("### 📍 מיקומים פופולריים")
+                st.markdown("### 📍 מפת מיקומים")
                 
-                if not stats['top_locations'].empty:
-                    fig = px.bar(
-                        x=stats['top_locations'].values,
-                        y=stats['top_locations'].index,
-                        orientation='h',
-                        labels={'x': 'מספר דוחות', 'y': 'מוצב'},
-                        title="5 המוצבים הפופולריים ביותר"
-                    )
-                    fig.update_layout(showlegend=False, height=300)
-                    st.plotly_chart(fig, use_container_width=True)
+                if not stats['top_locations'].empty and 'base' in unit_df.columns:
+                    # מיפוי מוצבים לקואורדינטות (אזור יהודה ושומרון)
+                    base_coordinates = {
+                        "מוצב בנימין": [31.9, 35.25],
+                        "מוצב שומרון": [32.2, 35.2],
+                        "מוצב יהודה": [31.7, 35.1],
+                        "מוצב עציון": [31.65, 35.12],
+                        "מוצב אפרים": [32.1, 35.15],
+                        "מוצב מנשה": [32.3, 35.18],
+                        "מוצב הבקעה": [31.85, 35.45],
+                        # ברירת מחדל לכל מוצב אחר
+                    }
+                    
+                    # יצירת נתונים למפה
+                    map_data = []
+                    for base_name, count in stats['top_locations'].items():
+                        # קבלת קואורדינטות או שימוש בברירת מחדל
+                        coords = base_coordinates.get(base_name, [31.9, 35.2])
+                        # הוספת רעש קטן למניעת חפיפה
+                        import random
+                        lat = coords[0] + random.uniform(-0.02, 0.02)
+                        lon = coords[1] + random.uniform(-0.02, 0.02)
+                        
+                        map_data.append({
+                            "lat": lat,
+                            "lon": lon,
+                            "base": base_name,
+                            "reports": int(count),
+                            "size": count * 100
+                        })
+                    
+                    if map_data:
+                        map_df = pd.DataFrame(map_data)
+                        
+                        # יצירת מפה עם pydeck
+                        view_state = pdk.ViewState(
+                            latitude=31.9,
+                            longitude=35.2,
+                            zoom=9,
+                            pitch=0
+                        )
+                        
+                        layer = pdk.Layer(
+                            "ScatterplotLayer",
+                            data=map_df,
+                            get_position=["lon", "lat"],
+                            get_radius="size",
+                            get_fill_color=[30, 144, 255, 180],
+                            pickable=True,
+                            auto_highlight=True
+                        )
+                        
+                        tooltip = {
+                            "html": "<b>{base}</b><br/>דוחות: {reports}",
+                            "style": {"backgroundColor": "steelblue", "color": "white"}
+                        }
+                        
+                        st.pydeck_chart(pdk.Deck(
+                            layers=[layer],
+                            initial_view_state=view_state,
+                            tooltip=tooltip,
+                            map_style="mapbox://styles/mapbox/light-v9"
+                        ))
+                    else:
+                        st.info("אין נתוני מיקום זמינים")
                 else:
                     st.info("אין נתוני מיקום זמינים")
             
