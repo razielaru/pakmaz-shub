@@ -23,6 +23,219 @@ st.set_page_config(
     page_icon="🛡️"
 )
 
+# CSS למובייל - אופטימיזציה מלאה
+st.markdown("""
+<style>
+    /* הסתרת sidebar במובייל */
+    @media (max-width: 768px) {
+        [data-testid="stSidebar"] {
+            display: none !important;
+        }
+        
+        /* הסתרת כפתור פתיחת sidebar */
+        button[kind="header"] {
+            display: none !important;
+        }
+        
+        /* כותרות - צבע כהה וקריא */
+        h1, h2, h3, h4, h5, h6 {
+            color: #1e293b !important;
+            font-weight: 700 !important;
+        }
+        
+        /* טקסט רגיל - צבע כהה */
+        p, span, div, label {
+            color: #334155 !important;
+        }
+        
+        /* כפתורים - גדולים יותר למובייל */
+        button {
+            min-height: 48px !important;
+            font-size: 16px !important;
+            font-weight: 600 !important;
+        }
+        
+        /* שדות קלט - גדולים וקריאים */
+        input, textarea, select {
+            min-height: 48px !important;
+            font-size: 16px !important;
+            color: #1e293b !important;
+            background-color: white !important;
+            border: 2px solid #cbd5e1 !important;
+            border-radius: 8px !important;
+            padding: 12px !important;
+        }
+        
+        /* תיבות בחירה - גדולות יותר */
+        [data-testid="stRadio"] label {
+            font-size: 16px !important;
+            color: #1e293b !important;
+            padding: 12px !important;
+        }
+        
+        /* מדדים (metrics) - קריאים יותר */
+        [data-testid="stMetric"] {
+            background-color: white !important;
+            border: 2px solid #e2e8f0 !important;
+            border-radius: 12px !important;
+            padding: 16px !important;
+        }
+        
+        [data-testid="stMetricLabel"] {
+            font-size: 14px !important;
+            color: #64748b !important;
+            font-weight: 600 !important;
+        }
+        
+        [data-testid="stMetricValue"] {
+            font-size: 24px !important;
+            color: #1e293b !important;
+            font-weight: 700 !important;
+        }
+        
+        /* טבלאות - קריאות יותר */
+        table {
+            font-size: 14px !important;
+        }
+        
+        table th {
+            background-color: #1e293b !important;
+            color: white !important;
+            font-weight: 700 !important;
+            padding: 12px !important;
+        }
+        
+        table td {
+            color: #334155 !important;
+            padding: 12px !important;
+            border-bottom: 1px solid #e2e8f0 !important;
+        }
+        
+        /* כרטיסים - ניגודיות טובה */
+        [data-testid="stExpander"] {
+            background-color: white !important;
+            border: 2px solid #e2e8f0 !important;
+            border-radius: 12px !important;
+            margin-bottom: 16px !important;
+        }
+        
+        /* התראות - צבעים ברורים */
+        .stAlert {
+            font-size: 16px !important;
+            padding: 16px !important;
+            border-radius: 8px !important;
+        }
+        
+        /* הודעות מידע */
+        [data-baseweb="notification"] {
+            background-color: #dbeafe !important;
+            color: #1e40af !important;
+            border: 2px solid #3b82f6 !important;
+        }
+        
+        /* הודעות הצלחה */
+        .element-container:has(.stSuccess) {
+            background-color: #d1fae5 !important;
+            color: #065f46 !important;
+            border: 2px solid #10b981 !important;
+        }
+        
+        /* הודעות שגיאה */
+        .element-container:has(.stError) {
+            background-color: #fee2e2 !important;
+            color: #991b1b !important;
+            border: 2px solid #ef4444 !important;
+        }
+        
+        /* טאבים - גדולים וקריאים */
+        [data-baseweb="tab-list"] {
+            gap: 8px !important;
+        }
+        
+        [data-baseweb="tab"] {
+            min-height: 48px !important;
+            font-size: 15px !important;
+            font-weight: 600 !important;
+            color: #475569 !important;
+            background-color: #f1f5f9 !important;
+            border-radius: 8px !important;
+            padding: 12px 16px !important;
+        }
+        
+        [data-baseweb="tab"][aria-selected="true"] {
+            background-color: #3b82f6 !important;
+            color: white !important;
+        }
+        
+        /* גרפים - גודל מותאם */
+        [data-testid="stPlotlyChart"] {
+            height: auto !important;
+            min-height: 300px !important;
+        }
+        
+        /* מרווחים */
+        .main .block-container {
+            padding: 16px !important;
+            max-width: 100% !important;
+        }
+        
+        /* כותרת ראשית */
+        .main h1:first-of-type {
+            font-size: 24px !important;
+            margin-bottom: 16px !important;
+        }
+        
+        /* תמונות - מותאמות */
+        img {
+            max-width: 100% !important;
+            height: auto !important;
+            border-radius: 8px !important;
+        }
+        
+        /* dataframe - גלילה אופקית */
+        [data-testid="stDataFrame"] {
+            overflow-x: auto !important;
+        }
+        
+        /* הסתרת footer של streamlit */
+        footer {
+            display: none !important;
+        }
+        
+        /* הסתרת תפריט */
+        #MainMenu {
+            display: none !important;
+        }
+        
+        /* כפתור העלאת קובץ */
+        [data-testid="stFileUploader"] {
+            background-color: white !important;
+            border: 2px dashed #cbd5e1 !important;
+            border-radius: 12px !important;
+            padding: 24px !important;
+        }
+        
+        [data-testid="stFileUploader"] label {
+            font-size: 16px !important;
+            color: #1e293b !important;
+            font-weight: 600 !important;
+        }
+    }
+    
+    /* שיפורים כלליים לכל המכשירים */
+    * {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+    }
+    
+    /* RTL support */
+    .main {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
 # --- 2. חיבור ל-Supabase ---
 try:
     url = st.secrets["supabase"]["url"]
