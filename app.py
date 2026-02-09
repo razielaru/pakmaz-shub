@@ -525,13 +525,13 @@ def generate_commander_alerts(df):
                     "message": f"{unit} לא דיווח כבר {days_silent} ימים"
                 })
     
-    # עירובים פסולים
+    # עירובין פסולים
     if 'e_status' in df.columns:
         invalid_eruv = df[df['e_status'] == 'פסול']
         if len(invalid_eruv) > 0:
             alerts.append({
                 "icon": "🚧",
-                "title": "עירובים פסולים",
+                "title": "עירובין פסולים",
                 "message": f"{len(invalid_eruv)} מוצבים עם עירוב פסול: {', '.join(invalid_eruv['base'].unique()[:3])}"
             })
     
@@ -585,7 +585,7 @@ def analyze_unit_trends(df_unit):
     if 'k_cert' in df_unit.columns and (df_unit['k_cert'] == 'כן').all():
         strengths.append("כשרות מלאה")
     if 'e_status' in df_unit.columns and (df_unit['e_status'] == 'תקין').all():
-        strengths.append("עירובים תקינים")
+        strengths.append("עירובין תקינים")
     if 's_clean' in df_unit.columns and (df_unit['s_clean'] == 'כן').all():
         strengths.append("ניקיון מצוין")
     
@@ -601,7 +601,7 @@ def analyze_unit_trends(df_unit):
     if 'k_cert' in df_unit.columns and (df_unit['k_cert'] == 'לא').any():
         improvements.append("כשרות")
     if 'e_status' in df_unit.columns and (df_unit['e_status'] == 'פסול').any():
-        improvements.append("עירובים")
+        improvements.append("עירובין")
     if 'r_mezuzot_missing' in df_unit.columns and df_unit['r_mezuzot_missing'].sum() > 0:
         improvements.append(f"מזוזות ({int(df_unit['r_mezuzot_missing'].sum())} חסרות)")
     
@@ -694,49 +694,50 @@ def create_hierarchy_flowchart():
         hierarchy_data = supabase.table("hierarchy").select("*").execute().data
         
         if not hierarchy_data:
-            return """```mermaid
-graph TD
-    A[פיקוד מרכז] --> B[אוגדת 877]
-    A --> C[אוגדת 96]
-    B --> D[חטמ״רים]
-    C --> E[חטמ״רים]
-    style A fill:#1e3a8a,color:#fff
-    style B fill:#3b82f6,color:#fff
-    style C fill:#3b82f6,color:#fff
-```
-*טרם הוגדרה היררכיה - השתמש בניהול היררכיה להגדרה*"""
+            return "```mermaid\ngraph TD\n    PIKUD[\"🎖️ פיקוד מרכז\"]\n    U1[\"⭐ אוגדת 877\"]\n    U2[\"⭐ אוגדת 96\"]\n    PIKUD --> U1\n    PIKUD --> U2\n    \n    style PIKUD fill:#1e3a8a,stroke:#1e40af,stroke-width:3px,color:#fff\n    style U1 fill:#3b82f6,stroke:#2563eb,stroke-width:2px,color:#fff\n    style U2 fill:#3b82f6,stroke:#2563eb,stroke-width:2px,color:#fff\n```"
         
-        # בניית תרשים דינמי
-        mermaid = "```mermaid\ngraph TD\n    PIKUD[פיקוד מרכז]\n"
+        # בניית הגרף
+        mermaid_code = "```mermaid\ngraph TD\n"
+        mermaid_code += "    PIKUD[\"🎖️ פיקוד מרכז\"]\n"
         
-        # קבלת כל האוגדות
-        ugdot = set([h['parent_unit'] for h in hierarchy_data])
+        # קבוצות לפי אוגדה
+        ugdot = {}
+        for h in hierarchy_data:
+            parent = h['parent_unit']
+            child = h['child_unit']
+            if parent not in ugdot:
+                ugdot[parent] = []
+            ugdot[parent].append(child)
         
-        for i, ugda in enumerate(ugdot):
-            ugda_id = f"U{i}"
-            mermaid += f'    PIKUD --> {ugda_id}["{ugda}"]\n'
-            
-            # חטמ״רים תחת אוגדה זו
-            hatmarim = [h['child_unit'] for h in hierarchy_data if h['parent_unit'] == ugda]
-            for j, hatmar in enumerate(hatmarim):
-                hatmar_id = f"H{i}{j}"
-                mermaid += f'    {ugda_id} --> {hatmar_id}["{hatmar}"]\n'
+        # הוספת אוגדות
+        ugda_ids = {}
+        for idx, ugda in enumerate(ugdot.keys(), 1):
+            ugda_id = f"U{idx}"
+            ugda_ids[ugda] = ugda_id
+            mermaid_code += f"    {ugda_id}[\"⭐ {ugda}\"]\n"
+            mermaid_code += f"    PIKUD --> {ugda_id}\n"
         
-        mermaid += "    style PIKUD fill:#1e3a8a,color:#fff\n```"
-        return mermaid
+        # הוספת חטמ"רים
+        for ugda, hatmarim in ugdot.items():
+            ugda_id = ugda_ids[ugda]
+            for idx, hatmar in enumerate(hatmarim, 1):
+                hatmar_id = f"{ugda_id}_H{idx}"
+                mermaid_code += f"    {hatmar_id}[\"🏛️ {hatmar}\"]\n"
+                mermaid_code += f"    {ugda_id} --> {hatmar_id}\n"
         
+        # עיצוב
+        mermaid_code += "\n    style PIKUD fill:#1e3a8a,stroke:#1e40af,stroke-width:4px,color:#fff,font-size:16px\n"
+        for ugda_id in ugda_ids.values():
+            mermaid_code += f"    style {ugda_id} fill:#3b82f6,stroke:#2563eb,stroke-width:3px,color:#fff,font-size:14px\n"
+        
+        mermaid_code += "```"
+        return mermaid_code
     except:
         return """```mermaid
 graph TD
-    A[פיקוד מרכז] --> B[אוגדת 877]
-    A --> C[אוגדת 96]
-    B --> D[חטמ״רים]
-    C --> E[חטמ״רים]
-    style A fill:#1e3a8a,color:#fff
-    style B fill:#3b82f6,color:#fff
+    C["⚠️ טרם הוגדרה היררכיה"]
     style C fill:#3b82f6,color:#fff
-```
-*טרם הוגדרה היררכיה*"""
+```"""
 
 # --- 6. CSS (עיצוב רספונסיבי מושלם למובייל ומחשב) ---
 st.markdown(f"""
@@ -1065,7 +1066,7 @@ def render_command_dashboard():
         
         with col4:
             eruv_invalid = len(df[df['e_status'] == 'פסול']) if 'e_status' in df.columns else 0
-            st.metric("🚧 עירובים פסולים", eruv_invalid, delta=None if eruv_invalid == 0 else f"-{eruv_invalid}", delta_color="inverse")
+            st.metric("🚧 עירובין פסולים", eruv_invalid, delta=None if eruv_invalid == 0 else f"-{eruv_invalid}", delta_color="inverse")
         
         st.markdown("---")
         
@@ -1095,7 +1096,7 @@ def render_command_dashboard():
             st.plotly_chart(fig, use_container_width=True)
         
         with col2:
-            st.markdown("#### 🚧 סטטוס עירובים")
+            st.markdown("#### 🚧 סטטוס עירובין")
             if 'e_status' in df.columns:
                 eruv_counts = df['e_status'].value_counts()
                 colors_map = {'תקין': '#10b981', 'בטיפול': '#f59e0b', 'פסול': '#ef4444'}
@@ -1562,15 +1563,31 @@ def render_unit_report():
         free_text = st.text_area("הערות נוספות")
         photo = st.file_uploader("📸 תמונה (חובה)", type=['jpg', 'png', 'jpeg'])
         
+        # שליחת הדוח
         if st.form_submit_button("🚀 שגר דיווח", type="primary", use_container_width=True):
+            # מיקום - יוגדר ידנית אם צריך בעתיד
+            gps_lat, gps_lon = None, None
+            
             if base and inspector and photo:
                 photo_url = upload_report_photo(photo.getvalue(), unit, base)
                 data = {
-                    "unit": unit, "base": base, "inspector": inspector,
-                    "date": str(date), "time": str(time_v), "photo_url": photo_url,
-                    "latitude": gps_lat, "longitude": gps_lon,
-                    "p_pakal": p_pakal, "e_status": e_status, "k_cert": k_cert, 
-                    "s_clean": s_clean, "missing_items": missing, 
+                    "unit": st.session_state.selected_unit, "date": datetime.datetime.now().isoformat(),
+                    "base": base, "inspector": inspector, "photo_url": photo_url,
+                    "k_cert": k_cert, "k_dates": k_dates, # "k_mashgiach": k_mashgiach, "k_storage": k_storage,
+                    # "k_meat_milk": k_meat_milk, "k_shabbat": k_shabbat, "k_kitchen": k_kitchen,
+                    "e_status": e_status, # "e_type": e_type, "e_wire_height": e_wire_height, "e_poles": e_poles,
+                    # "e_gates": e_gates, "e_signage": e_signage, "e_last_check": e_last_check,
+                    # "p_exists": p_exists, "p_type": p_type, "p_updated": p_updated, "p_accessible": p_accessible,
+                    "s_clean": s_clean, # "s_equipment": s_equipment, "s_organized": s_organized,
+                    # "s_fridge": s_fridge, "s_signage": s_signage, "s_kosher_products": s_kosher_products,
+                    # "t_location": t_location,
+                    "t_private": t_private, "t_kitchen_tools": t_kitchen_tools, "t_procedure": t_procedure,
+                    "t_friday": t_friday, "t_app": t_app, "w_location": w_location, "w_private": w_private,
+                    "w_kitchen_tools": w_kitchen_tools, "w_procedure": w_procedure, "w_guidelines": w_guidelines,
+                    "soldier_yeshiva": soldier_yeshiva, "soldier_lessons": soldier_lessons, "soldier_food": soldier_food,
+                    "soldier_shabbat_training": soldier_shabbat_training, "soldier_knows_rabbi": soldier_knows_rabbi,
+                    "soldier_prayers": soldier_prayers, "soldier_talk_cmd": soldier_talk_cmd, "free_text": free_text,
+                    "time": str(time_v), "p_pakal": p_pakal, "missing_items": missing,
                     "r_mezuzot_missing": r_mezuzot_missing, "k_cook_type": k_cook_type,
                     "p_marked": p_marked, "p_mix": p_mix, "p_kasher": p_kasher,
                     "r_sg": r_sg, "r_hamal": r_hamal, "r_sign": r_sign, "r_netilot": r_netilot,
@@ -1578,22 +1595,39 @@ def render_unit_report():
                     "s_havdala": s_havdala, "s_gemach": s_gemach, "s_smartbis": s_smartbis, "s_geniza": s_geniza,
                     "e_check": e_check, "e_doc": e_doc, "e_photo": e_photo,
                     "k_separation": k_separation, "k_briefing": k_briefing, "k_products": k_products,
-                    "k_dates": k_dates, "k_leafs": k_leafs, "k_holes": k_holes, "k_bishul": k_bishul,
-                    "k_eggs": k_eggs, "k_machshir": k_machshir, "k_heater": k_heater, "k_app": k_app,
-                    "t_private": t_private, "t_kitchen_tools": t_kitchen_tools, "t_procedure": t_procedure,
-                    "t_friday": t_friday, "t_app": t_app, "w_location": w_location, "w_private": w_private,
-                    "w_kitchen_tools": w_kitchen_tools, "w_procedure": w_procedure, "w_guidelines": w_guidelines,
-                    "soldier_yeshiva": soldier_yeshiva, "soldier_lessons": soldier_lessons, "soldier_food": soldier_food,
-                    "soldier_shabbat_training": soldier_shabbat_training, "soldier_knows_rabbi": soldier_knows_rabbi,
-                    "soldier_prayers": soldier_prayers, "soldier_talk_cmd": soldier_talk_cmd, "free_text": free_text
+                    "k_leafs": k_leafs, "k_holes": k_holes, "k_bishul": k_bishul,
+                    "k_eggs": k_eggs, "k_machshir": k_machshir, "k_heater": k_heater, "k_app": k_app
                 }
+                
+                # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
+                if gps_lat and gps_lon:
+                    data["latitude"] = gps_lat
+                    data["longitude"] = gps_lon
+                
                 try:
                     supabase.table("reports").insert(data).execute()
                     st.success("✅ הדוח נשלח בהצלחה ונקלט בחמ״ל!")
                     clear_cache()
                     time.sleep(1)
                     st.rerun()
-                except Exception as e: st.error(f"❌ שגיאה בשמירה: {e}")
+                except Exception as e:
+                    error_msg = str(e)
+                    # אם השגיאה היא בגלל latitude/longitude, נסה בלי
+                    if "latitude" in error_msg or "longitude" in error_msg:
+                        try:
+                            # הסרת latitude/longitude מהנתונים
+                            data.pop("latitude", None)
+                            data.pop("longitude", None)
+                            supabase.table("reports").insert(data).execute()
+                            st.success("✅ הדוח נשלח בהצלחה!")
+                            st.info("ℹ️ המיקום לא נשמר (הטבלה לא תומכת). ניתן להוסיף עמודות latitude ו-longitude ב-Supabase.")
+                            clear_cache()
+                            time.sleep(2)
+                            st.rerun()
+                        except Exception as e2:
+                            st.error(f"❌ שגיאה בשמירה: {e2}")
+                    else:
+                        st.error(f"❌ שגיאה בשמירה: {error_msg}")
             else: st.error("⚠️ חסרים פרטי חובה (מוצב, מבקר או תמונה)")
     
     # --- סטטיסטיקות מבקרים ---
