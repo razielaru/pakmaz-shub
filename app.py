@@ -413,7 +413,7 @@ def analyze_readiness(df):
     alerts = []
     today = pd.Timestamp.now()
     if df.empty: return []
-    if not pd.api.types.is_datetime64_any_dtype(df['date']): df['date'] = pd.to_datetime(df['date'])
+    if not pd.api.types.is_datetime64_any_dtype(df['date']): df['date'] = pd.to_datetime(df['date'], errors='coerce')
     active_units = df['unit'].unique()
     for unit in active_units:
         unit_df = df[df['unit'] == unit]
@@ -510,7 +510,7 @@ def generate_commander_alerts(df):
     # המרת תאריכים
     if 'date' in df.columns:
         if not pd.api.types.is_datetime64_any_dtype(df['date']):
-            df['date'] = pd.to_datetime(df['date'])
+            df['date'] = pd.to_datetime(df['date'], errors='coerce')
         
         # יחידות שלא דיווחו
         today = pd.Timestamp.now()
@@ -1266,7 +1266,7 @@ def render_command_dashboard():
         if 'date' in df.columns:
             df_copy = df.copy()
             if not pd.api.types.is_datetime64_any_dtype(df_copy['date']):
-                df_copy['date'] = pd.to_datetime(df_copy['date'])
+                df_copy['date'] = pd.to_datetime(df_copy['date'], errors='coerce')
             
             # דוחות לאורך זמן
             reports_over_time = df_copy.groupby(df_copy['date'].dt.to_period('W')).size().reset_index()
@@ -1678,7 +1678,7 @@ def render_unit_report():
     
     if not unit_df.empty and 'date' in unit_df.columns:
         # המרת תאריכים
-        unit_df['date'] = pd.to_datetime(unit_df['date'])
+        unit_df['date'] = pd.to_datetime(unit_df['date'], errors='coerce')
         
         stats = generate_inspector_stats(unit_df)
         
