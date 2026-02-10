@@ -133,10 +133,12 @@ st.markdown("""
     /* במובייל */
     @media (max-width: 768px) {
         
-        /* כותרות - צבע כהה וקריא */
+        /* כותרות - צבע כהה וקריא + כיוון מימין לשמאל */
         h1, h2, h3, h4, h5, h6 {
             color: #1e293b !important;
             font-weight: 700 !important;
+            direction: rtl !important;
+            text-align: right !important;
         }
         
         /* טקסט רגיל - צבע כהה */
