@@ -2136,6 +2136,8 @@ def render_command_dashboard():
                     use_container_width=True,
                     key=f"dl_full_report_{selected_unit}"
                 )
+            else:
+                st.caption("⚠️ אין נתונים להורדה עבור יחידה זו")
         else:
             st.info("לא נמצאו דוחות ליחידה זו")
     
@@ -2862,6 +2864,39 @@ def render_unit_report():
                     top_count = stats['top_inspectors'].iloc[0]
                     st.metric("🏆 מבקר מוביל", f"{top_inspector} ({top_count})")
             
+            # כפתורי הורדה (בולטים למעלה)
+            col_dl1, col_dl2 = st.columns(2)
+            
+            with col_dl1:
+                excel_data = create_inspector_excel(unit_df)
+                if excel_data:
+                    st.download_button(
+                        label="📄 דוח מבקרים (Excel)",
+                        data=excel_data,
+                        file_name=f"inspector_stats_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="dl_inspectors_top"
+                    )
+                else:
+                    st.caption("אין נתונים לדוח מבקרים")
+                    
+            with col_dl2:
+                full_report_data = create_full_report_excel(unit_df)
+                if full_report_data:
+                    st.download_button(
+                        label="📊 דוח פעילות מלא (Excel)",
+                        data=full_report_data,
+                        file_name=f"full_activity_report_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="dl_full_report_top"
+                    )
+                else:
+                    st.caption("אין נתונים לדוח מלא")
+            
+            st.markdown("---")
+
             # טאבים לסטטיסטיקות
             stats_tabs = st.tabs(["🏆 טבלת מובילים", "📍 מיקומים", "⏰ שעות פעילות", "📈 התקדמות"])
             
@@ -2907,34 +2942,7 @@ def render_unit_report():
                     html_table += "</tbody></table>"
                     st.markdown(html_table, unsafe_allow_html=True)
                     
-                    # כפתורי הורדה
-                    col_dl1, col_dl2 = st.columns(2)
-                    
-                    with col_dl1:
-                        # כפתור הורדת סטטיסטיקות מבקרים
-                        excel_data = create_inspector_excel(unit_df)
-                        if excel_data:
-                            st.download_button(
-                                label="📥 הורד דוח מבקרים (Excel)",
-                                data=excel_data,
-                                file_name=f"inspector_stats_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                use_container_width=True,
-                                key="dl_inspectors"
-                            )
-                            
-                    with col_dl2:
-                         # כפתור הורדת דוח מלא ומפורט
-                        full_report_data = create_full_report_excel(unit_df)
-                        if full_report_data:
-                            st.download_button(
-                                label="📥 הורד דוח פעילות מלא (Excel)",
-                                data=full_report_data,
-                                file_name=f"full_activity_report_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                use_container_width=True,
-                                key="dl_full_report"
-                            )
+
                 else:
                     st.info("אין נתונים זמינים")
             
