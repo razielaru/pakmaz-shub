@@ -13,6 +13,7 @@ import bcrypt
 import shutil
 import os
 import pydeck as pdk
+import random
 from streamlit_geolocation import streamlit_geolocation
 import math
 from typing import Tuple, Optional, List, Dict
@@ -495,6 +496,32 @@ def update_unit_password(unit_name, new_password):
         error_msg = str(e)
         return False, f"שגיאה: {error_msg}"
 
+
+def add_gps_privacy_offset(lat: float, lon: float, offset_meters: int = 100) -> Tuple[float, float]:
+    """
+    מוסיף רעש אקראי למיקום GPS לצורכי אבטחה
+    מזיז את המיקום ב-~100 מטר כדי שלא לחשוף את המיקום המדויק של המוצב
+    
+    Args:
+        lat: קו רוחב
+        lon: קו אורך  
+        offset_meters: מרחק מקסימלי בmטרים (ברירת מחדל: 100)
+    
+    Returns:
+        tuple: (lat_with_offset, lon_with_offset)
+    """
+    # המרה ממטרים לדרגות (קירוב: 1 מעלה = ~111km)
+    offset_degrees = offset_meters / 111000.0
+    
+    # רעש אקראי בכיוון אקראי
+    random_angle = random.uniform(0, 2 * math.pi)
+    random_distance = random.uniform(0, offset_degrees)
+    
+    # חישוב ההסטה
+    lat_offset = random_distance * math.cos(random_angle)
+    lon_offset = random_distance * math.sin(random_angle) / math.cos(math.radians(lat))
+    
+    return (lat + lat_offset, lon + lon_offset)
 
 # --- 5. AI Logic ---
 def calculate_operational_readiness(df_unit):
@@ -1923,8 +1950,10 @@ def render_unit_report():
                 
                 # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
                 if gps_lat and gps_lon:
-                    data["latitude"] = gps_lat
-                    data["longitude"] = gps_lon
+                    # הוספת רעש למיקום GPS לצורכי אבטחה (~100 מטר)
+                    lat_with_offset, lon_with_offset = add_gps_privacy_offset(gps_lat, gps_lon, offset_meters=100)
+                    data["latitude"] = lat_with_offset
+                    data["longitude"] = lon_with_offset
                 
                 try:
                     supabase.table("reports").insert(data).execute()
