@@ -8,3 +8,4 @@ Pillow
 pydeck
 streamlit-geolocation
 openpyxl
+folium
