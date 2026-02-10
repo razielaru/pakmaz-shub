@@ -569,37 +569,28 @@ def load_reports_cached(accessible_units=None):
 def clear_cache(): load_reports_cached.clear()
 
 def upload_report_photo(photo_bytes, unit_name, base_name):
-    """העלאת תמונה ל-Supabase Storage"""
+    """העלאת תמונה ל-Supabase Storage עם שם קובץ בטוח (ASCII בלבד)"""
     try:
         # המרת התמונה ל-JPEG
         img = Image.open(io.BytesIO(photo_bytes)).convert('RGB')
         output = io.BytesIO()
         img.save(output, format='JPEG', quality=80)
         
-        # יצירת שם קובץ ייחודי
-        timestamp = int(time.time())
-        english_name = UNIT_ID_MAP.get(unit_name, "default")
-        file_path = f"reports/{english_name}_{base_name}_{timestamp}.jpg"
+        # יצירת שם קובץ בטוח לחלוטין - רק תווים באנגלית ומספרים
+        # שימוש ב-UUID וזמן יוניקס למניעת כל סיכוי לבעיות קידוד
+        import uuid
+        file_ext = "jpg"
+        safe_filename = f"report_{int(time.time())}_{str(uuid.uuid4())[:8]}.{file_ext}"
+        
+        # נתיב הקובץ
+        file_path = f"reports/{safe_filename}"
         
         # העלאה ל-Supabase Storage
-        try:
-            supabase.storage.from_("report-photos").upload(
-                file_path, 
-                output.getvalue(), 
-                {"content-type": "image/jpeg"}
-            )
-        except Exception as upload_error:
-            # אם הקובץ כבר קיים, נסה להעלות עם שם אחר
-            if "already exists" in str(upload_error).lower() or "duplicate" in str(upload_error).lower():
-                timestamp = int(time.time() * 1000)  # milliseconds for uniqueness
-                file_path = f"reports/{english_name}_{base_name}_{timestamp}.jpg"
-                supabase.storage.from_("report-photos").upload(
-                    file_path, 
-                    output.getvalue(), 
-                    {"content-type": "image/jpeg"}
-                )
-            else:
-                raise upload_error
+        supabase.storage.from_("report-photos").upload(
+            file_path, 
+            output.getvalue(), 
+            {"content-type": "image/jpeg"}
+        )
         
         # יצירת URL ציבורי
         project_url = st.secrets['supabase']['url'].rstrip("/")
@@ -608,9 +599,67 @@ def upload_report_photo(photo_bytes, unit_name, base_name):
         return public_url
         
     except Exception as e:
+        # הדפסת שגיאה מפורטת ללוג
+        print(f"Upload error: {str(e)}")
         st.error(f"❌ שגיאה בהעלאת תמונה: {str(e)}")
-        st.warning("💡 ודא ש-bucket בשם 'report-photos' קיים ב-Supabase Storage והוא public")
+        if "InvalidKey" in str(e):
+             st.warning("💡 השגיאה נובעת משם קובץ לא תקין. הקוד החדש אמור לפתור זאת.")
         return None
+
+def apply_custom_css():
+    """החלת עיצוב CSS מותאם אישית"""
+    st.markdown("""
+        <style>
+        /* יישור לימין לכל האפליקציה */
+        .stApp {
+            direction: rtl;
+            text-align: right;
+        }
+        
+        /* כפיית צבע טקסט כהה עבור נראות במחשב */
+        .stMarkdown, .stText, h1, h2, h3, h4, h5, h6, .stMetricLabel, .stMetricValue {
+            color: #1e293b !important;
+        }
+        
+        /* רקע בהיר לאפליקציה */
+        .stApp {
+            background-color: #f8fafc;
+        }
+        
+        /* כרטיסים מעוצבים */
+        .css-1r6slb0, .stCard {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border: 1px solid #e2e8f0;
+        }
+        
+        /* כפתורים */
+        .stButton button {
+            width: 100%;
+            border-radius: 0.5rem;
+            font-weight: bold;
+        }
+        
+        /* מדדים */
+        div[data-testid="stMetricValue"] {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #1e3a8a !important; /* כחול כהה */
+        }
+        
+        div[data-testid="stMetricLabel"] {
+            font-size: 1rem;
+            color: #64748b !important; /* אפור כהה */
+        }
+        
+        /* טבלאות */
+        table {
+            color: #1e293b !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
 def upload_logo_to_supabase(unit_name, image_bytes):
     """העלאת לוגו חדש לסופהבייס"""
@@ -3011,6 +3060,9 @@ def render_unit_report():
 
 # --- 10. Main ---
 def main():
+    # החלת עיצוב CSS גלובלי
+    apply_custom_css()
+    
     if not st.session_state.logged_in:
         if st.session_state.login_stage == "gallery": render_login_gallery()
         else: render_login_password()
