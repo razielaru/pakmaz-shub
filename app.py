@@ -1324,64 +1324,95 @@ def render_command_dashboard():
     
     # ===== טאב 5: מפה מבצעית =====
     with tabs[4]:
-        st.markdown("### 🗺️ Map")
+        st.markdown("### �️ תמונת מצב גזרתית - רבנות פקמ״ז")
+        
+        # בורר מצבי תצוגה
+        map_mode = st.radio("בחר תצוגה:", ["🎯 נקודות חטמ״ר", "🔥 מפת חום"], horizontal=True)
         
         if 'latitude' in df.columns and 'longitude' in df.columns:
-            valid = df.dropna(subset=['latitude', 'longitude'])
+            valid = df.dropna(subset=['latitude', 'longitude']).copy()
+            
             if not valid.empty:
-                # צביעה לפי יחידה - כל יחידה מקבלת צבע ייחודי ובולט
-                unit_colors = {
-                    "חטמ״ר בנימין": [30, 58, 138],      # כחול כהה
-                    "חטמ״ר שומרון": [96, 165, 250],     # כחול שמיים
-                    "חטמ״ר יהודה": [34, 197, 94],       # ירוק בהיר
-                    "חטמ״ר עציון": [251, 146, 60],      # כתום זהוב
-                    "חטמ״ר אפרים": [239, 68, 68],       # אדום
-                    "חטמ״ר מנשה": [168, 85, 247],       # סגול
-                    "חטמ״ר הבקעה": [219, 39, 119],      # ורוד כהה
-                    "אוגדת 877": [100, 116, 139],        # אפור כחלחל
-                    "אוגדת 96": [71, 85, 105],           # אפור כהה
-                    "פיקוד מרכז": [15, 23, 42]           # שחור כמעט
+                # מיפוי צבעים
+                unit_color_map = {
+                    "חטמ״ר בנימין": "rgb(30,58,138)",
+                    "חטמ״ר שומרון": "rgb(96,165,250)",
+                    "חטמ״ר יהודה": "rgb(34,197,94)",
+                    "חטמ״ר עציון": "rgb(251,146,60)",
+                    "חטמ״ר אפרים": "rgb(239,68,68)",
+                    "חטמ״ר מנשה": "rgb(168,85,247)",
+                    "חטמ״ר הבקעה": "rgb(219,39,119)"
                 }
                 
-                valid['color'] = valid['unit'].apply(
-                    lambda u: unit_colors.get(u, [100, 100, 100])  # אפור ברירת מחדל
-                )
+                if map_mode == "🎯 נקודות חטמ״ר":
+                    # מפת נקודות צבעונית
+                    # גודל נקודה לפי בעיות (פסול/לא כשר = גדול יותר)
+                    valid['size_val'] = valid.apply(
+                        lambda r: 15 if (r.get('e_status') == 'פסול' or r.get('k_cert') == 'לא') else 8, 
+                        axis=1
+                    )
+                    
+                    fig = px.scatter_mapbox(
+                        valid,
+                        lat="latitude",
+                        lon="longitude",
+                        hover_name="base",
+                        hover_data={
+                            "unit": True, 
+                            "e_status": True, 
+                            "k_cert": True,
+                            "latitude": False, 
+                            "longitude": False,
+                            "size_val": False
+                        },
+                        color="unit",
+                        size="size_val",
+                        color_discrete_map=unit_color_map,
+                        zoom=8,
+                        height=600
+                    )
+                    
+                    fig.update_layout(
+                        mapbox_style="open-street-map",
+                        margin={"r": 0, "t": 0, "l": 0, "b": 0}
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # מקרא
+                    st.markdown("#### 🔑 מקרא חטמ״רים")
+                    legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;'>"
+                    units_in_map = valid['unit'].unique()
+                    for unit in sorted(units_in_map):
+                        color = unit_color_map.get(unit, "rgb(100, 100, 100)")
+                        legend_html += f"<div><span style='color: {color}; font-size: 1.2rem;'>●</span> {unit}</div>"
+                    legend_html += "</div>"
+                    st.markdown(legend_html, unsafe_allow_html=True)
+                    
+                    # הסבר גדלים
+                    st.info("💡 **נקודות גדולות** = בעיות (עירוב פסול או כשרות לא תקינה)")
                 
-                st.pydeck_chart(pdk.Deck(
-                    map_style='mapbox://styles/mapbox/light-v9',
-                    initial_view_state=pdk.ViewState(
-                        latitude=valid['latitude'].mean(),
-                        longitude=valid['longitude'].mean(),
-                        zoom=9,
-                        pitch=0
-                    ),
-                    layers=[
-                        pdk.Layer(
-                            "ScatterplotLayer",
-                            data=valid,
-                            get_position='[longitude, latitude]',
-                            get_color='color',
-                            get_radius=400,
-                            pickable=True,
-                            auto_highlight=True
-                        )
-                    ],
-                    tooltip={"text": "{base}\n{unit}\nעירוב: {e_status}"}
-                ))
-                
-                # מקרא - הצגת צבעי היחידות
-                st.markdown("**מקרא יחידות:**")
-                legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;'>"
-                
-                # הצגת רק היחידות שיש להן נתונים במפה
-                units_in_map = valid['unit'].unique()
-                for unit in sorted(units_in_map):
-                    color = unit_colors.get(unit, [100, 100, 100])
-                    color_hex = f"rgb({color[0]}, {color[1]}, {color[2]})"
-                    legend_html += f"<div><span style='color: {color_hex}; font-size: 1.2rem;'>●</span> {unit}</div>"
-                
-                legend_html += "</div>"
-                st.markdown(legend_html, unsafe_allow_html=True)
+                else:
+                    # מפת חום - צפיפות דיווחים
+                    fig = px.density_mapbox(
+                        valid,
+                        lat="latitude",
+                        lon="longitude",
+                        hover_name="base",
+                        hover_data={"unit": True, "latitude": False, "longitude": False},
+                        radius=15,
+                        zoom=8,
+                        height=600,
+                        color_continuous_scale="YlOrRd"
+                    )
+                    
+                    fig.update_layout(
+                        mapbox_style="open-street-map",
+                        margin={"r": 0, "t": 0, "l": 0, "b": 0}
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    st.info("🔥 **אזורים חמים** = ריכוז גבוה של דיווחים")
             else:
                 st.info("📍 אין נתוני מיקום זמינים")
         else:
@@ -1719,7 +1750,7 @@ def render_unit_report():
                         use_container_width=True,
                         hide_index=True,
                         column_config={
-                            "#": st.column_config.TextColumn("#", width="small"),
+                            "#": st.column_config.TextColumn("#", width="medium"),
                             "שם המבקר": st.column_config.TextColumn("שם המבקר", width="large"),
                             "דוחות": st.column_config.NumberColumn("דוחות", width="medium")
                         }
@@ -1755,6 +1786,17 @@ def render_unit_report():
                         # ברירת מחדל לכל מוצב אחר
                     }
                     
+                    # צבעים לפי חטמ"ר
+                    unit_colors = {
+                        "חטמ״ר בנימין": [30, 58, 138, 200],      # כחול כהה
+                        "חטמ״ר שומרון": [96, 165, 250, 200],     # כחול שמיים
+                        "חטמ״ר יהודה": [34, 197, 94, 200],       # ירוק בהיר
+                        "חטמ״ר עציון": [251, 146, 60, 200],      # כתום זהוב
+                        "חטמ״ר אפרים": [239, 68, 68, 200],       # אדום
+                        "חטמ״ר מנשה": [168, 85, 247, 200],       # סגול
+                        "חטמ״ר הבקעה": [219, 39, 119, 200],      # ורוד כהה
+                    }
+                    
                     # יצירת נתונים למפה
                     map_data = []
                     for base_name, count in stats['top_locations'].items():
@@ -1765,46 +1807,55 @@ def render_unit_report():
                         lat = coords[0] + random.uniform(-0.02, 0.02)
                         lon = coords[1] + random.uniform(-0.02, 0.02)
                         
+                        # מציאת היחידה של המוצב
+                        base_reports = unit_df[unit_df['base'] == base_name]
+                        unit_name = base_reports['unit'].mode()[0] if not base_reports.empty and 'unit' in base_reports.columns else st.session_state.selected_unit
+                        color = unit_colors.get(unit_name, [100, 100, 100, 200])
+                        
                         map_data.append({
                             "lat": lat,
                             "lon": lon,
                             "base": base_name,
+                            "unit": unit_name,
                             "reports": int(count),
-                            "size": count * 100
+                            "size": count * 100,
+                            "color": color
                         })
                     
                     if map_data:
                         map_df = pd.DataFrame(map_data)
                         
-                        # יצירת מפה עם pydeck
-                        view_state = pdk.ViewState(
-                            latitude=31.9,
-                            longitude=35.2,
-                            zoom=9,
-                            pitch=0
+                        # המרת צבעים ל-RGB string
+                        map_df['color_str'] = map_df['color'].apply(lambda c: f'rgb({c[0]},{c[1]},{c[2]})')
+                        
+                        # יצירת מפה עם plotly
+                        fig = px.scatter_mapbox(
+                            map_df,
+                            lat="lat",
+                            lon="lon",
+                            hover_name="base",
+                            hover_data={"unit": True, "reports": True, "lat": False, "lon": False, "color_str": False, "size": False},
+                            color="unit",
+                            size="reports",
+                            color_discrete_map={
+                                "חטמ״ר בנימין": "rgb(30,58,138)",
+                                "חטמ״ר שומרון": "rgb(96,165,250)",
+                                "חטמ״ר יהודה": "rgb(34,197,94)",
+                                "חטמ״ר עציון": "rgb(251,146,60)",
+                                "חטמ״ר אפרים": "rgb(239,68,68)",
+                                "חטמ״ר מנשה": "rgb(168,85,247)",
+                                "חטמ״ר הבקעה": "rgb(219,39,119)"
+                            },
+                            zoom=8,
+                            height=500
                         )
                         
-                        layer = pdk.Layer(
-                            "ScatterplotLayer",
-                            data=map_df,
-                            get_position=["lon", "lat"],
-                            get_radius="size",
-                            get_fill_color=[30, 144, 255, 180],
-                            pickable=True,
-                            auto_highlight=True
+                        fig.update_layout(
+                            mapbox_style="open-street-map",
+                            margin={"r": 0, "t": 0, "l": 0, "b": 0}
                         )
                         
-                        tooltip = {
-                            "html": "<b>{base}</b><br/>דוחות: {reports}",
-                            "style": {"backgroundColor": "steelblue", "color": "white"}
-                        }
-                        
-                        st.pydeck_chart(pdk.Deck(
-                            layers=[layer],
-                            initial_view_state=view_state,
-                            tooltip=tooltip,
-                            map_style="mapbox://styles/mapbox/light-v9"
-                        ))
+                        st.plotly_chart(fig, use_container_width=True)
                     else:
                         st.info("אין נתוני מיקום זמינים")
                 else:
