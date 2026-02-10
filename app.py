@@ -509,15 +509,15 @@ def update_unit_password(unit_name, new_password):
         return False, f"שגיאה: {error_msg}"
 
 
-def add_gps_privacy_offset(lat: float, lon: float, offset_meters: int = 100) -> Tuple[float, float]:
+def add_gps_privacy_offset(lat: float, lon: float, offset_meters: int = 300) -> Tuple[float, float]:
     """
     מוסיף רעש אקראי למיקום GPS לצורכי אבטחה
-    מזיז את המיקום ב-~100 מטר כדי שלא לחשוף את המיקום המדויק של המוצב
+    מזיז את המיקום ב-~300 מטר כדי שלא לחשוף את המיקום המדויק של המוצב
     
     Args:
         lat: קו רוחב
         lon: קו אורך  
-        offset_meters: מרחק מקסימלי בmטרים (ברירת מחדל: 100)
+        offset_meters: מרחק מקסימלי במטרים (ברירת מחדל: 300)
     
     Returns:
         tuple: (lat_with_offset, lon_with_offset)
@@ -534,6 +534,158 @@ def add_gps_privacy_offset(lat: float, lon: float, offset_meters: int = 100) -> 
     lon_offset = random_distance * math.sin(random_angle) / math.cos(math.radians(lat))
     
     return (lat + lat_offset, lon + lon_offset)
+
+
+# ===== מעקב חוסרים =====
+
+def detect_and_track_deficits(report_data: dict, report_id: str, unit: str):
+    """זיהוי אוטומטי של חוסרים מדוח חדש ויצירת רשומות מעקב"""
+    try:
+        deficits_to_track = []
+        
+        # בדיקת מזוזות
+        mezuzot_missing = int(report_data.get('r_mezuzot_missing', 0))
+        if mezuzot_missing > 0:
+            deficits_to_track.append({
+                'unit': unit, 'deficit_type': 'mezuzot', 'deficit_count': mezuzot_missing,
+                'status': 'open', 'detected_date': datetime.now().isoformat(), 'report_id': report_id
+            })
+        
+        # בדיקת ספרי תורה
+        torah_missing = int(report_data.get('r_torah_missing', 0))
+        if torah_missing > 0:
+            deficits_to_track.append({
+                'unit': unit, 'deficit_type': 'torah', 'deficit_count': torah_missing,
+                'status': 'open', 'detected_date': datetime.now().isoformat(), 'report_id': report_id
+            })
+        
+        # בדיקת ציציות
+        tzitzit_missing = int(report_data.get('r_tzitzit_missing', 0))
+        if tzitzit_missing > 0:
+            deficits_to_track.append({
+                'unit': unit, 'deficit_type': 'tzitzit', 'deficit_count': tzitzit_missing,
+                'status': 'open', 'detected_date': datetime.now().isoformat(), 'report_id': report_id
+            })
+        
+        # בדיקת תפילין
+        tefillin_missing = int(report_data.get('r_tefillin_missing', 0))
+        if tefillin_missing > 0:
+            deficits_to_track.append({
+                'unit': unit, 'deficit_type': 'tefillin', 'deficit_count': tefillin_missing,
+                'status': 'open', 'detected_date': datetime.now().isoformat(), 'report_id': report_id
+            })
+        
+        # בדיקת עירוב כלים
+        if report_data.get('k_eruv_kelim', 'לא') == 'כן':
+            deficits_to_track.append({
+                'unit': unit, 'deficit_type': 'eruv_kelim', 'deficit_count': 1,
+                'status': 'open', 'detected_date': datetime.now().isoformat(), 'report_id': report_id
+            })
+        
+        # בדיקת תעודת כשרות
+        if report_data.get('k_cert', 'לא') == 'לא':
+            deficits_to_track.append({
+                'unit': unit, 'deficit_type': 'kashrut_cert', 'deficit_count': 1,
+                'status': 'open', 'detected_date': datetime.now().isoformat(), 'report_id': report_id
+            })
+        
+        # הוספת חוסרים לטבלה
+        if deficits_to_track:
+            supabase.table("deficit_tracking").insert(deficits_to_track).execute()
+        
+        # סגירת חוסרים שנפתרו
+        close_resolved_deficits(unit, report_data)
+        
+    except Exception as e:
+        st.warning(f"שגיאה במעקב חוסרים: {e}")
+
+
+def close_resolved_deficits(unit: str, current_report: dict):
+    """סגירת חוסרים שנפתרו על בסיס דוח נוכחי"""
+    try:
+        open_deficits = supabase.table("deficit_tracking").select("*").eq("unit", unit).eq("status", "open").execute()
+        
+        if not open_deficits.data:
+            return
+        
+        for deficit in open_deficits.data:
+            should_close = False
+            
+            if deficit['deficit_type'] == 'mezuzot' and int(current_report.get('r_mezuzot_missing', 0)) == 0:
+                should_close = True
+            elif deficit['deficit_type'] == 'torah' and int(current_report.get('r_torah_missing', 0)) == 0:
+                should_close = True
+            elif deficit['deficit_type'] == 'tzitzit' and int(current_report.get('r_tzitzit_missing', 0)) == 0:
+                should_close = True
+            elif deficit['deficit_type'] == 'tefillin' and int(current_report.get('r_tefillin_missing', 0)) == 0:
+                should_close = True
+            elif deficit['deficit_type'] == 'eruv_kelim' and current_report.get('k_eruv_kelim', 'לא') == 'לא':
+                should_close = True
+            elif deficit['deficit_type'] == 'kashrut_cert' and current_report.get('k_cert', 'לא') == 'כן':
+                should_close = True
+            
+            if should_close:
+                supabase.table("deficit_tracking").update({
+                    'status': 'closed', 'resolved_date': datetime.now().isoformat(),
+                    'updated_at': datetime.now().isoformat()
+                }).eq("id", deficit['id']).execute()
+    
+    except Exception as e:
+        st.warning(f"שגיאה בסגירת חוסרים: {e}")
+
+
+def get_open_deficits(units: list):
+    """קבלת חוסרים פתוחים עבור יחידות"""
+    try:
+        result = supabase.table("deficit_tracking").select("*").in_("unit", units).eq("status", "open").order("detected_date", desc=True).execute()
+        return pd.DataFrame(result.data) if result.data else pd.DataFrame()
+    except Exception as e:
+        st.error(f"שגיאה בטעינת חוסרים: {e}")
+        return pd.DataFrame()
+
+
+def get_deficit_statistics(units: list):
+    """קבלת סטטיסטיקות חוסרים"""
+    try:
+        open_result = supabase.table("deficit_tracking").select("*", count="exact").in_("unit", units).eq("status", "open").execute()
+        closed_result = supabase.table("deficit_tracking").select("*").in_("unit", units).eq("status", "closed").execute()
+        
+        avg_resolution_days = 0
+        if closed_result.data:
+            total_days, count = 0, 0
+            for deficit in closed_result.data:
+                if deficit.get('resolved_date') and deficit.get('detected_date'):
+                    detected = pd.to_datetime(deficit['detected_date'])
+                    resolved = pd.to_datetime(deficit['resolved_date'])
+                    total_days += (resolved - detected).days
+                    count += 1
+            avg_resolution_days = total_days / count if count > 0 else 0
+        
+        return {
+            'total_open': len(open_result.data) if open_result.data else 0,
+            'total_closed': len(closed_result.data) if closed_result.data else 0,
+            'avg_resolution_days': avg_resolution_days
+        }
+    except Exception as e:
+        st.error(f"שגיאה בחישוב סטטיסטיקות: {e}")
+        return {'total_open': 0, 'total_closed': 0, 'avg_resolution_days': 0}
+
+
+def update_deficit_status(deficit_id: str, status: str, notes: str = ""):
+    """עדכון סטטוס חוסר"""
+    try:
+        update_data = {'status': status, 'updated_at': datetime.now().isoformat()}
+        if notes:
+            update_data['notes'] = notes
+        if status == 'closed':
+            update_data['resolved_date'] = datetime.now().isoformat()
+        
+        supabase.table("deficit_tracking").update(update_data).eq("id", deficit_id).execute()
+        return True
+    except Exception as e:
+        st.error(f"שגיאה בעדכון סטטוס: {e}")
+        return False
+
 
 # --- 5. AI Logic ---
 def calculate_operational_readiness(df_unit):
@@ -1210,9 +1362,9 @@ def render_command_dashboard():
     
     # טאבים לפי תפקיד
     if role == 'pikud':
-        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "🗺️ Map", "⚙️ ניהול"])
+        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🗺️ Map", "⚙️ ניהול"])
     else:
-        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "🗺️ Map"])
+        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🗺️ Map"])
     
     # ===== טאב 1: סקירה כללית =====
     with tabs[0]:
@@ -1473,6 +1625,187 @@ def render_command_dashboard():
             
             st.markdown("---")
             
+            # פרטי שאלון מפורטים
+            st.markdown("### 📋 פירוט שאלון ביקורת")
+            
+            # קבלת הדוח האחרון והקודם לו למעקב שינויים
+            latest_report = unit_df.sort_values('date', ascending=False).iloc[0] if len(unit_df) > 0 else None
+            previous_report = unit_df.sort_values('date', ascending=False).iloc[1] if len(unit_df) > 1 else None
+            
+            # טאבים לקטגוריות שונות
+            detail_tabs = st.tabs(["🔴 חוסרים ובעיות", "🍴 עירוב וכשרות", "🏗️ תשתיות ופיקבוק", "📊 סיכום כללי"])
+            
+            with detail_tabs[0]:  # חוסרים
+                st.markdown("#### חוסרים שדווחו")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # מזוזות
+                    mezuzot_missing = int(latest_report.get('r_mezuzot_missing', 0)) if latest_report is not None else 0
+                    prev_mezuzot = int(previous_report.get('r_mezuzot_missing', 0)) if previous_report is not None else mezuzot_missing
+                    
+                    if mezuzot_missing > 0:
+                        if mezuzot_missing < prev_mezuzot:
+                            diff = prev_mezuzot - mezuzot_missing
+                            pct = (diff / prev_mezuzot * 100) if prev_mezuzot > 0 else 0
+                            st.metric("📜 מזוזות חסרות", mezuzot_missing, f"-{diff} ({pct:.0f}%)", delta_color="inverse")
+                            st.success(f"✅ שיפור! הושלמו {diff} מזוזות מהדוח הקודם")
+                        elif mezuzot_missing > prev_mezuzot:
+                            diff = mezuzot_missing - prev_mezuzot
+                            pct = (diff / prev_mezuzot * 100) if prev_mezuzot > 0 else 0
+                            st.metric("📜 מזוזות חסרות", mezuzot_missing, f"+{diff} ({pct:.0f}%)")
+                            st.warning(f"⚠️ החוסר גדל ב-{diff} מזוזות")
+                        else:
+                            st.metric("📜 מזוזות חסרות", mezuzot_missing, "ללא שינוי")
+                    else:
+                        st.metric("📜 מזוזות חסרות", "0 🟢", "תקין")
+                    
+                    # ספרי תורה
+                    torah_missing = int(latest_report.get('r_torah_missing', 0)) if latest_report is not None else 0
+                    if torah_missing > 0:
+                        st.metric("📖 ספרי תורה חסרים", torah_missing, delta_color="inverse")
+                    else:
+                        st.metric("📖 ספרי תורה", "תקין 🟢")
+                
+                with col2:
+                    # ציצית
+                    tzitzit_missing = int(latest_report.get('r_tzitzit_missing', 0)) if latest_report is not None else 0
+                    if tzitzit_missing > 0:
+                        st.metric("🧵 ציציות חסרות", tzitzit_missing, delta_color="inverse")
+                    else:
+                        st.metric("🧵 ציציות", "תקין 🟢")
+                    
+                    # תפילין
+                    tefillin_missing = int(latest_report.get('r_tefillin_missing', 0)) if latest_report is not None else 0
+                    if tefillin_missing > 0:
+                        st.metric("📿 תפילין חסרים", tefillin_missing, delta_color="inverse")
+                    else:
+                        st.metric("📿 תפילין", "תקין 🟢")
+            
+            with detail_tabs[1]:  # עירוב וכשרות
+                st.markdown("#### סטטוס עירוב וכשרות")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # סטטוס עירוב
+                    eruv_status = latest_report.get('e_status', 'לא ידוע') if latest_report is not None else 'לא ידוע'
+                    if eruv_status == 'תקין':
+                        st.success(f"✅ **סטטוס עירוב:** {eruv_status}")
+                    elif eruv_status == 'פסול':
+                        st.error(f"❌ **סטטוס עירוב:** {eruv_status}")
+                    else:
+                        st.warning(f"⚠️ **סטטוס עירוב:** {eruv_status}")
+                    
+                    # עירוב כלים
+                    eruv_kelim = latest_report.get('k_eruv_kelim', 'לא') if latest_report is not None else 'לא'
+                    prev_eruv_kelim = previous_report.get('k_eruv_kelim', 'לא') if previous_report is not None else 'לא'
+                    
+                    if eruv_kelim == 'כן':
+                        st.error("🔴 **עירוב כלים:** קיים - דורש טיפול")
+                    else:
+                        if prev_eruv_kelim == 'כן' and eruv_kelim == 'לא':
+                            st.success("✅ **עירוב כלים:** תוקן מהדוח הקודם!")
+                        else:
+                            st.success("🟢 **עירוב כלים:** לא קיים")
+                
+                with col2:
+                    # תעודת כשרות
+                    k_cert = latest_report.get('k_cert', 'לא') if latest_report is not None else 'לא'
+                    if k_cert == 'כן':
+                        st.success("✅ **תעודת כשרות:** קיימת")
+                    else:
+                        st.warning("⚠️ **תעודת כשרות:** חסרה")
+                    
+                    # סגירת טרקלין
+                    traklin_closed = latest_report.get('k_traklin_closed', 'לא') if latest_report is not None else 'לא'
+                    if traklin_closed == 'כן':
+                        st.success("✅ **סגירת טרקלין:** מבוצעת")
+                    else:
+                        st.warning("⚠️ **סגירת טרקלין:** לא מבוצעת")
+            
+            with detail_tabs[2]:  # תשתיות
+                st.markdown("#### תשתיות ופיקבוק")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # פיקבוק
+                    pikubok = latest_report.get('k_pikubok', 'לא') if latest_report is not None else 'לא'
+                    if pikubok == 'כן':
+                        st.success("✅ **פיקבוק:** קיים")
+                    else:
+                        st.warning("⚠️ **פיקבוק:** לא קיים")
+                    
+                    # נחלים
+                    streams = latest_report.get('k_streams', 'לא') if latest_report is not None else 'לא'
+                    if streams == 'כן':
+                        st.info("💧 **נחלים קרובים:** קיימים")
+                    else:
+                        st.success("🟢 **נחלים קרובים:** לא קיימים")
+                
+                with col2:
+                    # הערות כלליות
+                    notes = latest_report.get('notes', '') if latest_report is not None else ''
+                    if notes and notes.strip():
+                        st.text_area("📝 הערות והמלצות", notes, height=100, disabled=True)
+                    else:
+                        st.info("אין הערות נוספות")
+            
+            with detail_tabs[3]:  # סיכום
+                st.markdown("#### סיכום מצב היחידה")
+                
+                # חישוב אחוזי תקינות
+                total_checks = 10  # סה"כ בדיקות
+                passed_checks = 0
+                
+                if mezuzot_missing == 0: passed_checks += 1
+                if torah_missing == 0: passed_checks += 1
+                if tzitzit_missing == 0: passed_checks += 1
+                if tefillin_missing == 0: passed_checks += 1
+                if eruv_status == 'תקין': passed_checks += 1
+                if eruv_kelim == 'לא': passed_checks += 1
+                if k_cert == 'כן': passed_checks += 1
+                if traklin_closed == 'כן': passed_checks += 1
+                if pikubok == 'כן': passed_checks += 1
+                if streams == 'לא': passed_checks += 1
+                
+                compliance_pct = (passed_checks / total_checks) * 100
+                
+                st.metric("📊 אחוז תקינות כללי", f"{compliance_pct:.0f}%")
+                st.progress(compliance_pct / 100)
+                
+                if compliance_pct >= 90:
+                    st.success("🌟 **מצוין!** היחידה במצב תקין מעולה")
+                elif compliance_pct >= 70:
+                    st.info("👍 **טוב** - יש מקום לשיפור קל")
+                elif compliance_pct >= 50:
+                    st.warning("⚠️ **בינוני** - דורש תשומת לב")
+                else:
+                    st.error("🔴 **דורש טיפול דחוף** - נושאים רבים לטיפול")
+                
+                # רשימת נושאים לטיפול
+                issues = []
+                if mezuzot_missing > 0: issues.append(f"📜 {mezuzot_missing} מזוזות חסרות")
+                if torah_missing > 0: issues.append(f"📖 {torah_missing} ספרי תורה חסרים")
+                if tzitzit_missing > 0: issues.append(f"🧵 {tzitzit_missing} ציציות חסרות")
+                if tefillin_missing > 0: issues.append(f"📿 {tefillin_missing} תפילין חסרים")
+                if eruv_status != 'תקין': issues.append(f"⚠️ עירוב {eruv_status}")
+                if eruv_kelim == 'כן': issues.append("🔴 עירוב כלים קיים")
+                if k_cert != 'כן': issues.append("⚠️ תעודת כשרות חסרה")
+                if traklin_closed != 'כן': issues.append("⚠️ סגירת טרקלין לא מבוצעת")
+                if pikubok != 'כן': issues.append("⚠️ פיקבוק לא קיים")
+                
+                if issues:
+                    st.markdown("**נושאים לטיפול:**")
+                    for issue in issues:
+                        st.markdown(f"- {issue}")
+                else:
+                    st.success("✅ אין נושאים פתוחים לטיפול!")
+            
+            st.markdown("---")
+            
             # תובנות
             st.markdown("### 💡 תובנות ומסקנות")
             insights = analyze_unit_trends(unit_df)
@@ -1606,17 +1939,44 @@ def render_command_dashboard():
                     st.info("💡 **נקודות גדולות** = בעיות (עירוב פסול או כשרות לא תקינה)")
                 
                 elif map_mode == "🔥 מפת חום":
-                    # מפת חום - צפיפות דיווחים
-                    fig = px.density_mapbox(
+                    # מפת חום - מפה מסוג Khatmar עם נקודות GPS
+                    # מיפוי צבעים לפי יחידה (כמו ב-Khatmar)
+                    unit_color_map = {
+                        "חטמ״ר בנימין": "rgb(30,58,138)",
+                        "חטמ״ר שומרון": "rgb(96,165,250)",
+                        "חטמ״ר יהודה": "rgb(34,197,94)",
+                        "חטמ״ר עציון": "rgb(251,146,60)",
+                        "חטמ״ר אפרים": "rgb(239,68,68)",
+                        "חטמ״ר מנשה": "rgb(168,85,247)",
+                        "חטמ״ר הבקעה": "rgb(219,39,119)"
+                    }
+                    
+                    # גודל נקודות לפי בעיות
+                    valid_map['size_val'] = valid_map.apply(
+                        lambda r: 20 if (r.get('e_status') == 'פסול' or r.get('k_cert') == 'לא') else 12,
+                        axis=1
+                    )
+                    
+                    fig = px.scatter_mapbox(
                         valid_map,
                         lat="latitude",
                         lon="longitude",
                         hover_name="base",
-                        hover_data={"unit": True, "inspector": True, "latitude": False, "longitude": False},
-                        radius=20,
+                        hover_data={
+                            "unit": True,
+                            "inspector": True,
+                            "e_status": True,
+                            "k_cert": True,
+                            "date": True,
+                            "latitude": False,
+                            "longitude": False,
+                            "size_val": False
+                        },
+                        color="unit",
+                        size="size_val",
+                        color_discrete_map=unit_color_map,
                         zoom=9,
-                        height=650,
-                        color_continuous_scale="Hot"
+                        height=650
                     )
                     
                     fig.update_layout(
@@ -1629,7 +1989,17 @@ def render_command_dashboard():
                     )
                     
                     st.plotly_chart(fig, use_container_width=True)
-                    st.info("🔥 **צבע אדום עז** = ריכוז גבוה של דיווחים באזור | **צהוב** = מעט דיווחים")
+                    
+                    # מקרא
+                    st.markdown("#### 🔑 מקרא חטמ״רים")
+                    legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;'>"
+                    for unit in sorted(valid_map['unit'].unique()):
+                        color = unit_color_map.get(unit, "rgb(100, 100, 100)")
+                        legend_html += f"<div><span style='color: {color}; font-size: 1.2rem;'>●</span> {unit}</div>"
+                    legend_html += "</div>"
+                    st.markdown(legend_html, unsafe_allow_html=True)
+                    
+                    st.info("💡 **נקודות גדולות** = בעיות (עירוב פסול או כשרות לא תקינה) | **צבעים** = יחידות שונות")
                 
                 else:
                     # Clustering - קיבוץ דיווחים
@@ -1994,13 +2364,20 @@ def render_unit_report():
                 
                 # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
                 if gps_lat and gps_lon:
-                    # הוספת רעש למיקום GPS לצורכי אבטחה (~100 מטר)
-                    lat_with_offset, lon_with_offset = add_gps_privacy_offset(gps_lat, gps_lon, offset_meters=100)
+                    # הוספת רעש למיקום GPS לצורכי אבטחה (~300 מטר)
+                    lat_with_offset, lon_with_offset = add_gps_privacy_offset(gps_lat, gps_lon, offset_meters=300)
                     data["latitude"] = lat_with_offset
                     data["longitude"] = lon_with_offset
                 
                 try:
-                    supabase.table("reports").insert(data).execute()
+                    result = supabase.table("reports").insert(data).execute()
+                    
+                    # מעקב אוטומטי אחר חוסרים
+                    if result.data and len(result.data) > 0:
+                        report_id = result.data[0].get('id')
+                        if report_id:
+                            detect_and_track_deficits(data, report_id, unit)
+                    
                     st.success("✅ הדוח נשלח בהצלחה ונקלט בחמ״ל!")
                     clear_cache()
                     time.sleep(1)
