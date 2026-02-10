@@ -2034,6 +2034,10 @@ def render_command_dashboard():
             # ניקוי נתונים ריקים
             valid_map = df.dropna(subset=['latitude', 'longitude']).copy()
             
+            # ברירת מחדל למרכז המפה (אזור יהודה ושומרון)
+            center_lat = 31.9
+            center_lon = 35.2
+            
             if not valid_map.empty:
                 # מיפוי צבעים לפי יחידה (Folium format)
                 unit_color_map = {
