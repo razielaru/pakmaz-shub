@@ -115,16 +115,23 @@ st.set_page_config(
 # CSS למובייל - אופטימיזציה מלאה
 st.markdown("""
 <style>
-    /* הסתרת sidebar במובייל */
+    /* הסתרת sidebar בכל המכשירים */
+    [data-testid="stSidebar"] {
+        display: none !important;
+    }
+    
+    /* הסתרת כפתור פתיחת sidebar */
+    button[kind="header"] {
+        display: none !important;
+    }
+    
+    /* הסתרת תפריט המבורגר */
+    [data-testid="collapsedControl"] {
+        display: none !important;
+    }
+    
+    /* במובייל */
     @media (max-width: 768px) {
-        [data-testid="stSidebar"] {
-            display: none !important;
-        }
-        
-        /* הסתרת כפתור פתיחת sidebar */
-        button[kind="header"] {
-            display: none !important;
-        }
         
         /* כותרות - צבע כהה וקריא */
         h1, h2, h3, h4, h5, h6 {
@@ -1606,9 +1613,7 @@ def render_command_dashboard():
                     
                     st.info("💡 **גודל בועה** = מספר דיווחים באזור (רדיוס 2 ק\"מ)")
             else:
-                st.info("אין נתוני מיקום זמינים 📍")
-        else:
-            st.info("📍 אין נתוני מיקום זמינים")
+                st.info("📍 אין נתוני מיקום זמינים")
     
     # ===== טאב 6: ניהול (רק פיקוד) =====
     if role == 'pikud':
@@ -2166,4 +2171,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
