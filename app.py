@@ -1977,7 +1977,7 @@ def render_command_dashboard():
                         color="unit",
                         size="size_val",
                         color_discrete_map=unit_color_map,
-                        zoom=15,
+                        zoom=17,
                         height=650
                     )
                     
@@ -1985,7 +1985,7 @@ def render_command_dashboard():
                         mapbox_style="open-street-map",
                         margin={"r": 0, "t": 0, "l": 0, "b": 0},
                         mapbox=dict(
-                            zoom=15,
+                            zoom=17,
                             center=dict(lat=valid_map['latitude'].mean(), lon=valid_map['longitude'].mean())
                         )
                     )
@@ -2040,7 +2040,7 @@ def render_command_dashboard():
                         color="unit",
                         size="size_val",
                         color_discrete_map=unit_color_map,
-                        zoom=15,
+                        zoom=17,
                         height=650
                     )
                     
@@ -2048,7 +2048,7 @@ def render_command_dashboard():
                         mapbox_style="open-street-map",
                         margin={"r": 0, "t": 0, "l": 0, "b": 0},
                         mapbox=dict(
-                            zoom=15,
+                            zoom=17,
                             center=dict(lat=valid_map['latitude'].mean(), lon=valid_map['longitude'].mean())
                         )
                     )
@@ -2096,7 +2096,7 @@ def render_command_dashboard():
                             hover_data={"unit": True, "count": True, "center_lat": False, "center_lon": False},
                             color="count",
                             color_continuous_scale="Viridis",
-                            zoom=15,
+                            zoom=17,
                             height=650,
                             size_max=50
                         )
@@ -2105,7 +2105,7 @@ def render_command_dashboard():
                             mapbox_style="open-street-map",
                             margin={"r": 0, "t": 0, "l": 0, "b": 0},
                             mapbox=dict(
-                                zoom=15,
+                                zoom=17,
                                 center=dict(lat=cluster_df['center_lat'].mean(), lon=cluster_df['center_lon'].mean())
                             )
                         )
