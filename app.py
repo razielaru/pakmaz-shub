@@ -569,17 +569,48 @@ def load_reports_cached(accessible_units=None):
 def clear_cache(): load_reports_cached.clear()
 
 def upload_report_photo(photo_bytes, unit_name, base_name):
+    """העלאת תמונה ל-Supabase Storage"""
     try:
+        # המרת התמונה ל-JPEG
         img = Image.open(io.BytesIO(photo_bytes)).convert('RGB')
         output = io.BytesIO()
         img.save(output, format='JPEG', quality=80)
+        
+        # יצירת שם קובץ ייחודי
         timestamp = int(time.time())
         english_name = UNIT_ID_MAP.get(unit_name, "default")
         file_path = f"reports/{english_name}_{base_name}_{timestamp}.jpg"
-        supabase.storage.from_("report-photos").upload(file_path, output.getvalue(), {"content-type": "image/jpeg"})
+        
+        # העלאה ל-Supabase Storage
+        try:
+            supabase.storage.from_("report-photos").upload(
+                file_path, 
+                output.getvalue(), 
+                {"content-type": "image/jpeg"}
+            )
+        except Exception as upload_error:
+            # אם הקובץ כבר קיים, נסה להעלות עם שם אחר
+            if "already exists" in str(upload_error).lower() or "duplicate" in str(upload_error).lower():
+                timestamp = int(time.time() * 1000)  # milliseconds for uniqueness
+                file_path = f"reports/{english_name}_{base_name}_{timestamp}.jpg"
+                supabase.storage.from_("report-photos").upload(
+                    file_path, 
+                    output.getvalue(), 
+                    {"content-type": "image/jpeg"}
+                )
+            else:
+                raise upload_error
+        
+        # יצירת URL ציבורי
         project_url = st.secrets['supabase']['url'].rstrip("/")
-        return f"{project_url}/storage/v1/object/public/report-photos/{file_path}"
-    except: return None
+        public_url = f"{project_url}/storage/v1/object/public/report-photos/{file_path}"
+        
+        return public_url
+        
+    except Exception as e:
+        st.error(f"❌ שגיאה בהעלאת תמונה: {str(e)}")
+        st.warning("💡 ודא ש-bucket בשם 'report-photos' קיים ב-Supabase Storage והוא public")
+        return None
 
 def upload_logo_to_supabase(unit_name, image_bytes):
     """העלאת לוגו חדש לסופהבייס"""
@@ -1070,6 +1101,7 @@ def generate_inspector_stats(df):
 def create_inspector_excel(df):
     """יצירת קובץ Excel עם סטטיסטיקות מבקרים (מוגבל ל-10 שורות)"""
     import io
+    import openpyxl
     from datetime import datetime
     
     stats = generate_inspector_stats(df)
@@ -1569,9 +1601,16 @@ def render_command_dashboard():
                     labels=eruv_counts.index, 
                     values=eruv_counts.values, 
                     hole=0.4,
-                    marker=dict(colors=[colors_map.get(x, '#64748b') for x in eruv_counts.index])
+                    marker=dict(colors=[colors_map.get(x, '#64748b') for x in eruv_counts.index]),
+                    textfont=dict(color='#1e293b', size=14),
+                    textposition='inside'
                 )])
-                fig.update_layout(height=350)
+                fig.update_layout(
+                    height=350,
+                    paper_bgcolor='white',
+                    plot_bgcolor='white',
+                    font=dict(color='#1e293b')
+                )
                 st.plotly_chart(fig, use_container_width=True)
             else:
                 st.info("אין נתוני עירוב זמינים")
@@ -2488,6 +2527,24 @@ def render_unit_report():
         c1, c2 = st.columns(2)
         k_cert = c1.radio("תעודת כשרות מתוקפת?", ["כן", "לא"], horizontal=True, key="k7")
         k_bishul = c2.radio("האם יש בישול ישראל?", ["כן", "לא"], horizontal=True, key="k8")
+        
+        # שאלות חדשות עם תמונות
+        st.markdown("#### 📸 תקלות ונאמן כשרות")
+        c1, c2 = st.columns(2)
+        k_issues = c1.radio("יש תקלות כשרות?", ["כן", "לא"], horizontal=True, key="k_issues")
+        k_shabbat_supervisor = c2.radio("יש נאמן כשרות בשבת?", ["כן", "לא"], horizontal=True, key="k_shabbat_sup")
+        
+        # תמונות לתקלות ונאמן
+        c1, c2 = st.columns(2)
+        k_issues_photo = c1.file_uploader("📷 תמונת תקלה (אם יש)", type=['jpg', 'png', 'jpeg'], key="k_issues_photo")
+        
+        # הודעה דינמית לפי יום בשבוע
+        current_day = datetime.datetime.now().weekday()
+        if current_day in [3, 4]:  # חמישי ושישי
+            k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן כשרות ⚠️ (חובה בחמישי-שישי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo", help="בימי חמישי ושישי חובה להעלות תמונה של נאמן הכשרות")
+        else:
+            k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן כשרות (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo")
+        
         c1, c2 = st.columns(2)
         k_separation = c1.radio("האם יש הפרדה?", ["כן", "לא"], horizontal=True, key="k1")
         k_briefing = c2.radio("האם בוצע תדריך טבחים?", ["כן", "לא"], horizontal=True, key="k2")
@@ -2543,22 +2600,33 @@ def render_unit_report():
         
         # שליחת הדוח
         if st.form_submit_button("🚀 שגר דיווח", type="primary", use_container_width=True):
-            # מיקום - יוגדר ידנית אם צריך בעתיד
-            gps_lat, gps_lon = None, None
+            # בדיקת יום בשבוע - חמישי (3) ושישי (4) ב-Python weekday
+            current_weekday = datetime.datetime.now().weekday()
+            is_thursday_or_friday = current_weekday in [3, 4]
             
-            if base and inspector and photo:
+            # בדיקת חובת תמונת נאמן כשרות בחמישי-שישי
+            if is_thursday_or_friday and k_shabbat_supervisor == "כן" and not k_shabbat_photo:
+                st.error("⚠️ **חובה להעלות תמונת נאמן כשרות בימי חמישי ושישי!**")
+                st.warning("💡 נא להעלות תמונה של נאמן הכשרות בשדה המתאים למעלה")
+            elif base and inspector and photo:
                 photo_url = upload_report_photo(photo.getvalue(), unit, base)
+                
+                # העלאת תמונות נוספות (תקלות כשרות ונאמן כשרות)
+                k_issues_photo_url = None
+                k_shabbat_photo_url = None
+                
+                if k_issues_photo:
+                    k_issues_photo_url = upload_report_photo(k_issues_photo.getvalue(), unit, f"{base}_kashrut_issue")
+                
+                if k_shabbat_photo:
+                    k_shabbat_photo_url = upload_report_photo(k_shabbat_photo.getvalue(), unit, f"{base}_shabbat_supervisor")
+                
                 data = {
                     "unit": st.session_state.selected_unit, "date": datetime.datetime.now().isoformat(),
                     "base": base, "inspector": inspector, "photo_url": photo_url,
-                    "k_cert": k_cert, "k_dates": k_dates, # "k_mashgiach": k_mashgiach, "k_storage": k_storage,
-                    # "k_meat_milk": k_meat_milk, "k_shabbat": k_shabbat, "k_kitchen": k_kitchen,
-                    "e_status": e_status, # "e_type": e_type, "e_wire_height": e_wire_height, "e_poles": e_poles,
-                    # "e_gates": e_gates, "e_signage": e_signage, "e_last_check": e_last_check,
-                    # "p_exists": p_exists, "p_type": p_type, "p_updated": p_updated, "p_accessible": p_accessible,
-                    "s_clean": s_clean, # "s_equipment": s_equipment, "s_organized": s_organized,
-                    # "s_fridge": s_fridge, "s_signage": s_signage, "s_kosher_products": s_kosher_products,
-                    # "t_location": t_location,
+                    "k_cert": k_cert, "k_dates": k_dates,
+                    "e_status": e_status,
+                    "s_clean": s_clean,
                     "t_private": t_private, "t_kitchen_tools": t_kitchen_tools, "t_procedure": t_procedure,
                     "t_friday": t_friday, "t_app": t_app, "w_location": w_location, "w_private": w_private,
                     "w_kitchen_tools": w_kitchen_tools, "w_procedure": w_procedure, "w_guidelines": w_guidelines,
@@ -2574,7 +2642,12 @@ def render_unit_report():
                     "e_check": e_check, "e_doc": e_doc, "e_photo": e_photo,
                     "k_separation": k_separation, "k_briefing": k_briefing, "k_products": k_products,
                     "k_leafs": k_leafs, "k_holes": k_holes, "k_bishul": k_bishul,
-                    "k_eggs": k_eggs, "k_machshir": k_machshir, "k_heater": k_heater, "k_app": k_app
+                    "k_eggs": k_eggs, "k_machshir": k_machshir, "k_heater": k_heater, "k_app": k_app,
+                    # שדות חדשים
+                    "k_issues": k_issues,
+                    "k_shabbat_supervisor": k_shabbat_supervisor,
+                    "k_issues_photo_url": k_issues_photo_url,
+                    "k_shabbat_photo_url": k_shabbat_photo_url
                 }
                 
                 # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
