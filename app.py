@@ -14,8 +14,94 @@ import shutil
 import os
 import pydeck as pdk
 from streamlit_geolocation import streamlit_geolocation
-from utils.geo_utils import find_nearest_base
-from utils.clustering import calculate_clusters, get_cluster_stats
+import math
+from typing import Tuple, Optional, List, Dict
+
+# ===== פונקציות עזר למיקום וחישוב מרחקים =====
+
+# קואורדינטות בסיסים ידועים
+BASE_COORDINATES = {
+    "מחנה עופר": (32.1089, 35.1911),
+    "בית אל": (31.9333, 35.2167),
+    "פסגות": (31.9667, 35.2000),
+    "מחנה שומרון": (32.2167, 35.2833),
+    "אריאל": (32.1039, 35.1794),
+    "קדומים": (32.1667, 35.2000),
+    "גוש עציון": (31.6500, 35.1333),
+    "אפרת": (31.6500, 35.1333),
+    "בית לחם": (31.7050, 35.2061),
+    "מחנה עציון": (31.6500, 35.1333),
+    "אלון שבות": (31.6500, 35.1500),
+    "מוצב אפרים": (32.0500, 35.3000),
+    "מוצב מנשה": (32.3000, 35.1800),
+    "מוצב הבקעה": (31.8500, 35.4500),
+}
+
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """חישוב מרחק בין שתי נקודות על פני כדור הארץ (ק\"מ)"""
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a))
+    return c * 6371
+
+def find_nearest_base(lat: float, lon: float) -> Tuple[str, float]:
+    """מציאת הבסיס הקרוב ביותר"""
+    min_distance = float('inf')
+    nearest_base = "לא ידוע"
+    for base_name, (base_lat, base_lon) in BASE_COORDINATES.items():
+        distance = haversine_distance(lat, lon, base_lat, base_lon)
+        if distance < min_distance:
+            min_distance = distance
+            nearest_base = base_name
+    return nearest_base, min_distance
+
+def calculate_clusters(df: pd.DataFrame, radius_km: float = 2.0) -> pd.DataFrame:
+    """קיבוץ דיווחים קרובים"""
+    if df.empty or 'latitude' not in df.columns or 'longitude' not in df.columns:
+        return df
+    df = df.copy()
+    df['cluster_id'] = -1
+    cluster_id = 0
+    for idx, row in df.iterrows():
+        if df.loc[idx, 'cluster_id'] != -1:
+            continue
+        df.loc[idx, 'cluster_id'] = cluster_id
+        for idx2, row2 in df.iterrows():
+            if idx == idx2 or df.loc[idx2, 'cluster_id'] != -1:
+                continue
+            distance = haversine_distance(
+                row['latitude'], row['longitude'],
+                row2['latitude'], row2['longitude']
+            )
+            if distance <= radius_km:
+                df.loc[idx2, 'cluster_id'] = cluster_id
+        cluster_id += 1
+    return df
+
+def get_cluster_stats(df: pd.DataFrame) -> List[Dict]:
+    """חישוב סטטיסטיקות לכל cluster"""
+    if 'cluster_id' not in df.columns:
+        return []
+    stats = []
+    for cluster_id in df['cluster_id'].unique():
+        if cluster_id == -1:
+            continue
+        cluster_df = df[df['cluster_id'] == cluster_id]
+        center_lat = cluster_df['latitude'].mean()
+        center_lon = cluster_df['longitude'].mean()
+        most_common_base = cluster_df['base'].mode()[0] if 'base' in cluster_df.columns and not cluster_df['base'].mode().empty else "לא ידוע"
+        most_common_unit = cluster_df['unit'].mode()[0] if 'unit' in cluster_df.columns and not cluster_df['unit'].mode().empty else "לא ידוע"
+        stats.append({
+            'cluster_id': int(cluster_id),
+            'count': len(cluster_df),
+            'center_lat': center_lat,
+            'center_lon': center_lon,
+            'base': most_common_base,
+            'unit': most_common_unit
+        })
+    return stats
 
 
 # --- 1. הגדרת עמוד ---
