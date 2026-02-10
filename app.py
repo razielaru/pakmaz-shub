@@ -1195,13 +1195,37 @@ def create_full_report_excel(df):
         # --- גיליון 2: פירוט דוחות מלא ---
         # מיפוי שמות עמודות לאנגלית -> עברית
         column_mapping = {
+            # כללי
             'date': 'תאריך', 'time': 'שעה', 'base': 'מוצב/בסיס', 'inspector': 'מבקר',
-            'unit': 'יחידה', 'k_cert': 'תעודת כשרות', 'k_cook_type': 'סוג מטבח',
+            'unit': 'יחידה', 
+            
+            # כשרות
+            'k_cert': 'תעודת כשרות', 'k_cook_type': 'סוג מטבח',
             'k_issues': 'תקלות כשרות', 'k_shabbat_supervisor': 'נאמן כשרות בשבת',
-            's_clean': 'ניקיון בית כנסת', 'e_status': 'סטטוס עירוב',
+            'k_pikubok': 'פיקבוק', 'k_separation': 'הפרדה (בשר/חלב)', 
+            'k_briefing': 'תדריך כשרות', 'k_products': 'מוצרים כשרים', 
+            'k_leafs': 'ירקות עלים', 'k_bishul': 'בישול ישראל',
+            'k_eggs': 'בדיקת ביצים', 'k_machshir': 'מכשיר', 
+            'k_heater': 'פלטה/חימום', 
+            
+            # עירוב
+            'e_status': 'סטטוס עירוב', 'e_check': 'בדיקת עירוב', 
+            'e_doc': 'תיעוד עירוב',
+            
+            # בית כנסת וציוד דת
+            's_clean': 'ניקיון בית כנסת', 's_books': 'ספרי קודש', 
+            's_geniza': 'גניזה', 's_havdala': 'ערכת הבדלה',
+            'r_mezuzot_missing': 'מזוזות חסרות', 'r_netilot': 'נטלות',
+            'r_shabbat_device': 'התקן מים לשבת',
+            'missing_items': 'חוסרים (פירוט)',
+            
+            # חיילים ודת
+            'soldier_food': 'אוכל לחיילים דתיים', 'soldier_lessons': 'שיעורי תורה',
+            'soldier_talk_cmd': 'שיח מפקדים', 'soldier_prayers': 'תפילות',
+            
+            # תמונות והערות
             'photo_url': 'תמונה ראשית', 'k_issues_photo_url': 'תמונה - תקלה',
-            'k_shabbat_photo_url': 'תמונה - נאמן', 'free_text': 'הערות נוספות',
-            'missing_items': 'חוסרים'
+            'k_shabbat_photo_url': 'תמונה - נאמן', 'free_text': 'הערות נוספות'
         }
         
         # בחירת עמודות שקיימות ב-DF
@@ -2885,7 +2909,34 @@ def render_unit_report():
                     top_count = stats['top_inspectors'].iloc[0]
                     st.metric("🏆 מבקר מוביל", f"{top_inspector} ({top_count})")
             
-            # כפתורי הורדה (בולטים למעלה)
+            # הוספת בלוק ציון ומדד (חדש!)
+            st.markdown("---")
+            st.markdown("### 🎖️ מדד כשירות יחידה וסיכום פעילות")
+            
+            unit_score = calculate_unit_score(unit_df)
+            unit_badge, badge_color = get_unit_badge(unit_score)
+            
+            col_s1, col_s2, col_s3 = st.columns([1, 1, 2])
+            with col_s1:
+                st.metric("ציון משוקלל", f"{unit_score:.1f}/100")
+            with col_s2:
+                st.markdown(f"<div style='background:{badge_color}; color:white; padding:10px; border-radius:8px; text-align:center; font-weight:bold; margin-top: 5px;'>{unit_badge}</div>", unsafe_allow_html=True)
+            with col_s3:
+                # כפתור הורדה ראשי כאן
+                full_report_data_main = create_full_report_excel(unit_df)
+                if full_report_data_main:
+                    st.download_button(
+                        label="📥 הורד סיכום יחידה מלא (Excel)",
+                        data=full_report_data_main,
+                        file_name=f"full_unit_summary_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="dl_main_summary_unit"
+                    )
+            
+            st.markdown("---")
+
+            # כפתורי הורדה נוספים (ניתן להשאיר או להסיר, נשאיר כגיבוי)
             col_dl1, col_dl2 = st.columns(2)
             
             with col_dl1:
