@@ -483,10 +483,16 @@ def update_unit_password(unit_name, new_password):
     try:
         hashed = hash_password(new_password)
         role = get_user_role(unit_name)
-        supabase.table("unit_passwords").upsert({"unit_name": unit_name, "password": hashed, "role": role}).execute()
-        return True
-    except:
-        return False
+        result = supabase.table("unit_passwords").upsert({
+            "unit_name": unit_name, 
+            "password": hashed, 
+            "role": role
+        }, on_conflict="unit_name").execute()
+        return True, "הסיסמה עודכנה בהצלחה"
+    except Exception as e:
+        error_msg = str(e)
+        return False, f"שגיאה: {error_msg}"
+
 
 # --- 5. AI Logic ---
 def calculate_operational_readiness(df_unit):
@@ -1470,16 +1476,18 @@ def render_command_dashboard():
     
     # ===== טאב 5: מפה מבצעית =====
     with tabs[4]:
-        st.markdown("### �️ תמונת מצב גזרתית - רבנות פקמ״ז")
+        st.markdown("### 🛰️ תמונת מצב גזרתית - רבנות פקמ״ז")
         
         # בורר מצבי תצוגה
         map_mode = st.radio("בחר תצוגה:", ["🎯 נקודות חטמ״ר", "🔥 מפת חום", "📊 Clustering"], horizontal=True)
         
+        # בדיקה אם יש עמודות מיקום
         if 'latitude' in df.columns and 'longitude' in df.columns:
-            valid = df.dropna(subset=['latitude', 'longitude']).copy()
+            # ניקוי נתונים ריקים
+            valid_map = df.dropna(subset=['latitude', 'longitude']).copy()
             
-            if not valid.empty:
-                # מיפוי צבעים
+            if not valid_map.empty:
+                # מיפוי צבעים לפי יחידה
                 unit_color_map = {
                     "חטמ״ר בנימין": "rgb(30,58,138)",
                     "חטמ״ר שומרון": "rgb(96,165,250)",
@@ -1492,22 +1500,22 @@ def render_command_dashboard():
                 
                 if map_mode == "🎯 נקודות חטמ״ר":
                     # מפת נקודות צבעונית
-                    # גודל נקודה לפי בעיות (פסול/לא כשר = גדול יותר)
-                    valid['size_val'] = valid.apply(
-                        lambda r: 15 if (r.get('e_status') == 'פסול' or r.get('k_cert') == 'לא') else 8, 
+                    valid_map['size_val'] = valid_map.apply(
+                        lambda r: 15 if (r.get('e_status') == 'פסול' or r.get('k_cert') == 'לא') else 8,
                         axis=1
                     )
                     
                     fig = px.scatter_mapbox(
-                        valid,
+                        valid_map,
                         lat="latitude",
                         lon="longitude",
                         hover_name="base",
                         hover_data={
-                            "unit": True, 
-                            "e_status": True, 
+                            "unit": True,
+                            "inspector": True,
+                            "e_status": True,
                             "k_cert": True,
-                            "latitude": False, 
+                            "latitude": False,
                             "longitude": False,
                             "size_val": False
                         },
@@ -1528,20 +1536,18 @@ def render_command_dashboard():
                     # מקרא
                     st.markdown("#### 🔑 מקרא חטמ״רים")
                     legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;'>"
-                    units_in_map = valid['unit'].unique()
-                    for unit in sorted(units_in_map):
+                    for unit in sorted(valid_map['unit'].unique()):
                         color = unit_color_map.get(unit, "rgb(100, 100, 100)")
                         legend_html += f"<div><span style='color: {color}; font-size: 1.2rem;'>●</span> {unit}</div>"
                     legend_html += "</div>"
                     st.markdown(legend_html, unsafe_allow_html=True)
                     
-                    # הסבר גדלים
                     st.info("💡 **נקודות גדולות** = בעיות (עירוב פסול או כשרות לא תקינה)")
                 
                 elif map_mode == "🔥 מפת חום":
-                    # מפת חום - צפיפות דיווחים
+                    # מפת חום
                     fig = px.density_mapbox(
-                        valid,
+                        valid_map,
                         lat="latitude",
                         lon="longitude",
                         hover_name="base",
@@ -1561,14 +1567,12 @@ def render_command_dashboard():
                     st.info("🔥 **אזורים חמים** = ריכוז גבוה של דיווחים")
                 
                 else:
-                    # מצב Clustering
+                    # Clustering
                     st.markdown("#### 📊 ניתוח Clustering - קיבוץ דיווחים")
                     
-                    # חישוב clusters
-                    clustered = calculate_clusters(valid, radius_km=2.0)
+                    clustered = calculate_clusters(valid_map, radius_km=2.0)
                     cluster_stats = get_cluster_stats(clustered)
                     
-                    # הצגת סטטיסטיקות
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         st.metric("📍 אזורי פעילות", len(cluster_stats))
@@ -1580,7 +1584,6 @@ def render_command_dashboard():
                         if max_cluster:
                             st.metric("🔥 אזור עם הכי הרבה דיווחים", max_cluster['count'])
                     
-                    # מפה עם clusters
                     if cluster_stats:
                         cluster_df = pd.DataFrame(cluster_stats)
                         
@@ -1605,7 +1608,6 @@ def render_command_dashboard():
                         
                         st.plotly_chart(fig, use_container_width=True)
                         
-                        # טבלת clusters
                         st.markdown("**פירוט אזורי פעילות:**")
                         cluster_table = cluster_df[['base', 'unit', 'count']].sort_values('count', ascending=False)
                         cluster_table.columns = ['מוצב', 'חטמ"ר', 'דיווחים']
@@ -1613,7 +1615,9 @@ def render_command_dashboard():
                     
                     st.info("💡 **גודל בועה** = מספר דיווחים באזור (רדיוס 2 ק\"מ)")
             else:
-                st.info("📍 אין נתוני מיקום זמינים")
+                st.warning(f"📍 יש {len(df)} דוחות בסה\"כ, אך אף אחד לא כולל מיקום GPS. יש להוסיף עמודות latitude ו-longitude לדוחות.")
+        else:
+            st.error("❌ עמודות המיקום (latitude/longitude) לא קיימות בבסיס הנתונים. יש להוסיף אותן ב-Supabase.")
     
     # ===== טאב 6: ניהול (רק פיקוד) =====
     if role == 'pikud':
@@ -1681,10 +1685,14 @@ def render_command_dashboard():
                 
                 if st.button("🔄 עדכן סיסמה", use_container_width=True):
                     if new_pwd and len(new_pwd) >= 4:
-                        if update_unit_password(selected_unit_pwd, new_pwd):
-                            st.success(f"✅ הסיסמה עודכנה בהצלחה עבור {selected_unit_pwd}")
+                        success, message = update_unit_password(selected_unit_pwd, new_pwd)
+                        if success:
+                            st.success(f"✅ {message} עבור {selected_unit_pwd}")
+                            time.sleep(1)
+                            st.rerun()
                         else:
-                            st.error("❌ שגיאה בעדכון הסיסמה")
+                            st.error(f"❌ {message}")
+                            st.info("💡 **אפשרויות פתרון:**\n- ודא שהטבלה `unit_passwords` קיימת ב-Supabase\n- בדוק שיש לך הרשאות כתיבה\n- נסה שוב או צור קשר עם התמיכה")
                     else:
                         st.warning("⚠️ הסיסמה חייבת להכיל לפחות 4 תווים")
             
