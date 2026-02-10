@@ -9,3 +9,4 @@ pydeck
 streamlit-geolocation
 openpyxl
 folium
+streamlit-folium
