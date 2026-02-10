@@ -17,6 +17,8 @@ import random
 from streamlit_geolocation import streamlit_geolocation
 import math
 from typing import Tuple, Optional, List, Dict
+import folium
+from streamlit_folium import st_folium
 
 # ===== פונקציות עזר למיקום וחישוב מרחקים =====
 
@@ -115,6 +117,103 @@ def get_cluster_stats(df: pd.DataFrame) -> List[Dict]:
         })
     return stats
 
+# ===== פונקציות Folium למפות ברמת רחוב =====
+
+def secure_location_offset(lat: float, lon: float, unique_id: str, offset_meters: int = 300) -> Tuple[float, float]:
+    """
+    מזיז מיקום בצורה קבועה לפי מזהה ייחודי (ביטחון מידע)
+    - אותו unique_id = תמיד אותה הזזה
+    - לא ניתן לנחש את המיקום המקורי
+    - ההזזה היא 300 מטר בכיוון אקראי (אבל קבוע)
+    """
+    # יצירת seed קבוע מהמזהה
+    seed = int(hashlib.sha256(unique_id.encode()).hexdigest(), 16) % (10**8)
+    random.seed(seed)
+    
+    # המרה למעלות (111km = 1 מעלה)
+    offset_deg = offset_meters / 111000
+    
+    # זווית ומרחק אקראיים (אבל קבועים לאותו ID)
+    angle = random.uniform(0, 2 * math.pi)
+    dist = random.uniform(offset_deg * 0.7, offset_deg)
+    
+    # חישוב offset
+    lat_offset = dist * math.cos(angle)
+    lon_offset = dist * math.sin(angle) / math.cos(math.radians(lat))
+    
+    return lat + lat_offset, lon + lon_offset
+
+def create_street_level_map(center=(31.9, 35.2), zoom_start=12):
+    """יוצר מפה ברמת רחוב עם שכבות מרובות"""
+    m = folium.Map(
+        location=center,
+        zoom_start=zoom_start,
+        max_zoom=20,
+        control_scale=True,
+        tiles=None,
+        prefer_canvas=True
+    )
+    
+    # שכבת רחובות עברית (CartoDB Positron - מציג עברית מצוין)
+    folium.TileLayer(
+        tiles="CartoDB positron",
+        name="מפת רחובות",
+        max_zoom=20,
+        attr="© CartoDB © OpenStreetMap"
+    ).add_to(m)
+    
+    # שכבת לווין Google
+    folium.TileLayer(
+        tiles="https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+        name="תצלום לווין",
+        attr="© Google",
+        max_zoom=20
+    ).add_to(m)
+    
+    # בקרת שכבות
+    folium.LayerControl(position='topleft').add_to(m)
+    
+    return m
+
+def add_unit_marker_to_folium(m, row, unit_colors):
+    """מוסיף סימון ליחידה עם offset ביטחוני"""
+    # הזזה ביטחונית קבועה (300 מטר)
+    lat, lon = secure_location_offset(
+        row.get("latitude", 31.9),
+        row.get("longitude", 35.2),
+        unique_id=f"{row.get('unit', 'unknown')}_{row.get('base', 'unknown')}_{row.get('date', '')}"
+    )
+    
+    # צבע לפי יחידה
+    color = unit_colors.get(row.get('unit', ''), '#808080')
+    
+    # גודל לפי בעיות
+    has_issues = (row.get('e_status') == 'פסול' or row.get('k_cert') == 'לא')
+    radius = 10 if has_issues else 7
+    
+    # popup בעברית RTL
+    popup_html = f"""
+    <div dir="rtl" style="text-align:right; font-family:Arial; font-size:14px; min-width:200px;">
+        <b style="color:#1e3a8a; font-size:16px;">📍 {row.get('base', 'לא ידוע')}</b><br><br>
+        <b>יחידה:</b> {row.get('unit', 'לא ידוע')}<br>
+        <b>מבקר:</b> {row.get('inspector', 'לא ידוע')}<br>
+        <b>עירוב:</b> <span style="color:{'#ef4444' if row.get('e_status')=='פסול' else '#10b981'};">{row.get('e_status', 'לא ידוע')}</span><br>
+        <b>כשרות:</b> <span style="color:{'#ef4444' if row.get('k_cert')=='לא' else '#10b981'};">{row.get('k_cert', 'לא ידוע')}</span><br>
+        <b>תאריך:</b> {row.get('date', 'לא ידוע')}
+    </div>
+    """
+    
+    folium.CircleMarker(
+        location=[lat, lon],
+        radius=radius,
+        color=color,
+        fill=True,
+        fillColor=color,
+        fillOpacity=0.7,
+        weight=2,
+        popup=folium.Popup(popup_html, max_width=300),
+        tooltip=f"📍 {row.get('base', 'מוצב')}"
+    ).add_to(m)
 
 # --- 1. הגדרת עמוד ---
 st.set_page_config(
@@ -1926,12 +2025,7 @@ def render_command_dashboard():
     # ===== טאב 6: מפה מבצעית =====
     with tabs[5]:
         st.markdown("### 🛰️ תמונת מצב גזרתית - רבנות פקמ״ז")
-        
-        # בורר מצבי תצוגה
-        map_mode = st.radio("בחר תצוגה:", ["🎯 נקודות חטמ״ר", "🔥 מפת חום", "📊 Clustering"], horizontal=True)
-        
-        # נקודת מרכז קבועה - אזור יהודה ושומרון
-        center_lat, center_lon = 32.0, 35.25
+        st.info("🔐 **ביטחון מידע:** המיקומים מוזזים 300 מטר מהמיקום המדויק לצורכי אבטחת מידע")
         
         # בדיקה אם יש עמודות מיקום
         has_location_columns = 'latitude' in df.columns and 'longitude' in df.columns
@@ -1941,183 +2035,43 @@ def render_command_dashboard():
             valid_map = df.dropna(subset=['latitude', 'longitude']).copy()
             
             if not valid_map.empty:
-                # יש נתונים - הצג מפה עם נקודות
-                # מיפוי צבעים לפי יחידה
+                # מיפוי צבעים לפי יחידה (Folium format)
                 unit_color_map = {
-                    "חטמ״ר בנימין": "rgb(30,58,138)",
-                    "חטמ״ר שומרון": "rgb(96,165,250)",
-                    "חטמ״ר יהודה": "rgb(34,197,94)",
-                    "חטמ״ר עציון": "rgb(251,146,60)",
-                    "חטמ״ר אפרים": "rgb(239,68,68)",
-                    "חטמ״ר מנשה": "rgb(168,85,247)",
-                    "חטמ״ר הבקעה": "rgb(219,39,119)"
+                    "חטמ״ר בנימין": "#1e3a8a",
+                    "חטמ״ר שומרון": "#60a5fa",
+                    "חטמ״ר יהודה": "#22c55e",
+                    "חטמ״ר עציון": "#fb923c",
+                    "חטמ״ר אפרים": "#ef4444",
+                    "חטמ״ר מנשה": "#a855f7",
+                    "חטמ״ר הבקעה": "#db2777"
                 }
                 
-                if map_mode == "🎯 נקודות חטמ״ר":
-                    # מפת נקודות צבעונית
-                    valid_map['size_val'] = valid_map.apply(
-                        lambda r: 25 if (r.get('e_status') == 'פסול' or r.get('k_cert') == 'לא') else 15,
-                        axis=1
-                    )
-                    
-                    fig = px.scatter_mapbox(
-                        valid_map,
-                        lat="latitude",
-                        lon="longitude",
-                        hover_name="base",
-                        hover_data={
-                            "unit": True,
-                            "inspector": True,
-                            "e_status": True,
-                            "k_cert": True,
-                            "latitude": False,
-                            "longitude": False,
-                            "size_val": False
-                        },
-                        color="unit",
-                        size="size_val",
-                        color_discrete_map=unit_color_map,
-                        zoom=17,
-                        height=650
-                    )
-                    
-                    fig.update_layout(
-                        mapbox_style="open-street-map",
-                        margin={"r": 0, "t": 0, "l": 0, "b": 0},
-                        mapbox=dict(
-                            zoom=17,
-                            center=dict(lat=valid_map['latitude'].mean(), lon=valid_map['longitude'].mean())
-                        )
-                    )
-                    
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # מקרא
-                    st.markdown("#### 🔑 מקרא חטמ״רים")
-                    legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;'>"
-                    for unit in sorted(valid_map['unit'].unique()):
-                        color = unit_color_map.get(unit, "rgb(100, 100, 100)")
-                        legend_html += f"<div><span style='color: {color}; font-size: 1.2rem;'>●</span> {unit}</div>"
-                    legend_html += "</div>"
-                    st.markdown(legend_html, unsafe_allow_html=True)
-                    
-                    st.info("💡 **נקודות גדולות** = בעיות (עירוב פסול או כשרות לא תקינה)")
+                # חישוב מרכז המפה
+                center_lat = valid_map['latitude'].mean()
+                center_lon = valid_map['longitude'].mean()
                 
-                elif map_mode == "🔥 מפת חום":
-                    # מפת חום - מפה מסוג Khatmar עם נקודות GPS
-                    # מיפוי צבעים לפי יחידה (כמו ב-Khatmar)
-                    unit_color_map = {
-                        "חטמ״ר בנימין": "rgb(30,58,138)",
-                        "חטמ״ר שומרון": "rgb(96,165,250)",
-                        "חטמ״ר יהודה": "rgb(34,197,94)",
-                        "חטמ״ר עציון": "rgb(251,146,60)",
-                        "חטמ״ר אפרים": "rgb(239,68,68)",
-                        "חטמ״ר מנשה": "rgb(168,85,247)",
-                        "חטמ״ר הבקעה": "rgb(219,39,119)"
-                    }
-                    
-                    # גודל נקודות לפי בעיות
-                    valid_map['size_val'] = valid_map.apply(
-                        lambda r: 20 if (r.get('e_status') == 'פסול' or r.get('k_cert') == 'לא') else 12,
-                        axis=1
-                    )
-                    
-                    fig = px.scatter_mapbox(
-                        valid_map,
-                        lat="latitude",
-                        lon="longitude",
-                        hover_name="base",
-                        hover_data={
-                            "unit": True,
-                            "inspector": True,
-                            "e_status": True,
-                            "k_cert": True,
-                            "date": True,
-                            "latitude": False,
-                            "longitude": False,
-                            "size_val": False
-                        },
-                        color="unit",
-                        size="size_val",
-                        color_discrete_map=unit_color_map,
-                        zoom=17,
-                        height=650
-                    )
-                    
-                    fig.update_layout(
-                        mapbox_style="open-street-map",
-                        margin={"r": 0, "t": 0, "l": 0, "b": 0},
-                        mapbox=dict(
-                            zoom=17,
-                            center=dict(lat=valid_map['latitude'].mean(), lon=valid_map['longitude'].mean())
-                        )
-                    )
-                    
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # מקרא
-                    st.markdown("#### 🔑 מקרא חטמ״רים")
-                    legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;'>"
-                    for unit in sorted(valid_map['unit'].unique()):
-                        color = unit_color_map.get(unit, "rgb(100, 100, 100)")
-                        legend_html += f"<div><span style='color: {color}; font-size: 1.2rem;'>●</span> {unit}</div>"
-                    legend_html += "</div>"
-                    st.markdown(legend_html, unsafe_allow_html=True)
-                    
-                    st.info("💡 **נקודות גדולות** = בעיות (עירוב פסול או כשרות לא תקינה) | **צבעים** = יחידות שונות")
+                # יצירת מפת Folium
+                m = create_street_level_map(center=(center_lat, center_lon), zoom_start=13)
                 
-                else:
-                    # Clustering - קיבוץ דיווחים
-                    st.markdown("#### 📊 ניתוח Clustering - קיבוץ דיווחים")
-                    
-                    clustered = calculate_clusters(valid_map, radius_km=2.0)
-                    cluster_stats = get_cluster_stats(clustered)
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("📍 אזורי פעילות", len(cluster_stats))
-                    with col2:
-                        avg_per_cluster = sum(c['count'] for c in cluster_stats) / len(cluster_stats) if cluster_stats else 0
-                        st.metric("📊 ממוצע דיווחים לאזור", f"{avg_per_cluster:.1f}")
-                    with col3:
-                        max_cluster = max(cluster_stats, key=lambda x: x['count']) if cluster_stats else None
-                        if max_cluster:
-                            st.metric("🔥 אזור עם הכי הרבה דיווחים", max_cluster['count'])
-                    
-                    if cluster_stats:
-                        cluster_df = pd.DataFrame(cluster_stats)
-                        
-                        fig = px.scatter_mapbox(
-                            cluster_df,
-                            lat="center_lat",
-                            lon="center_lon",
-                            size="count",
-                            hover_name="base",
-                            hover_data={"unit": True, "count": True, "center_lat": False, "center_lon": False},
-                            color="count",
-                            color_continuous_scale="Viridis",
-                            zoom=17,
-                            height=650,
-                            size_max=50
-                        )
-                        
-                        fig.update_layout(
-                            mapbox_style="open-street-map",
-                            margin={"r": 0, "t": 0, "l": 0, "b": 0},
-                            mapbox=dict(
-                                zoom=17,
-                                center=dict(lat=cluster_df['center_lat'].mean(), lon=cluster_df['center_lon'].mean())
-                            )
-                        )
-                        
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        st.markdown("**פירוט אזורי פעילות:**")
-                        cluster_table = cluster_df[['base', 'unit', 'count']].sort_values('count', ascending=False)
-                        cluster_table.columns = ['מוצב', 'חטמ"ר', 'דיווחים']
-                        st.dataframe(cluster_table, use_container_width=True, hide_index=True)
-                    
-                    st.info("💡 **בועה גדולה** = הרבה דיווחים באזור (רדיוס 2 ק\"מ) | **צבע כהה** = ריכוז גבוה")
+                # הוספת כל הנקודות למפה
+                for _, row in valid_map.iterrows():
+                    add_unit_marker_to_folium(m, row, unit_color_map)
+                
+                # הצגת המפה
+                st_folium(m, width=1200, height=700, returned_objects=[])
+                
+                # מקרא
+                st.markdown("#### 🔑 מקרא חטמ״רים")
+                legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;'>"
+                for unit in sorted(valid_map['unit'].unique()):
+                    color = unit_color_map.get(unit, "#808080")
+                    legend_html += f"<div><span style='color: {color}; font-size: 1.5rem;'>●</span> {unit}</div>"
+                legend_html += "</div>"
+                st.markdown(legend_html, unsafe_allow_html=True)
+                
+                st.success("✅ **מפה ברמת רחוב** - זום עד 20 | שמות רחובות בעברית | שכבות: רחובות + לווין")
+                st.info("💡 **נקודות גדולות** = בעיות (עירוב פסול או כשרות לא תקינה)")
+                
             else:
                 # אין נתונים עם GPS - הצג מפה ריקה ממוקדת על האזור
                 fig = px.scatter_mapbox(
@@ -2304,12 +2258,23 @@ def render_unit_report():
         st.markdown(f"## 📊 ניתוח מפורט - {unit}")
         
         # טעינת נתונים
-        df = load_reports_cached()
+        try:
+            all_reports = load_reports_cached()
+            df = pd.DataFrame(all_reports) if all_reports else pd.DataFrame()
+        except Exception as e:
+            st.error(f"שגיאה בטעינת נתונים: {e}")
+            df = pd.DataFrame()
         
         # סינון דוחות ליחידה זו בלבד
-        unit_df = df[df['unit'] == unit].copy() if not df.empty and 'unit' in df.columns else pd.DataFrame()
+        if not df.empty and 'unit' in df.columns:
+            unit_df = df[df['unit'] == unit].copy()
+        else:
+            unit_df = pd.DataFrame()
             
-        if not unit_df.empty:
+        if unit_df.empty:
+            st.warning(f"⚠️ לא נמצאו דוחות עבור {unit}")
+            st.info("💡 ברגע שיהיו דוחות, הניתוח המפורט יופיע כאן")
+        else:
             # טאבים לניתוח
             analysis_tabs = st.tabs(["🔴 חוסרים ובעיות", "🍴 עירוב וכשרות", "🏗️ תשתיות ויומן ביקורת", "📊 סיכום כללי"])
             
@@ -2431,8 +2396,6 @@ def render_unit_report():
                     st.info("👍 **טוב!** היחידה במצב סביר, יש מקום לשיפור")
                 else:
                     st.warning("⚠️ **דורש תשומת לב!** יש נושאים שדורשים טיפול")
-        else:
-            st.info("לא נמצאו דוחות ליחידה זו")
         
         st.markdown("---")
     
