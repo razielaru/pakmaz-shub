@@ -722,8 +722,22 @@ def generate_inspector_stats(df):
     # מיקומים פופולריים
     location_counts = current_month['base'].value_counts() if 'base' in current_month.columns else pd.Series()
     
-    # שעות פעילות
-    if pd.api.types.is_datetime64_any_dtype(current_month['date']):
+    # שעות פעילות - בדיקה של עמודת time תחילה, אחר כך date
+    if 'time' in current_month.columns:
+        # אם יש עמודת time, השתמש בה
+        def extract_hour_from_time(time_val):
+            try:
+                if pd.isna(time_val):
+                    return None
+                time_str = str(time_val)
+                if ':' in time_str:
+                    return int(time_str.split(':')[0])
+                return None
+            except:
+                return None
+        current_month['hour'] = current_month['time'].apply(extract_hour_from_time)
+        peak_hours = current_month['hour'].dropna().value_counts().head(3)
+    elif pd.api.types.is_datetime64_any_dtype(current_month['date']):
         current_month['hour'] = current_month['date'].dt.hour
         peak_hours = current_month['hour'].value_counts().head(3)
     else:
@@ -1921,13 +1935,19 @@ def render_unit_report():
             
             # טאב 1: טבלת מובילים
             with stats_tabs[0]:
-                st.markdown("### 🏆 10 המבקרים המובילים")
+                st.markdown("### 🏆 9 המבקרים המובילים")
                 
                 if not stats['top_inspectors'].empty:
-                    # יצירת טבלה מעוצבת
+                    # יצירת טבלה מעוצבת - 9 הראשונים
                     leaderboard_data = []
-                    for idx, (inspector, count) in enumerate(stats['top_inspectors'].items(), 1):
-                        medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"#{idx}"
+                    number_emojis = {
+                        1: "🥇", 2: "🥈", 3: "🥉",
+                        4: "4️⃣", 5: "5️⃣", 6: "6️⃣",
+                        7: "7️⃣", 8: "8️⃣", 9: "9️⃣"
+                    }
+                    
+                    for idx, (inspector, count) in enumerate(stats['top_inspectors'].head(9).items(), 1):
+                        medal = number_emojis.get(idx, f"#{idx}")
                         leaderboard_data.append({
                             "מקום": medal,
                             "שם המבקר": inspector,
@@ -2146,3 +2166,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
