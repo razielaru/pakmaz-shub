@@ -616,14 +616,27 @@ def apply_custom_css():
             text-align: right;
         }
         
-        /* כפיית צבע טקסט כהה עבור נראות במחשב */
-        .stMarkdown, .stText, h1, h2, h3, h4, h5, h6, .stMetricLabel, .stMetricValue {
+        /* כפיית צבע טקסט כהה עבור נראות במחשב - כולל שאלונים והודעות */
+        .stMarkdown, .stText, h1, h2, h3, h4, h5, h6, .stMetricLabel, .stMetricValue, 
+        .stRadio label, .stCheckbox label, .stTextInput label, .stSelectbox label, 
+        .stTextArea label, .stFileUploader label, .stAlert {
+            color: #1e293b !important;
+        }
+        
+        /* צבע טקסט בתוך התיבות עצמן */
+        .stTextInput input, .stTextArea textarea, .stSelectbox select {
             color: #1e293b !important;
         }
         
         /* רקע בהיר לאפליקציה */
         .stApp {
             background-color: #f8fafc;
+        }
+        
+        /* הודעות (Alerts) */
+        .stAlert {
+            background-color: white; /* רקע לבן להודעות כדי שהטקסט יבלוט */
+            border: 1px solid #e2e8f0;
         }
         
         /* כרטיסים מעוצבים */
@@ -1146,6 +1159,60 @@ def generate_inspector_stats(df):
         'total_reports': len(current_month),
         'unique_inspectors': current_month['inspector'].nunique()
     }
+
+
+def create_full_report_excel(df):
+    """יצירת קובץ Excel מלא עם סיכום ונתונים גולמיים"""
+    import io
+    try:
+        import openpyxl
+    except ImportError:
+        return None
+        
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        # --- גיליון 1: סיכום מנהלים ---
+        summary_data = {
+            'מדד': [
+                'סה"כ דוחות שנוצרו',
+                'מספר מבקרים פעילים',
+                'מספר בסיסים/מוצבים שנבדקו',
+                'תאריך דוח ראשון',
+                'תאריך דוח אחרון',
+                'ערוך לתאריך'
+            ],
+            'ערך': [
+                len(df),
+                df['inspector'].nunique() if 'inspector' in df.columns else 0,
+                df['base'].nunique() if 'base' in df.columns else 0,
+                df['date'].min().strftime('%d/%m/%Y') if not df.empty and 'date' in df.columns else '-',
+                df['date'].max().strftime('%d/%m/%Y') if not df.empty and 'date' in df.columns else '-',
+                datetime.datetime.now().strftime('%d/%m/%Y %H:%M')
+            ]
+        }
+        pd.DataFrame(summary_data).to_excel(writer, sheet_name='סיכום מנהלים', index=False)
+        
+        # --- גיליון 2: פירוט דוחות מלא ---
+        # מיפוי שמות עמודות לאנגלית -> עברית
+        column_mapping = {
+            'date': 'תאריך', 'time': 'שעה', 'base': 'מוצב/בסיס', 'inspector': 'מבקר',
+            'unit': 'יחידה', 'k_cert': 'תעודת כשרות', 'k_cook_type': 'סוג מטבח',
+            'k_issues': 'תקלות כשרות', 'k_shabbat_supervisor': 'נאמן כשרות בשבת',
+            's_clean': 'ניקיון בית כנסת', 'e_status': 'סטטוס עירוב',
+            'photo_url': 'תמונה ראשית', 'k_issues_photo_url': 'תמונה - תקלה',
+            'k_shabbat_photo_url': 'תמונה - נאמן', 'free_text': 'הערות נוספות',
+            'missing_items': 'חוסרים'
+        }
+        
+        # בחירת עמודות שקיימות ב-DF
+        existing_cols = [col for col in column_mapping.keys() if col in df.columns]
+        
+        if existing_cols:
+            details_df = df[existing_cols].copy()
+            details_df.rename(columns=column_mapping, inplace=True)
+            details_df.to_excel(writer, sheet_name='פירוט דוחות', index=False)
+            
+    return output.getvalue()
 
 def create_inspector_excel(df):
     """יצירת קובץ Excel עם סטטיסטיקות מבקרים (מוגבל ל-10 שורות)"""
@@ -2057,6 +2124,18 @@ def render_command_dashboard():
             display_df = unit_df[['date', 'base', 'inspector', 'e_status', 'k_cert']].copy()
             display_df.columns = ['תאריך', 'מוצב', 'מבקר', 'עירוב', 'כשרות']
             st.dataframe(display_df, use_container_width=True)
+            
+            # אפשרות להורדת דוח מלא (Excel)
+            full_report_data = create_full_report_excel(unit_df)
+            if full_report_data:
+                st.download_button(
+                    label="📥 הורד דוח פעילות מלא (Excel)",
+                    data=full_report_data,
+                    file_name=f"full_activity_report_{selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key=f"dl_full_report_{selected_unit}"
+                )
         else:
             st.info("לא נמצאו דוחות ליחידה זו")
     
@@ -2717,8 +2796,7 @@ def render_unit_report():
                     except Exception as e:
                         # טיפול בשגיאה אם העמודות החדשות עדיין לא קיימות במסד הנתונים
                         if "PGRST204" in str(e) or "Could not find" in str(e):
-                            st.warning("⚠️ נתונים חדשים לא נשמרו (חסרות עמודות ב-DB), אך הדוח הבסיסי יישמר.")
-                            # הסרת השדות החדשים וניסיון חוזר
+                            # ניסיון חוזר ללא השדות החדשים (שמירה שקטה של בסיס הדוח)
                             for field in ["k_issues", "k_shabbat_supervisor", "k_issues_photo_url", "k_shabbat_photo_url"]:
                                 data.pop(field, None)
                             result = supabase.table("reports").insert(data).execute()
@@ -2829,16 +2907,34 @@ def render_unit_report():
                     html_table += "</tbody></table>"
                     st.markdown(html_table, unsafe_allow_html=True)
                     
-                    # כפתור הורדת Excel
-                    excel_data = create_inspector_excel(unit_df)
-                    if excel_data:
-                        st.download_button(
-                            label="📥 הורד דוח Excel",
-                            data=excel_data,
-                            file_name=f"inspector_stats_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            use_container_width=True
-                        )
+                    # כפתורי הורדה
+                    col_dl1, col_dl2 = st.columns(2)
+                    
+                    with col_dl1:
+                        # כפתור הורדת סטטיסטיקות מבקרים
+                        excel_data = create_inspector_excel(unit_df)
+                        if excel_data:
+                            st.download_button(
+                                label="📥 הורד דוח מבקרים (Excel)",
+                                data=excel_data,
+                                file_name=f"inspector_stats_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True,
+                                key="dl_inspectors"
+                            )
+                            
+                    with col_dl2:
+                         # כפתור הורדת דוח מלא ומפורט
+                        full_report_data = create_full_report_excel(unit_df)
+                        if full_report_data:
+                            st.download_button(
+                                label="📥 הורד דוח פעילות מלא (Excel)",
+                                data=full_report_data,
+                                file_name=f"full_activity_report_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True,
+                                key="dl_full_report"
+                            )
                 else:
                     st.info("אין נתונים זמינים")
             
