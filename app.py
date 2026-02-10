@@ -1316,6 +1316,42 @@ def render_command_dashboard():
             st.markdown("---")
             st.markdown("### 📋 פירוט דוחות")
             
+            # אפשרות מחיקה למנהלים בלבד
+            if role in ['pikud', 'ogda']:
+                st.markdown("#### 🗑️ ניהול דוחות (מנהלים בלבד)")
+                
+                if not unit_df.empty and 'id' in unit_df.columns:
+                    # בחירת דוח למחיקה
+                    delete_options = []
+                    for idx, row in unit_df.iterrows():
+                        date_str = row['date'].strftime('%Y-%m-%d') if pd.notna(row['date']) else 'לא ידוע'
+                        base = row.get('base', 'לא ידוע')
+                        inspector = row.get('inspector', 'לא ידוע')
+                        report_id = row.get('id', '')
+                        delete_options.append(f"{date_str} | {base} | {inspector} (ID: {report_id})")
+                    
+                    selected_report = st.selectbox("בחר דוח למחיקה:", ["-- בחר דוח --"] + delete_options)
+                    
+                    if selected_report != "-- בחר דוח --":
+                        # חילוץ ID מהבחירה
+                        report_id = selected_report.split("ID: ")[1].rstrip(")")
+                        
+                        col1, col2 = st.columns([1, 4])
+                        with col1:
+                            if st.button("🗑️ מחק דוח", type="primary"):
+                                try:
+                                    supabase.table("reports").delete().eq("id", report_id).execute()
+                                    st.success("✅ הדוח נמחק בהצלחה!")
+                                    clear_cache()
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ שגיאה במחיקה: {e}")
+                        with col2:
+                            st.warning("⚠️ פעולה זו בלתי הפיכה!")
+                
+                st.markdown("---")
+            
             display_df = unit_df[['date', 'base', 'inspector', 'e_status', 'k_cert']].copy()
             display_df.columns = ['תאריך', 'מוצב', 'מבקר', 'עירוב', 'כשרות']
             st.dataframe(display_df, use_container_width=True)
@@ -1373,7 +1409,7 @@ def render_command_dashboard():
                     )
                     
                     fig.update_layout(
-                        mapbox_style="open-street-map",
+                        mapbox_style="carto-positron",
                         margin={"r": 0, "t": 0, "l": 0, "b": 0}
                     )
                     
@@ -1407,7 +1443,7 @@ def render_command_dashboard():
                     )
                     
                     fig.update_layout(
-                        mapbox_style="open-street-map",
+                        mapbox_style="carto-positron",
                         margin={"r": 0, "t": 0, "l": 0, "b": 0}
                     )
                     
@@ -1735,9 +1771,9 @@ def render_unit_report():
                     # יצירת טבלה מעוצבת
                     leaderboard_data = []
                     for idx, (inspector, count) in enumerate(stats['top_inspectors'].items(), 1):
-                        medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"{idx}"
+                        medal = "🥇" if idx == 1 else "🥈" if idx == 2 else "🥉" if idx == 3 else f"#{idx}"
                         leaderboard_data.append({
-                            "#": medal,
+                            "מקום": medal,
                             "שם המבקר": inspector,
                             "דוחות": count
                         })
@@ -1750,7 +1786,7 @@ def render_unit_report():
                         use_container_width=True,
                         hide_index=True,
                         column_config={
-                            "#": st.column_config.TextColumn("#", width="medium"),
+                            "מקום": st.column_config.TextColumn("מקום", width="medium", help="מיקום בטבלה"),
                             "שם המבקר": st.column_config.TextColumn("שם המבקר", width="large"),
                             "דוחות": st.column_config.NumberColumn("דוחות", width="medium")
                         }
@@ -1851,7 +1887,7 @@ def render_unit_report():
                         )
                         
                         fig.update_layout(
-                            mapbox_style="open-street-map",
+                            mapbox_style="carto-positron",
                             margin={"r": 0, "t": 0, "l": 0, "b": 0}
                         )
                         
