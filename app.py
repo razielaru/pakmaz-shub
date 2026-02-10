@@ -2479,6 +2479,15 @@ def render_unit_report():
         st.markdown("---")
         st.markdown(f"## 📊 ניתוח מפורט - {unit}")
         
+        # כפתור הורדה בולט לניתוח המפורט
+        try:
+             # טעינה זריזה לצורך הכפתור (או שנשתמש בנתונים שיטענו בהמשך)
+             # עדיף להשתמש ב-unit_df שנטען, אבל נצטרך לחכות לטעינה.
+             # אז נכניס את הכפתור אחרי הטעינה.
+             pass
+        except:
+             pass
+        
         # טעינת נתונים
         try:
             all_reports = load_reports_cached()
@@ -2497,6 +2506,18 @@ def render_unit_report():
             st.warning(f"⚠️ לא נמצאו דוחות עבור {unit}")
             st.info("💡 ברגע שיהיו דוחות, הניתוח המפורט יופיע כאן")
         else:
+            # כפתור הורדה בולט (אחרי שיש נתונים)
+            full_report_data_detailed = create_full_report_excel(unit_df)
+            if full_report_data_detailed:
+                st.download_button(
+                    label="📥 הורד דוח מפורט מלא (Excel)",
+                    data=full_report_data_detailed,
+                    file_name=f"detailed_report_{unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="dl_detailed_internal"
+                )
+            
             # טאבים לניתוח
             analysis_tabs = st.tabs(["🔴 חוסרים ובעיות", "🍴 עירוב וכשרות", "🏗️ תשתיות ויומן ביקורת", "📊 סיכום כללי"])
             
