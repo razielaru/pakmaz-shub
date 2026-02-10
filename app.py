@@ -1483,12 +1483,18 @@ def render_command_dashboard():
         # בורר מצבי תצוגה
         map_mode = st.radio("בחר תצוגה:", ["🎯 נקודות חטמ״ר", "🔥 מפת חום", "📊 Clustering"], horizontal=True)
         
+        # נקודת מרכז קבועה - אזור יהודה ושומרון
+        center_lat, center_lon = 32.0, 35.25
+        
         # בדיקה אם יש עמודות מיקום
-        if 'latitude' in df.columns and 'longitude' in df.columns:
+        has_location_columns = 'latitude' in df.columns and 'longitude' in df.columns
+        
+        if has_location_columns:
             # ניקוי נתונים ריקים
             valid_map = df.dropna(subset=['latitude', 'longitude']).copy()
             
             if not valid_map.empty:
+                # יש נתונים - הצג מפה עם נקודות
                 # מיפוי צבעים לפי יחידה
                 unit_color_map = {
                     "חטמ״ר בנימין": "rgb(30,58,138)",
@@ -1617,9 +1623,39 @@ def render_command_dashboard():
                     
                     st.info("💡 **גודל בועה** = מספר דיווחים באזור (רדיוס 2 ק\"מ)")
             else:
-                st.warning(f"📍 יש {len(df)} דוחות בסה\"כ, אך אף אחד לא כולל מיקום GPS. יש להוסיף עמודות latitude ו-longitude לדוחות.")
+                # אין נתונים עם GPS - הצג מפה ריקה ממוקדת על האזור
+                fig = px.scatter_mapbox(
+                    lat=[center_lat],
+                    lon=[center_lon],
+                    zoom=8,
+                    height=600
+                )
+                
+                fig.update_layout(
+                    mapbox_style="satellite-streets",
+                    margin={"r": 0, "t": 0, "l": 0, "b": 0},
+                    showlegend=False
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+                st.info(f"� המפה פעילה וממוקדת על אזור יהודה ושומרון. יש {len(df)} דוחות בסה\"כ, אך אף אחד לא כולל מיקום GPS. שלח דיווח חדש עם GPS מופעל כדי לראות נקודות על המפה.")
         else:
-            st.error("❌ עמודות המיקום (latitude/longitude) לא קיימות בבסיס הנתונים. יש להוסיף אותן ב-Supabase.")
+            # אין עמודות GPS בכלל - הצג מפה ריקה
+            fig = px.scatter_mapbox(
+                lat=[center_lat],
+                lon=[center_lon],
+                zoom=8,
+                height=600
+            )
+            
+            fig.update_layout(
+                mapbox_style="satellite-streets",
+                margin={"r": 0, "t": 0, "l": 0, "b": 0},
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            st.warning("⚠️ עמודות המיקום (latitude/longitude) לא קיימות בבסיס הנתונים. יש להוסיף אותן ב-Supabase כדי להציג נקודות על המפה.")
     
     # ===== טאב 6: ניהול (רק פיקוד) =====
     if role == 'pikud':
