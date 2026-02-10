@@ -1211,6 +1211,9 @@ def create_full_report_excel(df):
             details_df = df[existing_cols].copy()
             details_df.rename(columns=column_mapping, inplace=True)
             details_df.to_excel(writer, sheet_name='פירוט דוחות', index=False)
+        else:
+            # יצירת גיליון ריק עם כותרות בלבד
+            pd.DataFrame(columns=column_mapping.values()).to_excel(writer, sheet_name='פירוט דוחות', index=False)
             
     return output.getvalue()
 
@@ -1226,7 +1229,14 @@ def create_inspector_excel(df):
     
     stats = generate_inspector_stats(df)
     if not stats:
-        return None
+        # יצירת מילון ריק כדי למנוע קריסה ולאפשר יצירת קובץ
+        stats = {
+            'top_inspectors': pd.Series(dtype='object'),
+            'top_locations': pd.Series(dtype='object'),
+            'peak_hours': pd.Series(dtype='object'),
+            'total_reports': len(df),
+            'unique_inspectors': 0
+        }
     
     # יצירת DataFrame לייצוא
     export_data = []
@@ -2077,6 +2087,19 @@ def render_command_dashboard():
             
             # תובנות
             st.markdown("### 💡 תובנות ומסקנות")
+            
+            # כפתור הורדה בסיכום הכללי
+            full_report_data_tab = create_full_report_excel(unit_df)
+            if full_report_data_tab:
+                st.download_button(
+                    label="📥 הורד דוח מלא (Excel)",
+                    data=full_report_data_tab,
+                    file_name=f"full_activity_report_{selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key=f"dl_full_report_tab_{selected_unit}"
+                )
+                
             insights = analyze_unit_trends(unit_df)
             for ins in insights:
                 st.info(f"{ins['icon']} **{ins['title']}**: {ins['message']}")
@@ -2136,8 +2159,6 @@ def render_command_dashboard():
                     use_container_width=True,
                     key=f"dl_full_report_{selected_unit}"
                 )
-            else:
-                st.caption("⚠️ אין נתונים להורדה עבור יחידה זו")
         else:
             st.info("לא נמצאו דוחות ליחידה זו")
     
@@ -2878,8 +2899,6 @@ def render_unit_report():
                         use_container_width=True,
                         key="dl_inspectors_top"
                     )
-                else:
-                    st.caption("אין נתונים לדוח מבקרים")
                     
             with col_dl2:
                 full_report_data = create_full_report_excel(unit_df)
@@ -2892,8 +2911,6 @@ def render_unit_report():
                         use_container_width=True,
                         key="dl_full_report_top"
                     )
-                else:
-                    st.caption("אין נתונים לדוח מלא")
             
             st.markdown("---")
 
