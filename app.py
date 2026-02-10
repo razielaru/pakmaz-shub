@@ -116,6 +116,18 @@ st.set_page_config(
 # CSS למובייל - אופטימיזציה מלאה
 st.markdown("""
 <style>
+    /* RTL Support - יישור לימין לעברית */
+    .main, .block-container, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+    
+    /* כותרות - יישור לימין */
+    h1, h2, h3, h4, h5, h6 {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+    
     /* הסתרת sidebar בכל המכשירים */
     [data-testid="stSidebar"] {
         display: none !important;
@@ -1185,6 +1197,7 @@ def render_command_dashboard():
         if st.button("🚪 יציאה", key="logout_cmd", use_container_width=True):
             st.session_state.logged_in = False
             st.session_state.selected_unit = None
+            st.session_state.login_stage = "gallery"  # חזרה לגלריה הראשית
             st.rerun()
     
     with col_title:
@@ -1815,6 +1828,7 @@ def render_unit_report():
         if st.button("🚪 יציאה", key="logout_hatmar", use_container_width=True):
             st.session_state.logged_in = False
             st.session_state.selected_unit = None
+            st.session_state.login_stage = "gallery"  # חזרה לגלריה הראשית
             st.rerun()
     with col_logo:
         st.image(get_logo_url(unit), width=80)
