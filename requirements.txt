@@ -1,12 +1,10 @@
 streamlit
-bcrypt
-pandas
 supabase
+pandas
 plotly
-watchdog
 Pillow
+bcrypt
 pydeck
 streamlit-geolocation
-openpyxl
 folium
 streamlit-folium
