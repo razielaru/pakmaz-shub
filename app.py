@@ -15,6 +15,7 @@ import os
 import pydeck as pdk
 from streamlit_geolocation import streamlit_geolocation
 from utils.geo_utils import find_nearest_base, is_location_suspicious, get_base_coordinates
+from utils.clustering import calculate_clusters, get_cluster_stats
 
 
 # --- 1. הגדרת עמוד ---
@@ -1365,7 +1366,7 @@ def render_command_dashboard():
         st.markdown("### �️ תמונת מצב גזרתית - רבנות פקמ״ז")
         
         # בורר מצבי תצוגה
-        map_mode = st.radio("בחר תצוגה:", ["🎯 נקודות חטמ״ר", "🔥 מפת חום"], horizontal=True)
+        map_mode = st.radio("בחר תצוגה:", ["🎯 נקודות חטמ״ר", "🔥 מפת חום", "📊 Clustering"], horizontal=True)
         
         if 'latitude' in df.columns and 'longitude' in df.columns:
             valid = df.dropna(subset=['latitude', 'longitude']).copy()
@@ -1430,7 +1431,7 @@ def render_command_dashboard():
                     # הסבר גדלים
                     st.info("💡 **נקודות גדולות** = בעיות (עירוב פסול או כשרות לא תקינה)")
                 
-                else:
+                elif map_mode == "🔥 מפת חום":
                     # מפת חום - צפיפות דיווחים
                     fig = px.density_mapbox(
                         valid,
@@ -1451,8 +1452,61 @@ def render_command_dashboard():
                     
                     st.plotly_chart(fig, use_container_width=True)
                     st.info("🔥 **אזורים חמים** = ריכוז גבוה של דיווחים")
+                
+                else:
+                    # מצב Clustering
+                    st.markdown("#### 📊 ניתוח Clustering - קיבוץ דיווחים")
+                    
+                    # חישוב clusters
+                    clustered = calculate_clusters(valid, radius_km=2.0)
+                    cluster_stats = get_cluster_stats(clustered)
+                    
+                    # הצגת סטטיסטיקות
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("📍 אזורי פעילות", len(cluster_stats))
+                    with col2:
+                        avg_per_cluster = sum(c['count'] for c in cluster_stats) / len(cluster_stats) if cluster_stats else 0
+                        st.metric("📊 ממוצע דיווחים לאזור", f"{avg_per_cluster:.1f}")
+                    with col3:
+                        max_cluster = max(cluster_stats, key=lambda x: x['count']) if cluster_stats else None
+                        if max_cluster:
+                            st.metric("🔥 אזור עם הכי הרבה דיווחים", max_cluster['count'])
+                    
+                    # מפה עם clusters
+                    if cluster_stats:
+                        cluster_df = pd.DataFrame(cluster_stats)
+                        
+                        fig = px.scatter_mapbox(
+                            cluster_df,
+                            lat="center_lat",
+                            lon="center_lon",
+                            size="count",
+                            hover_name="base",
+                            hover_data={"unit": True, "count": True, "center_lat": False, "center_lon": False},
+                            color="count",
+                            color_continuous_scale="Viridis",
+                            zoom=8,
+                            height=600,
+                            size_max=30
+                        )
+                        
+                        fig.update_layout(
+                            mapbox_style="carto-positron",
+                            margin={"r": 0, "t": 0, "l": 0, "b": 0}
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # טבלת clusters
+                        st.markdown("**פירוט אזורי פעילות:**")
+                        cluster_table = cluster_df[['base', 'unit', 'count']].sort_values('count', ascending=False)
+                        cluster_table.columns = ['מוצב', 'חטמ"ר', 'דיווחים']
+                        st.dataframe(cluster_table, use_container_width=True, hide_index=True)
+                    
+                    st.info("💡 **גודל בועה** = מספר דיווחים באזור (רדיוס 2 ק\"מ)")
             else:
-                st.info("📍 אין נתוני מיקום זמינים")
+                st.info("אין נתוני מיקום זמינים 📍")
         else:
             st.info("📍 אין נתוני מיקום זמינים")
     
