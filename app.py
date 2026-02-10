@@ -14,7 +14,7 @@ import shutil
 import os
 import pydeck as pdk
 from streamlit_geolocation import streamlit_geolocation
-from utils.geo_utils import find_nearest_base, is_location_suspicious, get_base_coordinates
+from utils.geo_utils import find_nearest_base
 from utils.clustering import calculate_clusters, get_cluster_stats
 
 
