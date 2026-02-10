@@ -1632,13 +1632,13 @@ def render_command_dashboard():
                 )
                 
                 fig.update_layout(
-                    mapbox_style="satellite-streets",
+                    mapbox_style="open-street-map",
                     margin={"r": 0, "t": 0, "l": 0, "b": 0},
                     showlegend=False
                 )
                 
                 st.plotly_chart(fig, use_container_width=True)
-                st.info(f"� המפה פעילה וממוקדת על אזור יהודה ושומרון. יש {len(df)} דוחות בסה\"כ, אך אף אחד לא כולל מיקום GPS. שלח דיווח חדש עם GPS מופעל כדי לראות נקודות על המפה.")
+                st.info(f"💡 המפה פעילה וממוקדת על אזור יהודה ושומרון. יש {len(df)} דוחות בסה\"כ, אך אף אחד לא כולל מיקום GPS. שלח דיווח חדש עם GPS מופעל כדי לראות נקודות על המפה.")
         else:
             # אין עמודות GPS בכלל - הצג מפה ריקה
             fig = px.scatter_mapbox(
@@ -1649,7 +1649,7 @@ def render_command_dashboard():
             )
             
             fig.update_layout(
-                mapbox_style="satellite-streets",
+                mapbox_style="open-street-map",
                 margin={"r": 0, "t": 0, "l": 0, "b": 0},
                 showlegend=False
             )
