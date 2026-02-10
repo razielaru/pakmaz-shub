@@ -1101,7 +1101,11 @@ def generate_inspector_stats(df):
 def create_inspector_excel(df):
     """יצירת קובץ Excel עם סטטיסטיקות מבקרים (מוגבל ל-10 שורות)"""
     import io
-    import openpyxl
+    try:
+        import openpyxl
+    except ImportError:
+        return None
+        
     from datetime import datetime
     
     stats = generate_inspector_stats(df)
@@ -2658,7 +2662,19 @@ def render_unit_report():
                     data["longitude"] = lon_with_offset
                 
                 try:
-                    result = supabase.table("reports").insert(data).execute()
+                    # ניסיון לשמור את הדוח
+                    try:
+                        result = supabase.table("reports").insert(data).execute()
+                    except Exception as e:
+                        # טיפול בשגיאה אם העמודות החדשות עדיין לא קיימות במסד הנתונים
+                        if "PGRST204" in str(e) or "Could not find" in str(e):
+                            st.warning("⚠️ נתונים חדשים לא נשמרו (חסרות עמודות ב-DB), אך הדוח הבסיסי יישמר.")
+                            # הסרת השדות החדשים וניסיון חוזר
+                            for field in ["k_issues", "k_shabbat_supervisor", "k_issues_photo_url", "k_shabbat_photo_url"]:
+                                data.pop(field, None)
+                            result = supabase.table("reports").insert(data).execute()
+                        else:
+                            raise e
                     
                     # מעקב אוטומטי אחר חוסרים
                     if result.data and len(result.data) > 0:
@@ -2747,18 +2763,18 @@ def render_unit_report():
                     
                     # תצוגה משופרת עם עיצוב ממורכז
                     # שימוש ב-HTML לעיצוב מדליות ממורכזות
-                    html_table = "<table style='width:100%; text-align:center; border-collapse: collapse;'>"
+                    html_table = "<table style='width:100%; text-align:center; border-collapse: collapse; color: #000000;'>"
                     html_table += "<thead><tr style='background-color: #f0f2f6;'>"
-                    html_table += "<th style='padding: 12px; font-size: 16px;'>מקום</th>"
-                    html_table += "<th style='padding: 12px; font-size: 16px;'>שם המבקר</th>"
-                    html_table += "<th style='padding: 12px; font-size: 16px;'>דוחות</th>"
+                    html_table += "<th style='padding: 12px; font-size: 16px; color: #000000;'>מקום</th>"
+                    html_table += "<th style='padding: 12px; font-size: 16px; color: #000000;'>שם המבקר</th>"
+                    html_table += "<th style='padding: 12px; font-size: 16px; color: #000000;'>דוחות</th>"
                     html_table += "</tr></thead><tbody>"
                     
                     for _, row in leaderboard_df.iterrows():
                         html_table += "<tr style='border-bottom: 1px solid #e0e0e0;'>"
-                        html_table += f"<td style='padding: 10px; font-size: 24px;'>{row['מקום']}</td>"
-                        html_table += f"<td style='padding: 10px; text-align: right; font-size: 16px;'>{row['שם המבקר']}</td>"
-                        html_table += f"<td style='padding: 10px; font-size: 16px;'>{row['דוחות']}</td>"
+                        html_table += f"<td style='padding: 10px; font-size: 24px; color: #000000;'>{row['מקום']}</td>"
+                        html_table += f"<td style='padding: 10px; text-align: right; font-size: 16px; color: #000000;'>{row['שם המבקר']}</td>"
+                        html_table += f"<td style='padding: 10px; font-size: 16px; color: #000000;'>{row['דוחות']}</td>"
                         html_table += "</tr>"
                     
                     html_table += "</tbody></table>"
@@ -2893,7 +2909,10 @@ def render_unit_report():
                     fig.update_layout(
                         showlegend=False,
                         height=350,
-                        xaxis_tickangle=-45
+                        xaxis_tickangle=-45,
+                        paper_bgcolor='white',
+                        plot_bgcolor='white',
+                        font=dict(color='#1e293b')
                     )
                     
                     st.plotly_chart(fig, use_container_width=True)
@@ -2929,7 +2948,10 @@ def render_unit_report():
                             tickformat='%02d:00'
                         ),
                         showlegend=False,
-                        height=400
+                        height=400,
+                        paper_bgcolor='white',
+                        plot_bgcolor='white',
+                        font=dict(color='#1e293b')
                     )
                     
                     st.plotly_chart(fig_detailed, use_container_width=True)
