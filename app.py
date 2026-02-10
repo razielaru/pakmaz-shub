@@ -38,6 +38,17 @@ BASE_COORDINATES = {
     "מוצב הבקעה": (31.8500, 35.4500),
 }
 
+# קודי גישה לרבני חטמ"ר
+COMMANDER_CODES = {
+    "חטמ\"ר בנימין": "binyamin2024",
+    "חטמ\"ר שומרון": "shomron2024",
+    "חטמ\"ר יהודה": "yehuda2024",
+    "חטמ\"ר עציון": "etzion2024",
+    "חטמ\"ר אפרים": "efraim2024",
+    "חטמ\"ר מנשה": "menashe2024",
+    "חטמ\"ר הבקעה": "bika2024"
+}
+
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """חישוב מרחק בין שתי נקודות על פני כדור הארץ (ק\"מ)"""
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
@@ -1633,7 +1644,7 @@ def render_command_dashboard():
             previous_report = unit_df.sort_values('date', ascending=False).iloc[1] if len(unit_df) > 1 else None
             
             # טאבים לקטגוריות שונות
-            detail_tabs = st.tabs(["🔴 חוסרים ובעיות", "🍴 עירוב וכשרות", "🏗️ תשתיות ופיקבוק", "📊 סיכום כללי"])
+            detail_tabs = st.tabs(["🔴 חוסרים ובעיות", "🍴 עירוב וכשרות", "🏗️ תשתיות ויומן ביקורת", "📊 סיכום כללי"])
             
             with detail_tabs[0]:  # חוסרים
                 st.markdown("#### חוסרים שדווחו")
@@ -1726,24 +1737,24 @@ def render_command_dashboard():
                         st.warning("⚠️ **סגירת טרקלין:** לא מבוצעת")
             
             with detail_tabs[2]:  # תשתיות
-                st.markdown("#### תשתיות ופיקבוק")
+                st.markdown("#### תשתיות ויומן ביקורת")
                 
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    # פיקבוק
+                    # יומן ביקורת
                     pikubok = latest_report.get('k_pikubok', 'לא') if latest_report is not None else 'לא'
                     if pikubok == 'כן':
-                        st.success("✅ **פיקבוק:** קיים")
+                        st.success("✅ **יומן ביקורת:** קיים")
                     else:
-                        st.warning("⚠️ **פיקבוק:** לא קיים")
+                        st.warning("⚠️ **יומן ביקורת:** לא קיים")
                     
-                    # נחלים
-                    streams = latest_report.get('k_streams', 'לא') if latest_report is not None else 'לא'
-                    if streams == 'כן':
-                        st.info("💧 **נחלים קרובים:** קיימים")
+                    # נהלים
+                    procedures = latest_report.get('k_streams', 'לא') if latest_report is not None else 'לא'
+                    if procedures == 'כן':
+                        st.info("📋 **נהלים מעודכנים:** קיימים")
                     else:
-                        st.success("🟢 **נחלים קרובים:** לא קיימים")
+                        st.warning("⚠️ **נהלים מעודכנים:** לא קיימים")
                 
                 with col2:
                     # הערות כלליות
@@ -1769,7 +1780,7 @@ def render_command_dashboard():
                 if k_cert == 'כן': passed_checks += 1
                 if traklin_closed == 'כן': passed_checks += 1
                 if pikubok == 'כן': passed_checks += 1
-                if streams == 'לא': passed_checks += 1
+                if procedures == 'כן': passed_checks += 1
                 
                 compliance_pct = (passed_checks / total_checks) * 100
                 
@@ -1858,8 +1869,62 @@ def render_command_dashboard():
         else:
             st.info("לא נמצאו דוחות ליחידה זו")
     
-    # ===== טאב 5: מפה מבצעית =====
+    # ===== טאב 5: מעקב חוסרים =====
     with tabs[4]:
+        st.markdown("### 📋 מעקב חוסרים פתוחים")
+        
+        # קבלת חוסרים פתוחים
+        accessible_units_list = accessible_units if isinstance(accessible_units, list) else list(accessible_units)
+        deficits_df = get_open_deficits(accessible_units_list)
+        stats = get_deficit_statistics(accessible_units_list)
+        
+        # סטטיסטיקות
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("🔴 חוסרים פתוחים", stats['total_open'])
+        with col2:
+            st.metric("✅ חוסרים שנסגרו", stats['total_closed'])
+        with col3:
+            avg_days = stats['avg_resolution_days']
+            st.metric("⏱️ זמן ממוצע לפתרון", f"{avg_days:.1f} ימים" if avg_days > 0 else "אין נתונים")
+        
+        st.markdown("---")
+        
+        if not deficits_df.empty:
+            # מיפוי שמות סוגי חוסרים
+            deficit_names = {
+                'mezuzot': 'מזוזות חסרות',
+                'torah': 'ספרי תורה חסרים',
+                'tzitzit': 'ציציות חסרות',
+                'tefillin': 'תפילין חסרים',
+                'eruv_kelim': 'עירוב כלים',
+                'kashrut_cert': 'תעודת כשרות'
+            }
+            
+            # הצגת חוסרים לפי יחידה
+            for unit in deficits_df['unit'].unique():
+                unit_deficits = deficits_df[deficits_df['unit'] == unit]
+                
+                with st.expander(f"🔴 {unit} - {len(unit_deficits)} חוסרים פתוחים"):
+                    for _, deficit in unit_deficits.iterrows():
+                        deficit_type_he = deficit_names.get(deficit['deficit_type'], deficit['deficit_type'])
+                        detected_date = pd.to_datetime(deficit['detected_date']).strftime('%d/%m/%Y')
+                        days_open = (pd.Timestamp.now() - pd.to_datetime(deficit['detected_date'])).days
+                        
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            st.markdown(f"**{deficit_type_he}** (כמות: {deficit['deficit_count']})")
+                            st.caption(f"זוהה ב-{detected_date} | פתוח {days_open} ימים")
+                        with col2:
+                            if st.button("סמן כסגור", key=f"close_{deficit['id']}"):
+                                if update_deficit_status(deficit['id'], 'closed'):
+                                    st.success("✅ החוסר סומן כסגור!")
+                                    st.rerun()
+        else:
+            st.success("🎉 אין חוסרים פתוחים! כל היחידות במצב תקין.")
+    
+    # ===== טאב 6: מפה מבצעית =====
+    with tabs[5]:
         st.markdown("### 🛰️ תמונת מצב גזרתית - רבנות פקמ״ז")
         
         # בורר מצבי תצוגה
@@ -1912,7 +1977,7 @@ def render_command_dashboard():
                         color="unit",
                         size="size_val",
                         color_discrete_map=unit_color_map,
-                        zoom=9,
+                        zoom=15,
                         height=650
                     )
                     
@@ -1920,7 +1985,7 @@ def render_command_dashboard():
                         mapbox_style="open-street-map",
                         margin={"r": 0, "t": 0, "l": 0, "b": 0},
                         mapbox=dict(
-                            zoom=9,
+                            zoom=15,
                             center=dict(lat=valid_map['latitude'].mean(), lon=valid_map['longitude'].mean())
                         )
                     )
@@ -1975,7 +2040,7 @@ def render_command_dashboard():
                         color="unit",
                         size="size_val",
                         color_discrete_map=unit_color_map,
-                        zoom=9,
+                        zoom=15,
                         height=650
                     )
                     
@@ -1983,7 +2048,7 @@ def render_command_dashboard():
                         mapbox_style="open-street-map",
                         margin={"r": 0, "t": 0, "l": 0, "b": 0},
                         mapbox=dict(
-                            zoom=9,
+                            zoom=15,
                             center=dict(lat=valid_map['latitude'].mean(), lon=valid_map['longitude'].mean())
                         )
                     )
@@ -2031,7 +2096,7 @@ def render_command_dashboard():
                             hover_data={"unit": True, "count": True, "center_lat": False, "center_lon": False},
                             color="count",
                             color_continuous_scale="Viridis",
-                            zoom=9,
+                            zoom=15,
                             height=650,
                             size_max=50
                         )
@@ -2040,7 +2105,7 @@ def render_command_dashboard():
                             mapbox_style="open-street-map",
                             margin={"r": 0, "t": 0, "l": 0, "b": 0},
                             mapbox=dict(
-                                zoom=9,
+                                zoom=15,
                                 center=dict(lat=cluster_df['center_lat'].mean(), lon=cluster_df['center_lon'].mean())
                             )
                         )
@@ -2088,9 +2153,9 @@ def render_command_dashboard():
             st.plotly_chart(fig, use_container_width=True)
             st.warning("⚠️ עמודות המיקום (latitude/longitude) לא קיימות בבסיס הנתונים. יש להוסיף אותן ב-Supabase כדי להציג נקודות על המפה.")
     
-    # ===== טאב 6: ניהול (רק פיקוד) =====
+    # ===== טאב 7: ניהול (רק פיקוד) =====
     if role == 'pikud':
-        with tabs[5]:
+        with tabs[6]:
             management_tabs = st.tabs(["🔗 ניהול היררכיה", "🔑 ניהול סיסמאות", "🖼️ ניהול לוגואים"])
             
             # ניהול היררכיה
@@ -2192,18 +2257,196 @@ def render_unit_report():
     """הטופס המלא"""
     unit = st.session_state.selected_unit
     
-    # כפתור יציאה בראש הדף
-    col_logout, col_logo, col_title = st.columns([1, 1, 6])
-    with col_logout:
-        if st.button("🚪 יציאה", key="logout_hatmar", use_container_width=True):
-            st.session_state.logged_in = False
-            st.session_state.selected_unit = None
-            st.session_state.login_stage = "gallery"  # חזרה לגלריה הראשית
-            st.rerun()
-    with col_logo:
-        st.image(get_logo_url(unit), width=80)
-    with col_title:
-        st.title(f"📋 דיווח ביקורת - {unit}")
+    # כפתור קוד גישה לרב חטמ"ר
+    st.markdown("---")
+    st.markdown("### 🔑 כניסה לניתוח יחידה מפורט (רב חטמ\"ר)")
+    
+    # בדיקה אם כבר מחובר כמפקד
+    if 'commander_authenticated' not in st.session_state:
+        st.session_state.commander_authenticated = False
+    
+    if not st.session_state.commander_authenticated:
+        st.info("הזן את קוד הגישה האישי שלך כדי לצפות בניתוח מפורט של היחידה")
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            access_code = st.text_input("קוד גישה", type="password", key="commander_code_input")
+        with col2:
+            st.write("")  # spacing
+            st.write("")  # spacing
+            if st.button("🔓 כניסה", use_container_width=True):
+                # בדיקת קוד גישה
+                if unit in COMMANDER_CODES and access_code == COMMANDER_CODES[unit]:
+                    st.session_state.commander_authenticated = True
+                    st.session_state.commander_unit = unit
+                    st.success("✅ קוד גישה נכון! מעביר לניתוח יחידה...")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("❌ קוד גישה שגוי")
+    else:
+        # מפקד מחובר - הצג ניתוח יחידה
+        st.success(f"✅ מחובר כרב חטמ\"ר - {unit}")
+        
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            if st.button("🔙 חזרה לדשבורד", use_container_width=True):
+                st.session_state.commander_authenticated = False
+                st.rerun()
+        
+        # הצגת ניתוח יחידה (העתקה מטאב 4 של פיקוד)
+        st.markdown("---")
+        st.markdown(f"## 📊 ניתוח מפורט - {unit}")
+        
+        # טעינת נתונים
+        df = load_reports_cached()
+        
+        # סינון דוחות ליחידה זו בלבד
+        unit_df = df[df['unit'] == unit].copy() if not df.empty and 'unit' in df.columns else pd.DataFrame()
+            
+        if not unit_df.empty:
+            # טאבים לניתוח
+            analysis_tabs = st.tabs(["🔴 חוסרים ובעיות", "🍴 עירוב וכשרות", "🏗️ תשתיות ויומן ביקורת", "📊 סיכום כללי"])
+            
+            latest_report = unit_df.sort_values('date', ascending=False).iloc[0] if len(unit_df) > 0 else None
+            
+            with analysis_tabs[0]:  # חוסרים
+                st.markdown("#### חוסרים שדווחו")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    mezuzot_missing = int(latest_report.get('r_mezuzot_missing', 0)) if latest_report is not None else 0
+                    if mezuzot_missing > 0:
+                        st.warning(f"📜 **מזוזות חסרות:** {mezuzot_missing}")
+                    else:
+                        st.success("✅ **מזוזות:** תקין")
+                    
+                    # These keys (r_torah_missing, r_tzitzit_missing, r_tefillin_missing)
+                    # are not present in the original form data.
+                    # They might be expected from a different data source or a future form update.
+                    # For now, I'll keep them as they are in the provided snippet.
+                    torah_missing = int(latest_report.get('r_torah_missing', 0)) if latest_report is not None else 0
+                    if torah_missing > 0:
+                        st.warning(f"📖 **ספרי תורה חסרים:** {torah_missing}")
+                    else:
+                        st.success("✅ **ספרי תורה:** תקין")
+                
+                with col2:
+                    tzitzit_missing = int(latest_report.get('r_tzitzit_missing', 0)) if latest_report is not None else 0
+                    if tzitzit_missing > 0:
+                        st.warning(f"🧵 **ציציות חסרות:** {tzitzit_missing}")
+                    else:
+                        st.success("✅ **ציציות:** תקין")
+                    
+                    tefillin_missing = int(latest_report.get('r_tefillin_missing', 0)) if latest_report is not None else 0
+                    if tefillin_missing > 0:
+                        st.warning(f"📿 **תפילין חסרים:** {tefillin_missing}")
+                    else:
+                        st.success("✅ **תפילין:** תקין")
+            
+            with analysis_tabs[1]:  # עירוב וכשרות
+                st.markdown("#### מצב עירוב וכשרות")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    eruv_status = latest_report.get('e_status', 'לא ידוע') if latest_report is not None else 'לא ידוע'
+                    if eruv_status == 'תקין':
+                        st.success("✅ **עירוב:** תקין")
+                    else:
+                        st.error("🚧 **עירוב:** פסול")
+                    
+                    # 'k_eruv_kelim' is not in the original form data.
+                    eruv_kelim = latest_report.get('k_eruv_kelim', 'לא') if latest_report is not None else 'לא'
+                    if eruv_kelim == 'כן':
+                        st.error("🔴 **עירוב כלים:** קיים")
+                    else:
+                        st.success("✅ **עירוב כלים:** לא קיים")
+                
+                with col2:
+                    k_cert = latest_report.get('k_cert', 'לא') if latest_report is not None else 'לא'
+                    if k_cert == 'כן':
+                        st.success("✅ **תעודת כשרות:** קיימת")
+                    else:
+                        st.warning("⚠️ **תעודת כשרות:** חסרה")
+                    
+                    # 's_traklin_closed' is not in the original form data.
+                    traklin_closed = latest_report.get('s_traklin_closed', 'לא') if latest_report is not None else 'לא'
+                    if traklin_closed == 'כן':
+                        st.success("✅ **סגירת טרקלין:** מבוצעת")
+                    else:
+                        st.warning("⚠️ **סגירת טרקלין:** לא מבוצעת")
+            
+            with analysis_tabs[2]:  # תשתיות
+                st.markdown("#### תשתיות ויומן ביקורת")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # 'k_pikubok' is not in the original form data.
+                    pikubok = latest_report.get('k_pikubok', 'לא') if latest_report is not None else 'לא'
+                    if pikubok == 'כן':
+                        st.success("✅ **יומן ביקורת:** קיים")
+                    else:
+                        st.warning("⚠️ **יומן ביקורת:** לא קיים")
+                    
+                    # 'k_streams' is not in the original form data.
+                    procedures = latest_report.get('k_streams', 'לא') if latest_report is not None else 'לא'
+                    if procedures == 'כן':
+                        st.info("📋 **נהלים מעודכנים:** קיימים")
+                    else:
+                        st.warning("⚠️ **נהלים מעודכנים:** לא קיימים")
+            
+            with analysis_tabs[3]:  # סיכום
+                st.markdown("#### סיכום כללי")
+                
+                # חישוב אחוז תקינות
+                total_checks = 9
+                passed_checks = 0
+                
+                if mezuzot_missing == 0: passed_checks += 1
+                if torah_missing == 0: passed_checks += 1
+                if tzitzit_missing == 0: passed_checks += 1
+                if tefillin_missing == 0: passed_checks += 1
+                if eruv_status == 'תקין': passed_checks += 1
+                if eruv_kelim == 'לא': passed_checks += 1
+                if k_cert == 'כן': passed_checks += 1
+                if traklin_closed == 'כן': passed_checks += 1
+                if pikubok == 'כן': passed_checks += 1
+                
+                compliance_pct = (passed_checks / total_checks) * 100
+                
+                st.metric("📊 אחוז תקינות כללי", f"{compliance_pct:.0f}%")
+                st.progress(compliance_pct / 100)
+                
+                if compliance_pct >= 90:
+                    st.success("🌟 **מצוין!** היחידה במצב תקין מעולה")
+                elif compliance_pct >= 70:
+                    st.info("👍 **טוב!** היחידה במצב סביר, יש מקום לשיפור")
+                else:
+                    st.warning("⚠️ **דורש תשומת לב!** יש נושאים שדורשים טיפול")
+        else:
+            st.info("לא נמצאו דוחות ליחידה זו")
+        
+        st.markdown("---")
+    
+    # טופס דיווח (רק אם לא במצב מפקד)
+    if not st.session_state.commander_authenticated:
+        st.markdown("### 📋 דיווח ביקורת חדש")
+        
+        # כפתור יציאה בראש הדף
+        col_logout, col_logo, col_title = st.columns([1, 1, 6])
+        with col_logout:
+            if st.button("🚪 יציאה", key="logout_hatmar", use_container_width=True):
+                st.session_state.logged_in = False
+                st.session_state.selected_unit = None
+                st.session_state.login_stage = "gallery"  # חזרה לגלריה הראשית
+                st.rerun()
+        with col_logo:
+            st.image(get_logo_url(unit), width=80)
+        with col_title:
+            st.title(f"📋 דיווח ביקורת - {unit}")
     
     with st.form("report"):
         st.markdown("### 📍 מיקום ותאריך")
@@ -2610,10 +2853,61 @@ def render_unit_report():
                     
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # סיכום שעות שיא
-                    top_hour = stats['peak_hours'].index[0]
-                    top_count = stats['peak_hours'].iloc[0]
-                    st.info(f"🔥 **שעת שיא:** {int(top_hour):02d}:00 עם {int(top_count)} דוחות")
+                    # פירוט מפורט של שעות פעילות
+                    st.markdown("#### 📊 פירוט שעות פעילות")
+                    
+                    # יצירת DataFrame עם כל 24 השעות
+                    all_hours = pd.DataFrame({'hour': range(24), 'count': 0})
+                    activity_hours = stats['peak_hours'].reset_index()
+                    activity_hours.columns = ['hour', 'count']
+                    
+                    # מיזוג עם כל השעות
+                    hourly_data = all_hours.set_index('hour').combine_first(activity_hours.set_index('hour')).reset_index()
+                    hourly_data = hourly_data.sort_values('hour')
+                    
+                    # הצגת גרף עמודות מפורט
+                    fig_detailed = px.bar(
+                        hourly_data,
+                        x='hour',
+                        y='count',
+                        labels={'hour': 'שעה', 'count': 'מספר דוחות'},
+                        title='התפלגות דוחות לפי שעה (24 שעות)',
+                        color='count',
+                        color_continuous_scale='Blues'
+                    )
+                    
+                    fig_detailed.update_layout(
+                        xaxis=dict(
+                            tickmode='linear',
+                            tick0=0,
+                            dtick=1,
+                            tickformat='%02d:00'
+                        ),
+                        showlegend=False,
+                        height=400
+                    )
+                    
+                    st.plotly_chart(fig_detailed, use_container_width=True)
+                    
+                    # סטטיסטיקות מפורטות
+                    active_hours = hourly_data[hourly_data['count'] > 0]
+                    if len(active_hours) > 0:
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            peak_hour = active_hours.loc[active_hours['count'].idxmax(), 'hour']
+                            peak_count = active_hours['count'].max()
+                            st.metric("🔥 שעת שיא", f"{int(peak_hour):02d}:00", f"{int(peak_count)} דוחות")
+                        with col2:
+                            total_active_hours = len(active_hours)
+                            st.metric("⏰ שעות פעילות", f"{total_active_hours} שעות")
+                        with col3:
+                            avg_per_active_hour = active_hours['count'].mean()
+                            st.metric("📊 ממוצע לשעה פעילה", f"{avg_per_active_hour:.1f}")
+                        
+                        # רשימת שעות פעילות
+                        st.markdown("**שעות עם דיווחים:**")
+                        hours_list = ", ".join([f"{int(h):02d}:00 ({int(c)} דוחות)" for h, c in zip(active_hours['hour'], active_hours['count'])])
+                        st.caption(hours_list)
                 else:
                     st.info("אין מספיק נתונים להצגת שעות פעילות")
             
