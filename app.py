@@ -14,6 +14,8 @@ import shutil
 import os
 import pydeck as pdk
 from streamlit_geolocation import streamlit_geolocation
+from utils.geo_utils import find_nearest_base, is_location_suspicious, get_base_coordinates
+
 
 # --- 1. הגדרת עמוד ---
 st.set_page_config(
@@ -1561,7 +1563,19 @@ def render_unit_report():
         st.markdown("### 📍 מיקום ותאריך")
         loc = streamlit_geolocation()
         gps_lat, gps_lon = (loc['latitude'], loc['longitude']) if loc and loc.get('latitude') else (None, None)
-        if gps_lat: st.success(f"✅ מיקום נקלט: {gps_lat:.4f}, {gps_lon:.4f}")
+        
+        if gps_lat:
+            st.success(f"✅ מיקום נקלט: {gps_lat:.4f}, {gps_lon:.4f}")
+            
+            # בדיקת מרחק מבסיסים ידועים
+            nearest_base, distance = find_nearest_base(gps_lat, gps_lon)
+            
+            if distance < 2.0:
+                st.info(f"📍 **מיקום מזוהה:** {nearest_base} ({distance:.1f} ק\"מ)")
+            elif distance < 5.0:
+                st.warning(f"⚠️ **מרחק בינוני:** {nearest_base} ({distance:.1f} ק\"מ) - וודא שהמיקום נכון")
+            else:
+                st.error(f"🚨 **התראה:** {distance:.1f} ק\"מ מ-{nearest_base} - מיקום חריג!")
         
         c1, c2, c3 = st.columns(3)
         date = c1.date_input("תאריך", datetime.date.today())
@@ -1737,7 +1751,9 @@ def render_unit_report():
     st.markdown("---")
     st.markdown("## 📊 סטטיסטיקות מבקרים")
     
-    # טעינת דוחות של היחידה
+    # טעינת דוחות של היחידה (ללא קאש)
+    # ניקוי קאש לפני טעינה כדי להבטיח נתונים עדכניים
+    clear_cache()
     unit_reports_raw = supabase.table("reports").select("*").eq("unit", st.session_state.selected_unit).execute().data
     unit_df = pd.DataFrame(unit_reports_raw)
     
@@ -1780,17 +1796,24 @@ def render_unit_report():
                     
                     leaderboard_df = pd.DataFrame(leaderboard_data)
                     
-                    # תצוגה משופרת עם עיצוב
-                    st.dataframe(
-                        leaderboard_df,
-                        use_container_width=True,
-                        hide_index=True,
-                        column_config={
-                            "מקום": st.column_config.TextColumn("מקום", width="medium", help="מיקום בטבלה"),
-                            "שם המבקר": st.column_config.TextColumn("שם המבקר", width="large"),
-                            "דוחות": st.column_config.NumberColumn("דוחות", width="medium")
-                        }
-                    )
+                    # תצוגה משופרת עם עיצוב ממורכז
+                    # שימוש ב-HTML לעיצוב מדליות ממורכזות
+                    html_table = "<table style='width:100%; text-align:center; border-collapse: collapse;'>"
+                    html_table += "<thead><tr style='background-color: #f0f2f6;'>"
+                    html_table += "<th style='padding: 12px; font-size: 16px;'>מקום</th>"
+                    html_table += "<th style='padding: 12px; font-size: 16px;'>שם המבקר</th>"
+                    html_table += "<th style='padding: 12px; font-size: 16px;'>דוחות</th>"
+                    html_table += "</tr></thead><tbody>"
+                    
+                    for _, row in leaderboard_df.iterrows():
+                        html_table += "<tr style='border-bottom: 1px solid #e0e0e0;'>"
+                        html_table += f"<td style='padding: 10px; font-size: 24px;'>{row['מקום']}</td>"
+                        html_table += f"<td style='padding: 10px; text-align: right; font-size: 16px;'>{row['שם המבקר']}</td>"
+                        html_table += f"<td style='padding: 10px; font-size: 16px;'>{row['דוחות']}</td>"
+                        html_table += "</tr>"
+                    
+                    html_table += "</tbody></table>"
+                    st.markdown(html_table, unsafe_allow_html=True)
                     
                     # כפתור הורדת Excel
                     excel_data = create_inspector_excel(unit_df)
@@ -1899,29 +1922,39 @@ def render_unit_report():
             
             # טאב 3: שעות פעילות
             with stats_tabs[2]:
-                st.markdown("### ⏰ שעות פעילות מרביות")
+                st.markdown("### ⏰ שעות פעילות")
                 
                 if not stats['peak_hours'].empty:
-                    peak_data = pd.DataFrame({
+                    # יצירת תרשים עמודות אינטראקטיבי
+                    hours_df = pd.DataFrame({
                         'שעה': [f"{int(h):02d}:00" for h in stats['peak_hours'].index],
                         'דוחות': stats['peak_hours'].values
                     })
                     
                     fig = px.bar(
-                        peak_data,
+                        hours_df,
                         x='שעה',
                         y='דוחות',
-                        title="שעות הדיווח הפופולריות"
+                        title="התפלגות דיווחים לפי שעות",
+                        labels={'שעה': 'שעה ביום', 'דוחות': 'מספר דוחות'},
+                        color='דוחות',
+                        color_continuous_scale='Blues'
                     )
-                    fig.update_layout(showlegend=False, height=300)
+                    
+                    fig.update_layout(
+                        showlegend=False,
+                        height=350,
+                        xaxis_tickangle=-45
+                    )
+                    
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # הצגת השעות
-                    st.markdown("**שעות שיא:**")
-                    for idx, (hour, count) in enumerate(stats['peak_hours'].items(), 1):
-                        st.write(f"{idx}. שעה {int(hour):02d}:00 - {count} דוחות")
+                    # סיכום שעות שיא
+                    top_hour = stats['peak_hours'].index[0]
+                    top_count = stats['peak_hours'].iloc[0]
+                    st.info(f"🔥 **שעת שיא:** {int(top_hour):02d}:00 עם {int(top_count)} דוחות")
                 else:
-                    st.info("אין נתוני שעות זמינים")
+                    st.info("אין מספיק נתונים להצגת שעות פעילות")
             
             # טאב 4: התקדמות
             with stats_tabs[3]:
