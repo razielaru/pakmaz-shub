@@ -1179,7 +1179,16 @@ def render_command_dashboard():
     raw_data = load_reports_cached(accessible_units)
     df = pd.DataFrame(raw_data)
     
-    st.markdown(f"## 🎯 מרכז בקרה פיקודי - {unit}")
+    # כפתור יציאה בראש הדף
+    col_logout, col_title = st.columns([1, 5])
+    with col_logout:
+        if st.button("🚪 יציאה", key="logout_cmd", use_container_width=True):
+            st.session_state.logged_in = False
+            st.session_state.selected_unit = None
+            st.rerun()
+    
+    with col_title:
+        st.markdown(f"## 🎯 מרכז בקרה פיקודי - {unit}")
     
     # בדיקה אם יש נתונים
     if df.empty:
@@ -1799,9 +1808,18 @@ def render_command_dashboard():
 def render_unit_report():
     """הטופס המלא"""
     unit = st.session_state.selected_unit
-    c1, c2 = st.columns([1, 6])
-    with c1: st.image(get_logo_url(unit), width=80)
-    with c2: st.title(f"📋 דיווח ביקורת - {unit}")
+    
+    # כפתור יציאה בראש הדף
+    col_logout, col_logo, col_title = st.columns([1, 1, 6])
+    with col_logout:
+        if st.button("🚪 יציאה", key="logout_hatmar", use_container_width=True):
+            st.session_state.logged_in = False
+            st.session_state.selected_unit = None
+            st.rerun()
+    with col_logo:
+        st.image(get_logo_url(unit), width=80)
+    with col_title:
+        st.title(f"📋 דיווח ביקורת - {unit}")
     
     with st.form("report"):
         st.markdown("### 📍 מיקום ותאריך")
