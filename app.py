@@ -1536,7 +1536,7 @@ def render_command_dashboard():
                 if map_mode == "🎯 נקודות חטמ״ר":
                     # מפת נקודות צבעונית
                     valid_map['size_val'] = valid_map.apply(
-                        lambda r: 15 if (r.get('e_status') == 'פסול' or r.get('k_cert') == 'לא') else 8,
+                        lambda r: 25 if (r.get('e_status') == 'פסול' or r.get('k_cert') == 'לא') else 15,
                         axis=1
                     )
                     
@@ -1557,13 +1557,17 @@ def render_command_dashboard():
                         color="unit",
                         size="size_val",
                         color_discrete_map=unit_color_map,
-                        zoom=8,
-                        height=600
+                        zoom=9,
+                        height=650
                     )
                     
                     fig.update_layout(
-                        mapbox_style="carto-positron",
-                        margin={"r": 0, "t": 0, "l": 0, "b": 0}
+                        mapbox_style="open-street-map",
+                        margin={"r": 0, "t": 0, "l": 0, "b": 0},
+                        mapbox=dict(
+                            zoom=9,
+                            center=dict(lat=valid_map['latitude'].mean(), lon=valid_map['longitude'].mean())
+                        )
                     )
                     
                     st.plotly_chart(fig, use_container_width=True)
@@ -1580,29 +1584,33 @@ def render_command_dashboard():
                     st.info("💡 **נקודות גדולות** = בעיות (עירוב פסול או כשרות לא תקינה)")
                 
                 elif map_mode == "🔥 מפת חום":
-                    # מפת חום
+                    # מפת חום - צפיפות דיווחים
                     fig = px.density_mapbox(
                         valid_map,
                         lat="latitude",
                         lon="longitude",
                         hover_name="base",
-                        hover_data={"unit": True, "latitude": False, "longitude": False},
-                        radius=15,
-                        zoom=8,
-                        height=600,
-                        color_continuous_scale="YlOrRd"
+                        hover_data={"unit": True, "inspector": True, "latitude": False, "longitude": False},
+                        radius=20,
+                        zoom=9,
+                        height=650,
+                        color_continuous_scale="Hot"
                     )
                     
                     fig.update_layout(
-                        mapbox_style="carto-positron",
-                        margin={"r": 0, "t": 0, "l": 0, "b": 0}
+                        mapbox_style="open-street-map",
+                        margin={"r": 0, "t": 0, "l": 0, "b": 0},
+                        mapbox=dict(
+                            zoom=9,
+                            center=dict(lat=valid_map['latitude'].mean(), lon=valid_map['longitude'].mean())
+                        )
                     )
                     
                     st.plotly_chart(fig, use_container_width=True)
-                    st.info("🔥 **אזורים חמים** = ריכוז גבוה של דיווחים")
+                    st.info("🔥 **צבע אדום עז** = ריכוז גבוה של דיווחים באזור | **צהוב** = מעט דיווחים")
                 
                 else:
-                    # Clustering
+                    # Clustering - קיבוץ דיווחים
                     st.markdown("#### 📊 ניתוח Clustering - קיבוץ דיווחים")
                     
                     clustered = calculate_clusters(valid_map, radius_km=2.0)
@@ -1631,14 +1639,18 @@ def render_command_dashboard():
                             hover_data={"unit": True, "count": True, "center_lat": False, "center_lon": False},
                             color="count",
                             color_continuous_scale="Viridis",
-                            zoom=8,
-                            height=600,
-                            size_max=30
+                            zoom=9,
+                            height=650,
+                            size_max=50
                         )
                         
                         fig.update_layout(
-                            mapbox_style="carto-positron",
-                            margin={"r": 0, "t": 0, "l": 0, "b": 0}
+                            mapbox_style="open-street-map",
+                            margin={"r": 0, "t": 0, "l": 0, "b": 0},
+                            mapbox=dict(
+                                zoom=9,
+                                center=dict(lat=cluster_df['center_lat'].mean(), lon=cluster_df['center_lon'].mean())
+                            )
                         )
                         
                         st.plotly_chart(fig, use_container_width=True)
@@ -1648,7 +1660,7 @@ def render_command_dashboard():
                         cluster_table.columns = ['מוצב', 'חטמ"ר', 'דיווחים']
                         st.dataframe(cluster_table, use_container_width=True, hide_index=True)
                     
-                    st.info("💡 **גודל בועה** = מספר דיווחים באזור (רדיוס 2 ק\"מ)")
+                    st.info("💡 **בועה גדולה** = הרבה דיווחים באזור (רדיוס 2 ק\"מ) | **צבע כהה** = ריכוז גבוה")
             else:
                 # אין נתונים עם GPS - הצג מפה ריקה ממוקדת על האזור
                 fig = px.scatter_mapbox(
