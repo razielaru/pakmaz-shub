@@ -8,3 +8,5 @@ pydeck
 streamlit-geolocation
 folium
 streamlit-folium
+jinja2
+streamlit-components-lite
