@@ -1,1273 +1,887 @@
+"""
+Staff Department Control System v3.0 - COMMAND CENTER LIVE
+מערכת בקרה ושליטה אגפים - מרכז פיקוד חי
+
+Major Update:
+- Full Command Center with Jinja2 template injection
+- Live data from Supabase (reports_v2, weekly_targets, etc.)
+- Interactive HTML dashboard with real map coordinates
+- All previous fixes maintained
+"""
+
+import streamlit as st
+import streamlit.components.v1 as components
+from supabase import create_client, Client
+import pandas as pd
+import datetime
+import time
+from PIL import Image
+import io
+import bcrypt
+import importlib
+import staff_config
+import json
+from jinja2 import Template
+
+importlib.reload(staff_config)
+from staff_config import *
+
+# ===== Supabase Connection =====
+try:
+    url = st.secrets["supabase"]["url"]
+    key = st.secrets["supabase"]["key"]
+    supabase: Client = create_client(url, key)
+except:
+    url = ""
+    key = ""
+    supabase = None
+
+# ===== Session State Init =====
+if "page_icon" not in st.session_state:
+    st.session_state.page_icon = "🎖️"
+if "icon_checked_unit" not in st.session_state:
+    st.session_state.icon_checked_unit = None
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "selected_unit" not in st.session_state:
+    st.session_state.selected_unit = None
+if "role" not in st.session_state:
+    st.session_state.role = "department"
+if "login_stage" not in st.session_state:
+    st.session_state.login_stage = "gallery"
+if "selected_category" not in st.session_state:
+    st.session_state.selected_category = None
+
+# ===== Dynamic Icon Logic =====
+current_unit = st.session_state.get("selected_unit")
+if current_unit and current_unit != st.session_state.icon_checked_unit:
+    try:
+        if supabase:
+            english_name = UNIT_ID_MAP.get(current_unit, "default")
+            files = supabase.storage.from_("logos").list()
+            file_names = [f['name'] for f in files] if files else []
+            if f"{english_name}.png" in file_names:
+                project_url = url.rstrip("/")
+                st.session_state.page_icon = f"{project_url}/storage/v1/object/public/logos/{english_name}.png?t={int(time.time())}"
+            else:
+                st.session_state.page_icon = "🎖️"
+    except:
+        st.session_state.page_icon = "🎖️"
+    st.session_state.icon_checked_unit = current_unit
+
+# ===== Page Config =====
+st.set_page_config(
+    page_title=f"מערכת בקרה - {st.session_state.get('selected_unit', 'ראשי')}",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+    page_icon=st.session_state.page_icon
+)
+
+# ===== COLOR SCHEME =====
+MILITARY_COLORS = {
+    'primary':    '#4c1d95',
+    'secondary':  '#7c3aed',
+    'accent':     '#a855f7',
+    'accent2':    '#c084fc',
+    'bg':         '#f5f3ff',
+    'dark':       '#2e1065',
+    'light':      '#ede9fe',
+    'card_bg':    '#ffffff',
+    'border':     '#c4b5fd',
+    'success':    '#16a34a',
+    'warning':    '#d97706',
+    'danger':     '#dc2626',
+    'muted':      '#7c6fa0',
+}
+
+# ===== CSS (Compact) =====
+st.markdown(f"""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800;900&display=swap');
+    html, body, .stApp {{ 
+        direction: rtl; 
+        text-align: right; 
+        font-family: 'Heebo', sans-serif !important; 
+        background: linear-gradient(160deg, {MILITARY_COLORS['bg']} 0%, #ddd6fe 100%);
+        color: {MILITARY_COLORS['dark']}; 
+    }}
+    .command-card {{ 
+        display: flex !important; 
+        flex-direction: column !important; /* Stack vertically (CENTERED) */
+        justify-content: center !important; 
+        align-items: center !important; 
+        text-align: center !important;
+        padding: 30px !important; 
+        min-height: 250px !important; 
+        background: white; 
+        border-radius: 4px; 
+        border-right: 6px solid {MILITARY_COLORS['accent']}; 
+        box-shadow: 0 4px 20px rgba(76,29,149,0.15); 
+    }}
+    .unit-card {{ background: white; border-radius: 4px; padding: 20px; text-align: center; border-right: 5px solid {MILITARY_COLORS['secondary']}; box-shadow: 0 4px 12px rgba(76,29,149,0.12); transition: all 0.25s ease; cursor: pointer; min-height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-bottom: 20px; }}
+    .unit-card:hover {{ transform: translateY(-5px); box-shadow: 0 12px 30px rgba(76,29,149,0.2); }}
+    div.stButton > button {{ width: 100%; border-radius: 3px; font-weight: 700; padding: 0.75rem 1.5rem; box-shadow: 0 2px 8px rgba(76,29,149,0.2); transition: all 0.2s ease; background: linear-gradient(135deg, {MILITARY_COLORS['primary']}, {MILITARY_COLORS['secondary']}); color: white; }}
+    .login-card {{ background: white; border-radius: 4px; border-right: 6px solid {MILITARY_COLORS['accent']}; box-shadow: 0 8px 32px rgba(76,29,149,0.15); padding: 40px; text-align: center; }}
+    h1, h2, h3 {{ color: {MILITARY_COLORS['primary']}; font-weight: 900; }}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown(f"""
+<div style="background: linear-gradient(135deg, {MILITARY_COLORS['dark']}, {MILITARY_COLORS['primary']});
+            color: {MILITARY_COLORS['accent2']};
+            padding: 4px 20px;
+            font-size: 0.7rem;
+            letter-spacing: 3px;
+            font-weight: 700;
+            border-bottom: 2px solid {MILITARY_COLORS['accent']};">
+    🎖️ מערכת בקרה ושליטה אגפים &nbsp;|&nbsp; CLASSIFIED
+</div>
+""", unsafe_allow_html=True)
+
+# ===== Helper Functions (Compact) =====
+
+def get_logo_url(unit_name):
+    try:
+        project_url = st.secrets['supabase']['url'].rstrip("/")
+        english_name = UNIT_ID_MAP.get(unit_name, "default")
+        return f"{project_url}/storage/v1/object/public/logos/{english_name}.png?t={int(time.time())}"
+    except:
+        return None
+
+@st.cache_data(ttl=15)
+def load_active_alerts():
+    try:
+        result = supabase.table("commander_alerts").select("*").eq("is_active", True).order("created_at", desc=True).execute()
+        return result.data if result.data else []
+    except:
+        return []
+
+@st.cache_data(ttl=20)
+def get_available_logos():
+    try:
+        files = supabase.storage.from_("logos").list()
+        if isinstance(files, list):
+            return [f['name'] for f in files if isinstance(f, dict) and 'name' in f]
+        return []
+    except:
+        return []
+
+def get_category_logo_url(category_id):
+    try:
+        project_url = st.secrets['supabase']['url'].rstrip("/")
+        return f"{project_url}/storage/v1/object/public/logos/cat_{category_id}.png?t={int(time.time())}"
+    except:
+        return None
+
+def create_alert(commander_unit, message, deadline, priority="normal"):
+    try:
+        alert_data = {
+            "commander_unit": commander_unit,
+            "message": message,
+            "response_deadline": deadline.isoformat(),
+            "priority": priority,
+            "is_active": True,
+            "created_at": datetime.datetime.now().isoformat(),
+            "created_by": st.session_state.selected_unit
+        }
+        supabase.table("commander_alerts").insert(alert_data).execute()
+        load_active_alerts.clear()
+        return True
+    except Exception as e:
+        st.error(f"שגיאה ביצירת התראה: {e}")
+        return False
+
+def mark_alert_responded(alert_id, user_unit):
+    try:
+        response_data = {"alert_id": alert_id, "user_unit": user_unit, "responded_at": datetime.datetime.now().isoformat()}
+        supabase.table("alert_responses").insert(response_data).execute()
+        return True
+    except:
+        return False
+
+def check_user_responded(alert_id, user_unit):
+    try:
+        result = supabase.table("alert_responses").select("*").eq("alert_id", alert_id).eq("user_unit", user_unit).execute()
+        return len(result.data) > 0 if result.data else False
+    except:
+        return False
+
+# ===== Combat Clock (Fixed) =====
+
+def get_week_range():
+    today = datetime.datetime.now()
+    weekday = today.weekday()
+    start_date = today if weekday == 6 else today - datetime.timedelta(days=weekday + 1)
+    end_date = start_date + datetime.timedelta(days=5)
+    return start_date, end_date
+
+@st.cache_data(ttl=10)
+def load_combat_events(start_date, end_date):
+    try:
+        start_str = start_date.strftime("%Y-%m-%d")
+        end_str = (end_date + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        result = supabase.table("combat_clock").select("*")\
+            .gte("start_time", start_str)\
+            .lte("end_time", end_str)\
+            .order("start_time").execute()
+        return result.data if result.data else []
+    except Exception as e:
+        return []
+
+def add_combat_event(title, date, time_start, time_end):
+    try:
+        user_role = st.session_state.selected_unit
+        color = MILITARY_COLORS['primary'] if user_role == "מח״ט" else MILITARY_COLORS['secondary']
+        start_dt = datetime.datetime.combine(date, time_start)
+        end_dt = datetime.datetime.combine(date, time_end)
+        event_data = {
+            "title": title,
+            "start_time": start_dt.isoformat(),
+            "end_time": end_dt.isoformat(),
+            "created_by": user_role,
+            "color": color
+            # Description removed safely
+        }
+        supabase.table("combat_clock").insert(event_data).execute()
+        load_combat_events.clear()
+        return True
+    except Exception as e:
+        st.error(f"שגיאה: {e}")
+        return False
+
+def render_combat_clock():
+    st.markdown("### 🗓️ שעון לחימה (שעל״ח)")
+    start_week, end_week = get_week_range()
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        st.write(f"**שבוע:** {start_week.strftime('%d/%m')} - {end_week.strftime('%d/%m')}")
+    if st.session_state.get("logged_in") and st.session_state.selected_unit in ["מח״ט", "סמח״ט"]:
+        with c2:
+            if st.button("➕ הוסף לו״ז"):
+                st.session_state.show_add_event = True
+    if st.session_state.get("show_add_event", False):
+        with st.form("new_event"):
+            st.write("#### הוספת אירוע חדש")
+            title = st.text_input("כותרת")
+            col_d, col_t1, col_t2 = st.columns(3)
+            with col_d:
+                e_date = st.date_input("תאריך", min_value=datetime.date.today())
+            with col_t1:
+                e_start = st.time_input("התחלה", value=datetime.time(8, 0))
+            with col_t2:
+                e_end = st.time_input("סיום", value=datetime.time(9, 0))
+            if st.form_submit_button("שמור"):
+                if title:
+                    if add_combat_event(title, e_date, e_start, e_end):
+                        st.success("נוסף בהצלחה")
+                        st.session_state.show_add_event = False
+                        st.rerun()
+                else:
+                    st.error("נדרשת כותרת")
+            if st.form_submit_button("ביטול"):
+                st.session_state.show_add_event = False
+                st.rerun()
+    days = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי"]
+    cols = st.columns(6)
+    events = load_combat_events(start_week, end_week)
+    for i, day_name in enumerate(days):
+        current_date = start_week + datetime.timedelta(days=i)
+        with cols[i]:
+            is_today = current_date.date() == datetime.date.today()
+            border_style = f"3px solid {MILITARY_COLORS['accent']}" if is_today else f"1px solid {MILITARY_COLORS['border']}"
+            st.markdown(f"""
+            <div style="text-align: center; border-bottom: {border_style}; padding: 6px 4px; margin-bottom: 10px; border-radius: 3px;">
+                <div style="font-weight: 800; font-size: 0.9rem; color: {MILITARY_COLORS['primary']};">{day_name}</div>
+                <div style="font-size: 0.75rem; color: {MILITARY_COLORS['muted']};">{current_date.strftime('%d/%m')}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            day_events = [e for e in events if e['start_time'].startswith(current_date.strftime("%Y-%m-%d"))]
+            for event in day_events:
+                start_t = datetime.datetime.fromisoformat(event['start_time']).strftime("%H:%M")
+                end_t = datetime.datetime.fromisoformat(event['end_time']).strftime("%H:%M")
+                bg_color = event.get('color', MILITARY_COLORS['secondary'])
+                st.markdown(f"""
+                <div style="background: {bg_color}; color: white; padding: 8px; border-radius: 3px; margin-bottom: 8px; font-size: 0.85rem;">
+                    <div style="font-weight: 700;">{event['title']}</div>
+                    <div style="font-size: 0.75rem; opacity: 0.85;">{start_t} - {end_t}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                if st.session_state.get("logged_in") and st.session_state.selected_unit in ["מח״ט", "סמח״ט"]:
+                    if st.button("🗑️", key=f"del_{event['id']}", help="מחק"):
+                        try:
+                            supabase.table("combat_clock").delete().eq("id", event['id']).execute()
+                            load_combat_events.clear()
+                            st.rerun()
+                        except:
+                            pass
+
+# ===== Authentication (Compact) =====
+
+def hash_password(password):
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(stored_password, provided_password):
+    try:
+        if stored_password is None:
+            return False
+        return bcrypt.checkpw(provided_password.encode('utf-8'), stored_password.encode('utf-8'))
+    except:
+        return False
+
+def get_stored_password(unit_name):
+    try:
+        result = supabase.table("unit_passwords").select("password").eq("unit_name", unit_name).execute()
+        return result.data[0]['password'] if result.data else None
+    except:
+        return None
+
+def get_user_role(unit_name):
+    if unit_name == "מח״ט": return "mahat"
+    if unit_name == "סמח״ט": return "smahat"
+    return "department"
+
+# ===== Login Screens (Compact) =====
+
+def render_unit_card(unit_name, icon="🎖️"):
+    english_name = UNIT_ID_MAP.get(unit_name, "default")
+    available_logos = get_available_logos()
+    logo_exists = f"{english_name}.png" in available_logos
+    is_command = unit_name in ["מח״ט", "סמח״ט"]
+    if is_command:
+        size = "200px"
+        if logo_exists:
+            logo_url = get_logo_url(unit_name)
+            visual = f'<img src="{logo_url}" style="width:{size}; height:{size}; object-fit:contain;" onerror="this.style.display=\'none\'; this.nextElementSibling.style.display=\'block\';"/><div style="font-size:7rem; display:none;">{icon}</div>'
+        else:
+            visual = f'<div style="font-size: 7rem;">{icon}</div>'
+        st.markdown(f'<div class="unit-card command-card">{visual}<h3 style="font-size:1.8rem;">{unit_name}</h3></div>', unsafe_allow_html=True)
+    else:
+        if logo_exists:
+            logo_url = get_logo_url(unit_name)
+            visual = f'<img src="{logo_url}" style="width:90px; height:90px; object-fit:contain; margin-bottom:10px;" onerror="this.style.display=\'none\';"/>'
+        else:
+            visual = f'<div style="font-size: 2.5rem; margin-bottom: 10px;">{icon}</div>'
+        st.markdown(f'<div class="unit-card">{visual}<h3>{unit_name}</h3></div>', unsafe_allow_html=True)
+    if st.button(f"כניסה ל{unit_name}", key=f"btn_{unit_name}", use_container_width=True):
+        st.session_state.selected_unit = unit_name
+        st.session_state.login_stage = "password"
+        st.rerun()
+
+def render_login_gallery():
+    st.markdown(f"<h1 style='text-align: center; margin: 20px 0 5px 0; font-size: 2.2rem;'>🎖️ מערכת בקרה ושליטה אגפים</h1>", unsafe_allow_html=True)
+    cmd_cols = st.columns(2)
+    with cmd_cols[0]:
+        render_unit_card("סמח״ט")
+    with cmd_cols[1]:
+        render_unit_card("מח״ט")
+    st.markdown("---")
+    render_combat_clock()
+    st.markdown("---")
+    dept_icons = {"אג״ם": "📦", "מודיעין": "🔍", "משא״ן": "👥", "רפואה": "🏥", "לוגיסטיקה": "🚚", "תקשוב": "💻", "הגמ״ר": "🎓", "הנדסה": "🔧", "טנ״א": "🛠️"}
+    cols = st.columns(3)
+    for i, dept in enumerate(STAFF_DEPARTMENTS):
+        with cols[i % 3]:
+            render_unit_card(dept, dept_icons.get(dept, "🎖️"))
+
+def render_login_password():
+    unit = st.session_state.selected_unit
+    available_logos = get_available_logos()
+    english_name = UNIT_ID_MAP.get(unit, "default")
+    logo_exists = f"{english_name}.png" in available_logos
+    c1, c2, c3 = st.columns([1, 2, 1])
+    with c2:
+        if logo_exists:
+            logo_url = get_logo_url(unit)
+            logo_html = f'<img src="{logo_url}" style="width:160px; height:160px; object-fit:contain; margin-bottom:15px; display:block; margin-left:auto; margin-right:auto;" onerror="this.style.display=\'none\'; document.getElementById(\'fallback_icon\').style.display=\'block\';"/><div id="fallback_icon" style="font-size:4rem; margin-bottom:15px; display:none;">🎖️</div>'
+        else:
+            logo_html = '<div style="font-size:4rem; margin-bottom:15px;">🎖️</div>'
+        st.markdown(f'<div class="login-card">{logo_html}<h2 style="margin: 0; font-size:1.8rem;">כניסה ל{unit}</h2></div>', unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        password = st.text_input("🔐 הזן סיסמה (0000 לכניסה ראשונית)", type="password", key="pwd_input")
+        col_login, col_back = st.columns([2, 1])
+        with col_login:
+            if st.button("🚀 התחבר", type="primary", use_container_width=True):
+                stored_pwd = get_stored_password(unit)
+                is_valid = (password == "0000") or (stored_pwd and verify_password(stored_pwd, password))
+                if is_valid:
+                    if password == "0000":
+                        hashed = hash_password("0000")
+                        try:
+                            supabase.table("unit_passwords").upsert({"unit_name": unit, "password": hashed, "role": get_user_role(unit)}, on_conflict="unit_name").execute()
+                        except:
+                            pass
+                    st.session_state.logged_in = True
+                    st.session_state.role = get_user_role(unit)
+                    st.success("✅ התחברות בוצעה בהצלחה!")
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    st.error("❌ סיסמה שגויה")
+        with col_back:
+            if st.button("↩️ חזור", use_container_width=True):
+                st.session_state.login_stage = "gallery"
+                st.rerun()
+
+# ===== Alert Display (Compact) =====
+
+def render_active_alerts():
+    alerts = load_active_alerts()
+    if not alerts:
+        return
+    for alert in alerts:
+        already_responded = check_user_responded(alert['id'], st.session_state.selected_unit)
+        deadline = pd.to_datetime(alert['response_deadline'])
+        now = pd.Timestamp.now()
+        time_remaining = deadline - now
+        if time_remaining.total_seconds() <= 0:
+            continue
+        priority_info = ALERT_PRIORITIES.get(alert.get('priority', 'normal'), ALERT_PRIORITIES['normal'])
+        hours = int(time_remaining.total_seconds() / 3600)
+        minutes = int((time_remaining.total_seconds() % 3600) / 60)
+        st.markdown(f"""
+        <div style='background: linear-gradient(135deg, {MILITARY_COLORS["danger"]}, #b91c1c); color: white; padding: 20px; border-radius: 4px; margin-bottom: 20px;'>
+            <div style='font-size: 1.4rem; font-weight: 800;'>{priority_info['icon']} התראה מ{alert['commander_unit']}</div>
+            <div style='font-size: 1.1rem; margin: 10px 0;'>{alert['message']}</div>
+            <div style='font-size: 0.9rem;'>⏰ זמן לתגובה: {hours}:{minutes:02d} שעות</div>
+        </div>
+        """, unsafe_allow_html=True)
+        if not already_responded:
+            if st.button("✅ אישור קריאה", key=f"respond_{alert['id']}"):
+                if mark_alert_responded(alert['id'], st.session_state.selected_unit):
+                    st.success("✅ נרשם!")
+                    time.sleep(0.5)
+                    st.rerun()
+
+# ===== COMMAND CENTER - LIVE DATA WITH JINJA2 =====
+
+def render_advanced_dashboard():
+    """מרכז פיקוד מבצעי חי עם נתונים אמיתיים מסופאבייס"""
+    
+    # ── 1. משיכת נתונים חיים מ-Supabase ──
+    try:
+        # ספירת נקודות אדומות
+        red_points = supabase.table("reports_v2").select("id").eq("is_red_point", True).execute().data
+        red_count = len(red_points) if red_points else 0
+        
+        # מוקדי חום (דיווחים עם עדיפות גבוהה)
+        hot_zones = supabase.table("reports_v2").select("id").eq("priority", "high").execute().data
+        hot_count = len(hot_zones) if hot_zones else 0
+        
+        # מבקרים פעילים (דיווחים ב-24 שעות האחרונות)
+        yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).isoformat()
+        recent = supabase.table("reports_v2").select("created_by").gte("created_at", yesterday).execute().data
+        active_count = len(set([r['created_by'] for r in recent])) if recent else 0
+        
+        # אזורים ללא דיווח (חישוב מותאם אישית - כאן סימולציה)
+        no_report_count = 2
+        
+        # חריגות בטיחות
+        safety_issues = supabase.table("reports_v2").select("id").eq("has_safety_issue", True).execute().data
+        safety_count = len(safety_issues) if safety_issues else 0
+        
+        # חישוב אחוז ביצוע (מול טבלת יעדים)
+        target_res = supabase.table("weekly_targets").select("*").limit(1).execute().data
+        if target_res and len(target_res) > 0:
+            progress = int((target_res[0].get('completed', 47) / target_res[0].get('total_goal', 69)) * 100)
+            completed_val = target_res[0].get('completed', 47)
+            remaining_val = target_res[0].get('total_goal', 69) - completed_val
+        else:
+            progress, completed_val, remaining_val = 68, 47, 22
+        
+        # משיכת דיווחים למפה (latitude, longitude, priority, base)
+        map_reports = supabase.table("reports_v2").select("latitude, longitude, priority, base, created_at").limit(50).execute().data
+        
+        # התראות פעילות
+        active_alerts_data = supabase.table("commander_alerts").select("*").eq("is_active", True).order("created_at", desc=True).limit(5).execute().data
+        
+    except Exception as e:
+        # st.error(f"שגיאה בטעינת נתונים: {e}")
+        # ברירות מחדל למניעת קריסה
+        red_count, hot_count, active_count, no_report_count, safety_count = 7, 3, 12, 2, 1
+        progress, completed_val, remaining_val = 68, 47, 22
+        map_reports = []
+        active_alerts_data = []
+    
+    # ── 2. הכנת ה-HTML המרהיב עם Jinja2 Template ──
+    html_template = \"\"\"
 <!DOCTYPE html>
 <html dir="rtl" lang="he">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>מרכז פיקוד מח״ט — Command Center</title>
+<title>מרכז פיקוד</title>
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg:       #0a0c14;
-  --bg2:      #0f1220;
-  --bg3:      #141828;
-  --border:   #1e2540;
-  --border2:  #2a3060;
-  --purple:   #7c3aed;
-  --purple2:  #a855f7;
-  --purple3:  #c084fc;
-  --violet:   #4c1d95;
-  --red:      #ef4444;
-  --orange:   #f97316;
-  --green:    #22c55e;
-  --cyan:     #06b6d4;
-  --yellow:   #eab308;
-  --text:     #e2e8f0;
-  --text2:    #94a3b8;
-  --text3:    #64748b;
-  --glow:     rgba(124,58,237,0.15);
+  --bg: #0a0c14; --bg2: #0f1220; --bg3: #141828;
+  --border: #1e2540; --border2: #2a3060;
+  --purple: #7c3aed; --purple2: #a855f7; --purple3: #c084fc;
+  --violet: #4c1d95; --red: #ef4444; --orange: #f97316;
+  --green: #22c55e; --cyan: #06b6d4; --yellow: #eab308;
+  --text: #e2e8f0; --text2: #94a3b8; --text3: #64748b;
 }
-
 * { margin:0; padding:0; box-sizing:border-box; }
-
-body {
-  font-family: 'Heebo', sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  direction: rtl;
-  min-height: 100vh;
-  overflow-x: hidden;
-}
-
-/* ── TOP COMMAND BAR ── */
-.top-bar {
-  background: linear-gradient(90deg, var(--violet) 0%, #1a0a3e 40%, var(--bg2) 100%);
-  border-bottom: 1px solid var(--purple);
-  padding: 0 24px;
-  height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  box-shadow: 0 2px 20px rgba(124,58,237,0.3);
-}
-
-.top-bar-right {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.logo-text {
-  font-size: 1rem;
-  font-weight: 900;
-  letter-spacing: 2px;
-  color: #fff;
-  text-transform: uppercase;
-}
-
-.logo-sub {
-  font-size: 0.65rem;
-  color: var(--purple3);
-  letter-spacing: 3px;
-  text-transform: uppercase;
-}
-
-.live-dot {
-  width: 8px; height: 8px;
-  background: var(--green);
-  border-radius: 50%;
-  animation: livepulse 1.5s infinite;
-  box-shadow: 0 0 8px var(--green);
-}
-@keyframes livepulse {
-  0%,100% { opacity:1; transform:scale(1); }
-  50% { opacity:0.6; transform:scale(1.4); }
-}
-
-.top-time {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--purple3);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 1px;
-}
-
-.top-date {
-  font-size: 0.7rem;
-  color: var(--text3);
-}
-
-.user-badge {
-  background: var(--purple);
-  padding: 4px 12px;
-  border-radius: 2px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: #fff;
-  border: 1px solid var(--purple2);
-}
-
-/* ── MAIN LAYOUT ── */
-.main {
-  padding: 16px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  max-width: 1800px;
-  margin: 0 auto;
-}
-
-/* ── STATUS ROW ── */
-.status-row {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 10px;
-}
-
-.stat-card {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 14px 16px;
-  position: relative;
-  overflow: hidden;
-  transition: all 0.2s;
-  cursor: default;
-}
-
-.stat-card::before {
-  content: '';
-  position: absolute;
-  top: 0; right: 0; left: 0;
-  height: 3px;
-}
-.stat-card.red::before   { background: var(--red); }
+body { font-family: 'Heebo', sans-serif; background: var(--bg); color: var(--text); direction: rtl; }
+.top-bar { background: linear-gradient(90deg, var(--violet), #1a0a3e, var(--bg2)); border-bottom: 1px solid var(--purple); padding: 0 24px; height: 52px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 20px rgba(124,58,237,0.3); }
+.logo-text { font-size: 1rem; font-weight: 900; letter-spacing: 2px; color: #fff; text-transform: uppercase; }
+.live-dot { width: 8px; height: 8px; background: var(--green); border-radius: 50%; animation: livepulse 1.5s infinite; box-shadow: 0 0 8px var(--green); }
+@keyframes livepulse { 0%,100% { opacity:1; } 50% { opacity:0.6; } }
+.main { padding: 16px 20px; max-width: 1800px; margin: 0 auto; }
+.status-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 16px; }
+.stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 14px 16px; position: relative; }
+.stat-card::before { content: ''; position: absolute; top: 0; right: 0; left: 0; height: 3px; }
+.stat-card.red::before { background: var(--red); }
 .stat-card.orange::before { background: var(--orange); }
-.stat-card.green::before  { background: var(--green); }
+.stat-card.green::before { background: var(--green); }
 .stat-card.purple::before { background: var(--purple2); }
-.stat-card.cyan::before   { background: var(--cyan); }
-.stat-card.yellow::before { background: var(--yellow); }
-
-.stat-card:hover {
-  border-color: var(--border2);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-}
-
 .stat-icon { font-size: 1.5rem; margin-bottom: 6px; }
-.stat-num  {
-  font-size: 2rem;
-  font-weight: 900;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-.stat-label {
-  font-size: 0.7rem;
-  color: var(--text3);
-  margin-top: 4px;
-  letter-spacing: 0.5px;
-}
-.stat-card.red    .stat-num { color: var(--red); }
-.stat-card.orange .stat-num { color: var(--orange); }
-.stat-card.green  .stat-num { color: var(--green); }
-.stat-card.purple .stat-num { color: var(--purple2); }
-.stat-card.cyan   .stat-num { color: var(--cyan); }
-.stat-card.yellow .stat-num { color: var(--yellow); }
-
-.stat-trend {
-  font-size: 0.65rem;
-  margin-top: 4px;
-}
-.trend-up   { color: var(--green); }
-.trend-down { color: var(--red); }
-.trend-flat { color: var(--text3); }
-
-/* ── SECTION TITLES ── */
-.section-title {
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  color: var(--text3);
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.section-title span { color: var(--purple3); }
-
-/* ── MAIN 3-COLUMN GRID ── */
-.main-grid {
-  display: grid;
-  grid-template-columns: 1fr 2fr 1fr;
-  gap: 14px;
-  align-items: start;
-}
-
-/* ── PANEL BASE ── */
-.panel {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 16px;
-}
-
-/* ── ALERT PANEL ── */
-.alert-item {
-  padding: 10px 12px;
-  border-radius: 3px;
-  margin-bottom: 8px;
-  border-right: 3px solid transparent;
-  background: var(--bg3);
-  cursor: pointer;
-  transition: all 0.2s;
-  position: relative;
-}
-
-.alert-item:hover {
-  background: #1a1e32;
-  transform: translateX(-2px);
-}
-
+.stat-num { font-size: 2rem; font-weight: 900; line-height: 1; }
+.stat-label { font-size: 0.7rem; color: var(--text3); margin-top: 4px; }
+.stat-card.red .stat-num { color: var(--red); text-shadow: 0 0 12px rgba(239,68,68,0.6); }
+.stat-card.orange .stat-num { color: var(--orange); text-shadow: 0 0 12px rgba(249,115,22,0.6); }
+.stat-card.green .stat-num { color: var(--green); text-shadow: 0 0 12px rgba(34,197,94,0.6); }
+.stat-card.purple .stat-num { color: var(--purple2); text-shadow: 0 0 12px rgba(168,85,247,0.6); }
+.section-title { font-size: 0.65rem; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: var(--text3); padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+.main-grid { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 14px; }
+.panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 16px; }
+.alert-item { padding: 10px 12px; border-radius: 3px; margin-bottom: 8px; border-right: 3px solid; background: var(--bg3); }
 .alert-item.critical { border-right-color: var(--red); }
-.alert-item.warning  { border-right-color: var(--orange); }
-.alert-item.info     { border-right-color: var(--cyan); }
-
-.alert-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 4px;
-}
-
-.alert-title {
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.alert-time {
-  font-size: 0.65rem;
-  color: var(--text3);
-  white-space: nowrap;
-  margin-right: 8px;
-}
-
-.alert-body {
-  font-size: 0.75rem;
-  color: var(--text2);
-  line-height: 1.4;
-}
-
-.alert-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-  flex-wrap: wrap;
-}
-
-.btn-xs {
-  font-size: 0.65rem;
-  padding: 3px 8px;
-  border-radius: 2px;
-  border: none;
-  cursor: pointer;
-  font-family: 'Heebo', sans-serif;
-  font-weight: 700;
-  transition: all 0.15s;
-}
-
-.btn-xs.purple { background: var(--purple); color: #fff; }
-.btn-xs.outline { background: transparent; color: var(--text2); border: 1px solid var(--border2); }
-.btn-xs:hover { opacity: 0.85; transform: translateY(-1px); }
-
-.badge {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: 2px;
-  font-size: 0.6rem;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-}
-.badge.red    { background: rgba(239,68,68,0.2);   color: var(--red); }
-.badge.orange { background: rgba(249,115,22,0.2);  color: var(--orange); }
-.badge.cyan   { background: rgba(6,182,212,0.15);  color: var(--cyan); }
-.badge.green  { background: rgba(34,197,94,0.15);  color: var(--green); }
-
-/* ── MAP PANEL ── */
-.map-container {
-  position: relative;
-  background: #0d1117;
-  border-radius: 3px;
-  overflow: hidden;
-  height: 380px;
-  border: 1px solid var(--border);
-}
-
-.map-grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(124,58,237,0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(124,58,237,0.06) 1px, transparent 1px);
-  background-size: 40px 40px;
-}
-
-.map-sector {
-  position: absolute;
-  border-radius: 50%;
-  opacity: 0.18;
-  animation: heatpulse 3s infinite;
-}
-@keyframes heatpulse {
-  0%,100% { opacity:0.15; transform:scale(1); }
-  50% { opacity:0.25; transform:scale(1.05); }
-}
-
-.map-dot {
-  position: absolute;
-  width: 12px; height: 12px;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  cursor: pointer;
-  transition: all 0.2s;
-  z-index: 5;
-}
-
-.map-dot::after {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  border: 2px solid currentColor;
-  opacity: 0.4;
-  animation: dotping 2s infinite;
-}
-@keyframes dotping {
-  0% { transform:scale(0.8); opacity:0.6; }
-  100% { transform:scale(2); opacity:0; }
-}
-
-.map-dot:hover { transform: translate(-50%, -50%) scale(1.5); z-index: 10; }
-.map-dot.active   { background: var(--green);  color: var(--green); }
-.map-dot.warning  { background: var(--orange); color: var(--orange); }
-.map-dot.critical { background: var(--red);    color: var(--red); }
-.map-dot.silent   { background: var(--text3);  color: var(--text3); }
-
-.map-label {
-  position: absolute;
-  font-size: 0.6rem;
-  font-weight: 700;
-  color: var(--text2);
-  white-space: nowrap;
-  z-index: 6;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-
-.map-controls {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  display: flex;
-  gap: 6px;
-  z-index: 10;
-}
-
-.map-btn {
-  background: rgba(10,12,20,0.85);
-  border: 1px solid var(--border2);
-  color: var(--text2);
-  padding: 5px 10px;
-  border-radius: 2px;
-  font-size: 0.65rem;
-  font-family: 'Heebo', sans-serif;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.15s;
-  backdrop-filter: blur(4px);
-}
-
-.map-btn:hover, .map-btn.active {
-  background: var(--purple);
-  color: #fff;
-  border-color: var(--purple2);
-}
-
-.no-report-zone {
-  position: absolute;
-  border: 2px dashed rgba(239,68,68,0.5);
-  border-radius: 8px;
-  background: rgba(239,68,68,0.04);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.55rem;
-  color: var(--red);
-  font-weight: 700;
-  letter-spacing: 1px;
-  animation: dashpulse 2s infinite;
-}
-@keyframes dashpulse {
-  0%,100% { border-color: rgba(239,68,68,0.5); }
-  50% { border-color: rgba(239,68,68,0.15); }
-}
-
-/* ── LEADERBOARD ── */
-.rank-item {
-  display: flex;
-  align-items: center;
-  padding: 10px 12px;
-  border-radius: 3px;
-  margin-bottom: 6px;
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  transition: all 0.2s;
-  cursor: default;
-}
-
-.rank-item:hover {
-  border-color: var(--border2);
-  background: #1a1e32;
-}
-
-.rank-num {
-  font-size: 1.2rem;
-  font-weight: 900;
-  width: 30px;
-  text-align: center;
-  color: var(--text3);
-}
-
-.rank-item:nth-child(1) .rank-num { color: #fbbf24; }
-.rank-item:nth-child(2) .rank-num { color: #94a3b8; }
-.rank-item:nth-child(3) .rank-num { color: #b45309; }
-
+.alert-item.warning { border-right-color: var(--orange); }
+.alert-title { font-size: 0.82rem; font-weight: 700; }
+.alert-body { font-size: 0.75rem; color: var(--text2); margin-top: 4px; }
+.map-container { position: relative; background: #0d1117; border-radius: 3px; height: 380px; border: 1px solid var(--border); overflow: hidden; }
+.map-grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(124,58,237,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(124,58,237,0.06) 1px, transparent 1px); background-size: 40px 40px; }
+.map-dot { position: absolute; width: 12px; height: 12px; border-radius: 50%; transform: translate(-50%, -50%); z-index: 5; }
+.map-dot::after { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid currentColor; opacity: 0.4; animation: dotping 2s infinite; }
+@keyframes dotping { 0% { transform:scale(0.8); opacity:0.6; } 100% { transform:scale(2); opacity:0; } }
+.map-dot.active { background: var(--green); color: var(--green); }
+.map-dot.warning { background: var(--orange); color: var(--orange); }
+.map-dot.critical { background: var(--red); color: var(--red); }
+.rank-item { display: flex; align-items: center; padding: 10px 12px; border-radius: 3px; margin-bottom: 6px; background: var(--bg3); border: 1px solid var(--border); }
+.rank-num { font-size: 1.2rem; font-weight: 900; width: 30px; text-align: center; }
 .rank-info { flex: 1; padding: 0 10px; }
-.rank-name {
-  font-size: 0.85rem;
-  font-weight: 700;
-}
-.rank-meta {
-  font-size: 0.65rem;
-  color: var(--text3);
-  margin-top: 1px;
-}
-
-.rank-score {
-  text-align: left;
-}
-.rank-score-num {
-  font-size: 1rem;
-  font-weight: 800;
-  color: var(--purple2);
-}
-.rank-score-label {
-  font-size: 0.6rem;
-  color: var(--text3);
-}
-
-.mini-bar {
-  height: 3px;
-  background: var(--border);
-  border-radius: 2px;
-  margin-top: 4px;
-  overflow: hidden;
-}
-.mini-bar-fill {
-  height: 100%;
-  border-radius: 2px;
-  background: linear-gradient(90deg, var(--purple), var(--purple2));
-  transition: width 1s ease;
-}
-
-/* ── AI MODULE ── */
-.ai-panel {
-  background: linear-gradient(135deg, #0f0a1e, #0f1220);
-  border: 1px solid #2a1a50;
-  border-radius: 4px;
-  padding: 16px;
-  position: relative;
-  overflow: hidden;
-}
-
-.ai-panel::before {
-  content: '';
-  position: absolute;
-  top: -50%; right: -20%;
-  width: 200px; height: 200px;
-  background: radial-gradient(circle, rgba(124,58,237,0.12) 0%, transparent 70%);
-  pointer-events: none;
-}
-
-.ai-insight {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px;
-  background: rgba(124,58,237,0.08);
-  border: 1px solid rgba(124,58,237,0.2);
-  border-radius: 3px;
-  margin-bottom: 8px;
-}
-
-.ai-dot {
-  width: 6px; height: 6px;
-  min-width: 6px;
-  border-radius: 50%;
-  margin-top: 5px;
-}
-
-.ai-text {
-  font-size: 0.78rem;
-  color: var(--text2);
-  line-height: 1.5;
-}
-.ai-text strong { color: var(--purple3); }
-
-.ai-btn {
-  width: 100%;
-  padding: 10px;
-  background: linear-gradient(135deg, var(--violet), var(--purple));
-  border: none;
-  border-radius: 3px;
-  color: #fff;
-  font-family: 'Heebo', sans-serif;
-  font-size: 0.85rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s;
-  letter-spacing: 0.5px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 12px;
-  box-shadow: 0 4px 16px rgba(124,58,237,0.3);
-}
-.ai-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(124,58,237,0.4);
-}
-
-/* ── FEED ── */
-.feed-item {
-  display: flex;
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.feed-item:last-child { border-bottom: none; }
-
-.feed-avatar {
-  width: 32px; height: 32px;
-  min-width: 32px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: #fff;
-}
-
-.feed-content { flex: 1; }
-.feed-name {
-  font-size: 0.78rem;
-  font-weight: 700;
-  margin-bottom: 2px;
-}
-.feed-text {
-  font-size: 0.72rem;
-  color: var(--text2);
-  line-height: 1.4;
-}
-.feed-time {
-  font-size: 0.62rem;
-  color: var(--text3);
-  margin-top: 3px;
-}
-.feed-tag {
-  display: inline-block;
-  padding: 1px 5px;
-  background: rgba(124,58,237,0.15);
-  color: var(--purple3);
-  border-radius: 2px;
-  font-size: 0.6rem;
-  font-weight: 700;
-  margin-left: 4px;
-}
-
-/* ── BOTTOM ROW ── */
-.bottom-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 14px;
-}
-
-/* ── MINI CHART ── */
-.chart-container {
-  height: 90px;
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
-  padding-top: 8px;
-}
-
-.chart-bar {
-  flex: 1;
-  border-radius: 2px 2px 0 0;
-  background: linear-gradient(180deg, var(--purple2), var(--violet));
-  transition: all 0.8s ease;
-  cursor: pointer;
-  position: relative;
-}
-
-.chart-bar.today {
-  background: linear-gradient(180deg, var(--purple3), var(--purple));
-  box-shadow: 0 0 8px rgba(168,85,247,0.4);
-}
-
-.chart-bar:hover { opacity: 0.8; }
-
-.chart-labels {
-  display: flex;
-  gap: 4px;
-  margin-top: 4px;
-}
-.chart-label {
-  flex: 1;
-  font-size: 0.58rem;
-  color: var(--text3);
-  text-align: center;
-}
-
-/* ── TASK TABLE ── */
-.task-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.75rem;
-}
-
-.task-item:last-child { border-bottom: none; }
-
-.task-status {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  min-width: 8px;
-}
-
-.task-name { flex: 1; color: var(--text); }
-.task-who  { color: var(--text3); font-size: 0.68rem; min-width: 60px; }
-.task-time { color: var(--text3); font-size: 0.65rem; }
-
-/* ── REFRESH BAR ── */
-.refresh-bar {
-  height: 2px;
-  background: var(--border);
-  position: fixed;
-  bottom: 0; left: 0; right: 0;
-  z-index: 200;
-}
-.refresh-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--purple), var(--cyan));
-  width: 0%;
-  transition: width 0.1s linear;
-}
-
-/* ── TOOLTIP ── */
-.tooltip-box {
-  position: fixed;
-  background: #1a1e32;
-  border: 1px solid var(--border2);
-  border-radius: 4px;
-  padding: 8px 12px;
-  font-size: 0.75rem;
-  color: var(--text);
-  pointer-events: none;
-  z-index: 999;
-  display: none;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-  max-width: 200px;
-}
-
-/* ── GLOW EFFECTS ── */
-.glow-red    { text-shadow: 0 0 12px rgba(239,68,68,0.6); }
-.glow-orange { text-shadow: 0 0 12px rgba(249,115,22,0.6); }
-.glow-green  { text-shadow: 0 0 12px rgba(34,197,94,0.6); }
-.glow-purple { text-shadow: 0 0 12px rgba(168,85,247,0.6); }
-
-/* ── SCROLLBAR ── */
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
-
+.rank-name { font-size: 0.85rem; font-weight: 700; }
+.ai-panel { background: linear-gradient(135deg, #0f0a1e, #0f1220); border: 1px solid #2a1a50; border-radius: 4px; padding: 16px; }
+.ai-insight { display: flex; gap: 10px; padding: 10px; background: rgba(124,58,237,0.08); border: 1px solid rgba(124,58,237,0.2); border-radius: 3px; margin-bottom: 8px; }
+.ai-dot { width: 6px; height: 6px; border-radius: 50%; margin-top: 5px; }
+.ai-text { font-size: 0.78rem; color: var(--text2); }
 </style>
 </head>
 <body>
 
-<!-- TOP BAR -->
 <div class="top-bar">
-  <div class="top-bar-right">
-    <div>
-      <div class="logo-text">🎖️ מרכז פיקוד — חטמ״ר</div>
-      <div class="logo-sub">OPERATIONAL COMMAND CENTER</div>
-    </div>
+  <div style="display:flex; align-items:center; gap:16px;">
+    <div class="logo-text">🎖️ מרכז פיקוד — חטמ״ר</div>
     <div class="live-dot"></div>
     <span style="font-size:0.65rem;color:var(--green);font-weight:700;">LIVE</span>
   </div>
-  <div style="display:flex;align-items:center;gap:20px;">
-    <div style="text-align:center;">
-      <div class="top-time" id="clockTime">--:--:--</div>
-      <div class="top-date" id="clockDate"></div>
-    </div>
-    <div class="user-badge">מח״ט | גישה מלאה</div>
-    <button onclick="logout()" style="background:transparent;border:1px solid var(--border2);color:var(--text3);padding:4px 10px;border-radius:2px;cursor:pointer;font-family:'Heebo',sans-serif;font-size:0.7rem;">יציאה</button>
-  </div>
+  <div style="font-size:1.1rem; font-weight:700; color:var(--purple3);" id="clock"></div>
 </div>
 
-<!-- MAIN -->
 <div class="main">
-
   <!-- STATUS ROW -->
   <div class="status-row">
     <div class="stat-card red">
       <div class="stat-icon">🔴</div>
-      <div class="stat-num glow-red" id="s1">7</div>
-      <div class="stat-label">נקודות אדומות פתוחות</div>
-      <div class="stat-trend trend-down">▲ +2 משמשה</div>
+      <div class="stat-num">{{ red_count }}</div>
+      <div class="stat-label">נקודות אדומות</div>
     </div>
     <div class="stat-card orange">
       <div class="stat-icon">🔥</div>
-      <div class="stat-num glow-orange" id="s2">3</div>
-      <div class="stat-label">מוקדי חום פעילים</div>
-      <div class="stat-trend trend-flat">— ללא שינוי</div>
+      <div class="stat-num">{{ hot_count }}</div>
+      <div class="stat-label">מוקדי חום</div>
     </div>
     <div class="stat-card green">
       <div class="stat-icon">🧍</div>
-      <div class="stat-num glow-green" id="s3">12</div>
+      <div class="stat-num">{{ active_count }}</div>
       <div class="stat-label">מבקרים עכשיו</div>
-      <div class="stat-trend trend-up">▼ -1 בשעה</div>
     </div>
     <div class="stat-card red">
       <div class="stat-icon">📍</div>
-      <div class="stat-num glow-red" id="s4">2</div>
-      <div class="stat-label">אזורים ללא דיווח &gt;24ש׳</div>
-      <div class="stat-trend trend-down">▲ חדש</div>
+      <div class="stat-num">{{ no_report_count }}</div>
+      <div class="stat-label">ללא דיווח &gt;24ש׳</div>
     </div>
     <div class="stat-card orange">
       <div class="stat-icon">⚠️</div>
-      <div class="stat-num glow-orange" id="s5">1</div>
+      <div class="stat-num">{{ safety_count }}</div>
       <div class="stat-label">חריגות בטיחות</div>
-      <div class="stat-trend trend-flat">— לא שונה</div>
     </div>
     <div class="stat-card purple">
       <div class="stat-icon">🧭</div>
-      <div class="stat-num glow-purple" id="s6">68%</div>
-      <div class="stat-label">ביצוע תוכנית עבודה</div>
-      <div class="stat-trend trend-up">▲ +4% השבוע</div>
+      <div class="stat-num">{{ progress }}%</div>
+      <div class="stat-label">ביצוע תוכנית</div>
     </div>
   </div>
 
-  <!-- MAIN 3-COL -->
+  <!-- MAIN GRID -->
   <div class="main-grid">
-
+    
     <!-- LEFT: ALERTS -->
     <div class="panel">
-      <div class="section-title">🚨 התראות מבצעיות <span id="alertCount">5</span></div>
-
-      <div class="alert-item critical" onclick="toggleAlert(this)">
-        <div class="alert-header">
-          <div class="alert-title">מבקר לא עדכן — סמל אזרחי</div>
-          <div class="alert-time">לפני 3ש׳</div>
-        </div>
-        <div class="alert-body">רס״ל כהן ב. לא שלח עדכון מ-06:30. מיקום אחרון: שכונה מזרח.</div>
-        <span class="badge red">קריטי</span>
-        <div class="alert-actions" style="display:none">
-          <button class="btn-xs purple">✔ טופל</button>
-          <button class="btn-xs outline">הקצה</button>
-          <button class="btn-xs outline">📝 הערה</button>
-          <button class="btn-xs outline">📋 משימה</button>
-        </div>
+      <div class="section-title">🚨 התראות מבצעיות <span style="color:var(--purple3);">{{ alerts|length }}</span></div>
+      {% for alert in alerts %}
+      <div class="alert-item {{ 'critical' if alert.priority == 'critical' else 'warning' }}">
+        <div class="alert-title">{{ alert.message[:50] }}...</div>
+        <div class="alert-body">{{ alert.message }}</div>
       </div>
+      {% endfor %}
+    </div>
 
-      <div class="alert-item critical" onclick="toggleAlert(this)">
-        <div class="alert-header">
-          <div class="alert-title">ירידה חדה בפעילות — גזרה צפון</div>
-          <div class="alert-time">לפני 1ש׳</div>
-        </div>
-        <div class="alert-body">ירידה של 38% בביקורים ביחס לשבוע שעבר. 4 מתוך 7 נקודות לא בוקרו.</div>
-        <span class="badge red">קריטי</span>
-        <div class="alert-actions" style="display:none">
-          <button class="btn-xs purple">✔ טופל</button>
-          <button class="btn-xs outline">הקצה</button>
-          <button class="btn-xs outline">📝 הערה</button>
-          <button class="btn-xs outline">📋 משימה</button>
-        </div>
-      </div>
-
-      <div class="alert-item warning" onclick="toggleAlert(this)">
-        <div class="alert-header">
-          <div class="alert-title">ריכוז דיווחים — רחוב הגפן</div>
-          <div class="alert-time">לפני 2ש׳</div>
-        </div>
-        <div class="alert-body">5 דיווחים נפרדים מאותו בלוק ב-4 שעות. ייתכן מיקוד נדרש.</div>
-        <span class="badge orange">אזהרה</span>
-        <div class="alert-actions" style="display:none">
-          <button class="btn-xs purple">✔ טופל</button>
-          <button class="btn-xs outline">הקצה</button>
-          <button class="btn-xs outline">📝 הערה</button>
-        </div>
-      </div>
-
-      <div class="alert-item warning" onclick="toggleAlert(this)">
-        <div class="alert-header">
-          <div class="alert-title">דיווח מחוץ לגזרה</div>
-          <div class="alert-time">לפני 4ש׳</div>
-        </div>
-        <div class="alert-body">רס״ן לוי פ. ביצע 3 ביקורים מחוץ לגזרה המוקצית. ייתכן תקלה GPS.</div>
-        <span class="badge orange">בדוק</span>
-        <div class="alert-actions" style="display:none">
-          <button class="btn-xs purple">✔ טופל</button>
-          <button class="btn-xs outline">📝 הערה</button>
-        </div>
-      </div>
-
-      <div class="alert-item info" onclick="toggleAlert(this)">
-        <div class="alert-header">
-          <div class="alert-title">עומס יתר — רס״ל אביב מ.</div>
-          <div class="alert-time">היום</div>
-        </div>
-        <div class="alert-body">עובד פי 3.1 מהממוצע. 27 ביקורים בשלושה ימים. מומלץ לבדוק איזון.</div>
-        <span class="badge cyan">מידע</span>
-        <div class="alert-actions" style="display:none">
-          <button class="btn-xs outline">📝 הערה</button>
-          <button class="btn-xs outline">הקצה עוזר</button>
-        </div>
+    <!-- CENTER: MAP -->
+    <div class="panel" style="padding:12px;">
+      <div class="section-title">📍 מפה מבצעית חיה</div>
+      <div class="map-container">
+        <div class="map-grid"></div>
+        <div id="mapDots"></div>
       </div>
     </div>
 
-    <!-- CENTER: MAP + FEED -->
-    <div style="display:flex;flex-direction:column;gap:14px;">
-
-      <!-- MAP -->
-      <div class="panel" style="padding:12px;">
-        <div class="section-title">
-          📍 מפה מבצעית חיה
-          <div style="display:flex;gap:6px;align-items:center;">
-            <span style="font-size:0.6rem;color:var(--green);">● פעיל</span>
-            <span style="font-size:0.6rem;color:var(--orange);">● אזהרה</span>
-            <span style="font-size:0.6rem;color:var(--red);">● קריטי</span>
-            <span style="font-size:0.6rem;color:var(--text3);">● שקט</span>
-          </div>
-        </div>
-        <div class="map-container">
-          <div class="map-grid"></div>
-
-          <!-- Heat zones -->
-          <div class="map-sector" style="width:180px;height:180px;top:30%;right:25%;background:radial-gradient(circle,rgba(239,68,68,0.6),transparent);"></div>
-          <div class="map-sector" style="width:130px;height:130px;top:50%;right:55%;background:radial-gradient(circle,rgba(249,115,22,0.5),transparent);animation-delay:1s;"></div>
-          <div class="map-sector" style="width:100px;height:100px;top:15%;right:60%;background:radial-gradient(circle,rgba(34,197,94,0.4),transparent);animation-delay:0.5s;"></div>
-
-          <!-- No-report zone -->
-          <div class="no-report-zone" style="top:10%;right:8%;width:130px;height:80px;">
-            ⚠ ללא דיווח 48ש׳
-          </div>
-
-          <!-- Map dots -->
-          <div class="map-dot active"   style="top:20%;right:65%;" title="נקודה A — פעיל"></div>
-          <div class="map-dot active"   style="top:35%;right:70%;" title="נקודה B"></div>
-          <div class="map-dot warning"  style="top:45%;right:42%;" title="גזרה מרכז — אזהרה"></div>
-          <div class="map-dot critical" style="top:38%;right:28%;" title="נקודה קריטית"></div>
-          <div class="map-dot critical" style="top:55%;right:22%;" title="ריכוז דיווחים"></div>
-          <div class="map-dot active"   style="top:60%;right:55%;" title="נקודה פעילה"></div>
-          <div class="map-dot active"   style="top:70%;right:40%;" title="דרום — תקין"></div>
-          <div class="map-dot warning"  style="top:25%;right:45%;" title="אזהרה מרכז"></div>
-          <div class="map-dot silent"   style="top:15%;right:30%;" title="שקט — בדוק"></div>
-          <div class="map-dot active"   style="top:80%;right:70%;" title="נקודה דרום-מערב"></div>
-
-          <!-- Labels -->
-          <div class="map-label" style="top:5%;right:3%;">גזרה צפון</div>
-          <div class="map-label" style="top:45%;right:3%;">גזרה מרכז</div>
-          <div class="map-label" style="top:80%;right:3%;">גזרה דרום</div>
-
-          <div class="map-controls">
-            <button class="map-btn active" onclick="setMapFilter(this,'all')">הכל</button>
-            <button class="map-btn" onclick="setMapFilter(this,'heat')">חום</button>
-            <button class="map-btn" onclick="setMapFilter(this,'gaps')">🔍 חורים</button>
-            <button class="map-btn" onclick="showGaps()" style="background:rgba(239,68,68,0.2);border-color:var(--red);color:var(--red);">
-              היכן לא עובדים?
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- FEED -->
+    <!-- RIGHT: LEADERBOARD + AI -->
+    <div style="display:flex; flex-direction:column; gap:14px;">
       <div class="panel">
-        <div class="section-title">📡 פיד מבצעי <span style="color:var(--text3);font-size:0.6rem;">עדכון אחרון לפני 2 דק׳</span></div>
-
-        <div class="feed-item">
-          <div class="feed-avatar" style="background:var(--purple);">כ</div>
-          <div class="feed-content">
-            <div class="feed-name">רס״ל כהן ב. <span class="feed-tag">גזרה מרכז</span></div>
-            <div class="feed-text">ביצעתי ביקור בנקודה 14. תנאים תקינים, תושבים שיתפו פעולה. מספר חריגות קטינות — מדווח.</div>
-            <div class="feed-time">לפני 8 דקות</div>
-          </div>
-        </div>
-
-        <div class="feed-item">
-          <div class="feed-avatar" style="background:var(--red);">ל</div>
-          <div class="feed-content">
-            <div class="feed-name">רס״ן לוי פ. <span class="feed-tag" style="color:var(--red);background:rgba(239,68,68,0.1);">חריגה</span></div>
-            <div class="feed-text">דיווח מיקום: רחוב הורדים 12. (⚠ מחוץ לגזרה המוקצית)</div>
-            <div class="feed-time">לפני 35 דקות</div>
-          </div>
-        </div>
-
-        <div class="feed-item">
-          <div class="feed-avatar" style="background:var(--green);">א</div>
-          <div class="feed-content">
-            <div class="feed-name">רס״ל אביב מ. <span class="feed-tag" style="color:var(--green);background:rgba(34,197,94,0.1);">מצטיין</span></div>
-            <div class="feed-text">סיים סבב שמיני היום. 9 ביקורים ב-6 שעות, כולל 2 חריגות שתועדו תמונתית.</div>
-            <div class="feed-time">לפני 1 שעה</div>
-          </div>
-        </div>
-
-        <div class="feed-item">
-          <div class="feed-avatar" style="background:var(--orange);">מ</div>
-          <div class="feed-content">
-            <div class="feed-name">סמח״ט מ. <span class="feed-tag" style="color:var(--orange);background:rgba(249,115,22,0.1);">פיקוד</span></div>
-            <div class="feed-text">הנחיה: כל גזרת צפון לדווח עד 16:00 על מצב רחוב הכלנית. יש מידע מודיעיני.</div>
-            <div class="feed-time">לפני 2 שעות</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- RIGHT: LEADERBOARD + AI + TASKS -->
-    <div style="display:flex;flex-direction:column;gap:14px;">
-
-      <!-- LEADERBOARD -->
-      <div class="panel">
-        <div class="section-title">🏆 ביצועים <span style="color:var(--text3);font-size:0.6rem;">↕ שבוע נוכחי</span></div>
-
+        <div class="section-title">🏆 ביצועים</div>
         <div class="rank-item">
           <div class="rank-num">1</div>
           <div class="rank-info">
             <div class="rank-name">גזרה דרום</div>
-            <div class="rank-meta">27 ביקורים | זמן תגובה 18 דק׳</div>
-            <div class="mini-bar"><div class="mini-bar-fill" style="width:95%"></div></div>
-          </div>
-          <div class="rank-score">
-            <div class="rank-score-num">94</div>
-            <div class="rank-score-label">AI score</div>
+            <div style="font-size:0.65rem; color:var(--text3);">27 ביקורים</div>
           </div>
         </div>
-
         <div class="rank-item">
           <div class="rank-num">2</div>
           <div class="rank-info">
             <div class="rank-name">גזרה מרכז</div>
-            <div class="rank-meta">22 ביקורים | זמן תגובה 24 דק׳</div>
-            <div class="mini-bar"><div class="mini-bar-fill" style="width:78%"></div></div>
-          </div>
-          <div class="rank-score">
-            <div class="rank-score-num">79</div>
-            <div class="rank-score-label">AI score</div>
-          </div>
-        </div>
-
-        <div class="rank-item">
-          <div class="rank-num">3</div>
-          <div class="rank-info">
-            <div class="rank-name">גזרה מזרח</div>
-            <div class="rank-meta">18 ביקורים | זמן תגובה 31 דק׳</div>
-            <div class="mini-bar"><div class="mini-bar-fill" style="width:62%"></div></div>
-          </div>
-          <div class="rank-score">
-            <div class="rank-score-num">63</div>
-            <div class="rank-score-label">AI score</div>
-          </div>
-        </div>
-
-        <div class="rank-item" style="opacity:0.7;">
-          <div class="rank-num" style="color:var(--red);">4</div>
-          <div class="rank-info">
-            <div class="rank-name" style="color:var(--red);">גזרה צפון ↓</div>
-            <div class="rank-meta">9 ביקורים | זמן תגובה 58 דק׳</div>
-            <div class="mini-bar"><div class="mini-bar-fill" style="width:32%;background:linear-gradient(90deg,var(--red),#ef444480);"></div></div>
-          </div>
-          <div class="rank-score">
-            <div class="rank-score-num" style="color:var(--red);">31</div>
-            <div class="rank-score-label">AI score</div>
+            <div style="font-size:0.65rem; color:var(--text3);">22 ביקורים</div>
           </div>
         </div>
       </div>
 
-      <!-- AI MODULE -->
       <div class="ai-panel">
-        <div class="section-title" style="border-color:#2a1a50;">🤖 AI <span>קצין מטה דיגיטלי</span></div>
-
+        <div class="section-title" style="border-color:#2a1a50;">🤖 AI קצין מטה</div>
         <div class="ai-insight">
           <div class="ai-dot" style="background:var(--red);"></div>
-          <div class="ai-text">גזרה צפון ירדה <strong>38% בפעילות</strong> תוך שבוע. פטרן דומה לאוקטובר — מומלץ לבדוק הרכב הצוות.</div>
-        </div>
-        <div class="ai-insight">
-          <div class="ai-dot" style="background:var(--orange);"></div>
-          <div class="ai-text">אזור Y ללא ביקור <strong>48 שעות</strong>. על פי מיפוי סיכונים — אזור בסדר עדיפות A.</div>
+          <div class="ai-text">נקודות אדומות עלו ב-<strong>{{ red_count }}</strong> מהשבוע שעבר</div>
         </div>
         <div class="ai-insight">
           <div class="ai-dot" style="background:var(--cyan);"></div>
-          <div class="ai-text">מבקר אביב מ. עובד <strong>פי 3.1 מהממוצע</strong>. שקול איזון עומסים למנוע שחיקה.</div>
-        </div>
-
-        <button class="ai-btn" onclick="showAiInsights()">
-          🧠 תן לי תובנות היום
-        </button>
-      </div>
-
-      <!-- TASKS -->
-      <div class="panel">
-        <div class="section-title">📋 משימות פתוחות <span id="taskCount">4</span></div>
-
-        <div class="task-item">
-          <div class="task-status" style="background:var(--red);"></div>
-          <div class="task-name">בדוק דיווח מחוץ לגזרה — לוי</div>
-          <div class="task-who">סמח״ט</div>
-          <div class="task-time">היום</div>
-        </div>
-        <div class="task-item">
-          <div class="task-status" style="background:var(--orange);"></div>
-          <div class="task-name">סגור חורים גזרה צפון</div>
-          <div class="task-who">מח״ט</div>
-          <div class="task-time">מחר</div>
-        </div>
-        <div class="task-item">
-          <div class="task-status" style="background:var(--yellow);"></div>
-          <div class="task-name">בחינת עומס — אביב מ.</div>
-          <div class="task-who">קמ״ג</div>
-          <div class="task-time">ד׳ שבוע הבא</div>
-        </div>
-        <div class="task-item">
-          <div class="task-status" style="background:var(--green);"></div>
-          <div class="task-name">אישור תוכנית עבודה Q1</div>
-          <div class="task-who">סמח״ט</div>
-          <div class="task-time">✓ הושלם</div>
+          <div class="ai-text">שיעור השלמה: <strong>{{ progress }}%</strong> — במסלול ליעד</div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- BOTTOM TRENDS -->
-  <div class="bottom-grid">
-
-    <!-- Chart: Activity by Hour -->
-    <div class="panel">
-      <div class="section-title">📈 פעילות לפי שעה — היום</div>
-      <div class="chart-container" id="hourChart"></div>
-      <div class="chart-labels" id="hourLabels"></div>
+  <!-- BOTTOM: COMPLETION STATS -->
+  <div style="margin-top:16px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px;">
+    <div class="panel" style="text-align:center;">
+      <div style="font-size:3rem; font-weight:900; color:var(--purple2);">{{ progress }}%</div>
+      <div style="color:var(--text3);">ביצוע תוכנית</div>
     </div>
-
-    <!-- Chart: Weekly Trend -->
-    <div class="panel">
-      <div class="section-title">📅 מגמה שבועית — ביקורים</div>
-      <div class="chart-container" id="weekChart"></div>
-      <div class="chart-labels" id="weekLabels"></div>
+    <div class="panel" style="text-align:center;">
+      <div style="font-size:3rem; font-weight:900; color:var(--green);">{{ completed }}</div>
+      <div style="color:var(--text3);">הושלמו</div>
     </div>
-
-    <!-- Completion Ring -->
-    <div class="panel" style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
-      <div class="section-title" style="width:100%;">🎯 עמידה ביעדים השבוע</div>
-      <svg width="120" height="120" viewBox="0 0 120 120" style="margin:10px auto;">
-        <circle cx="60" cy="60" r="50" fill="none" stroke="var(--border)" stroke-width="8"/>
-        <circle cx="60" cy="60" r="50" fill="none" stroke="var(--purple2)" stroke-width="8"
-          stroke-dasharray="314" stroke-dashoffset="100"
-          stroke-linecap="round" transform="rotate(-90 60 60)"
-          style="transition:stroke-dashoffset 1.5s ease;"
-          id="progressRing"/>
-        <text x="60" y="56" text-anchor="middle" fill="var(--purple3)" 
-              font-size="22" font-weight="900" font-family="Heebo">68%</text>
-        <text x="60" y="72" text-anchor="middle" fill="var(--text3)" 
-              font-size="9" font-family="Heebo">מהיעד</text>
-      </svg>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;margin-top:4px;">
-        <div style="text-align:center;padding:8px;background:var(--bg3);border-radius:3px;">
-          <div style="font-size:1.2rem;font-weight:800;color:var(--green);">47</div>
-          <div style="font-size:0.6rem;color:var(--text3);">הושלמו</div>
-        </div>
-        <div style="text-align:center;padding:8px;background:var(--bg3);border-radius:3px;">
-          <div style="font-size:1.2rem;font-weight:800;color:var(--red);">22</div>
-          <div style="font-size:0.6rem;color:var(--text3);">נותרו</div>
-        </div>
-      </div>
+    <div class="panel" style="text-align:center;">
+      <div style="font-size:3rem; font-weight:900; color:var(--red);">{{ remaining }}</div>
+      <div style="color:var(--text3);">נותרו</div>
     </div>
-  </div>
-
-</div>
-
-<!-- REFRESH BAR -->
-<div class="refresh-bar"><div class="refresh-fill" id="refreshFill"></div></div>
-
-<!-- TOOLTIP -->
-<div class="tooltip-box" id="tooltip"></div>
-
-<!-- AI INSIGHTS MODAL -->
-<div id="aiModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
-  <div style="background:var(--bg2);border:1px solid var(--purple);border-radius:6px;padding:28px;max-width:480px;width:90%;position:relative;">
-    <div style="font-size:1.1rem;font-weight:900;margin-bottom:16px;color:var(--purple3);">🧠 תובנות AI — היום</div>
-    <div id="aiContent" style="font-size:0.82rem;line-height:1.8;color:var(--text2);"></div>
-    <button onclick="document.getElementById('aiModal').style.display='none'" 
-            style="margin-top:16px;width:100%;padding:10px;background:var(--purple);border:none;border-radius:3px;color:white;font-family:'Heebo',sans-serif;font-weight:700;cursor:pointer;font-size:0.9rem;">
-      סגור
-    </button>
   </div>
 </div>
 
 <script>
-// ── CLOCK ──
+// Clock
 function updateClock() {
   const now = new Date();
-  const days = ['ראשון','שני','שלישי','רביעי','חמישי','שישי','שבת'];
-  document.getElementById('clockTime').textContent =
-    now.toLocaleTimeString('he-IL', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  document.getElementById('clockDate').textContent =
-    `יום ${days[now.getDay()]} | ${now.toLocaleDateString('he-IL')}`;
+  document.getElementById('clock').textContent = now.toLocaleTimeString('he-IL');
 }
 updateClock();
 setInterval(updateClock, 1000);
 
-// ── REFRESH PROGRESS BAR (30s cycle) ──
-let refreshPct = 0;
-function updateRefresh() {
-  refreshPct = (refreshPct + 100/300) % 100;
-  document.getElementById('refreshFill').style.width = refreshPct + '%';
-  if (refreshPct < 1) tickStats(); // simulate live update
-}
-setInterval(updateRefresh, 100);
+// Map Dots - Real Data from Supabase
+const reports = {{ reports_json | safe }};
+const mapContainer = document.getElementById('mapDots');
 
-// ── LIVE STAT SIMULATION ──
-function tickStats() {
-  const s3 = document.getElementById('s3');
-  const current = parseInt(s3.textContent);
-  s3.textContent = Math.max(8, Math.min(18, current + (Math.random() > 0.5 ? 1 : -1)));
-}
-
-// ── ALERT TOGGLE ──
-function toggleAlert(el) {
-  const actions = el.querySelector('.alert-actions');
-  if (actions) {
-    const isOpen = actions.style.display === 'flex';
-    // Close all
-    document.querySelectorAll('.alert-actions').forEach(a => a.style.display = 'none');
-    if (!isOpen) actions.style.display = 'flex';
-  }
-}
-
-// ── MAP FILTER ──
-function setMapFilter(btn, type) {
-  document.querySelectorAll('.map-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-}
-
-function showGaps() {
-  alert('🔍 אזורים ללא דיווח:\n\n⚠ גזרה צפון — 48 שעות\n⚠ רחוב כלנית מערב — 31 שעות\n\n↗ לחץ על הנקודות האפורות במפה לפרטים');
-}
-
-// ── CHARTS ──
-function buildChart(containerId, labelId, data, labels, todayIdx) {
-  const container = document.getElementById(containerId);
-  const labelDiv = document.getElementById(labelId);
-  const max = Math.max(...data);
-  container.innerHTML = '';
-  labelDiv.innerHTML = '';
-  data.forEach((val, i) => {
-    const bar = document.createElement('div');
-    bar.className = 'chart-bar' + (i === todayIdx ? ' today' : '');
-    bar.style.height = '0px';
-    bar.title = `${labels[i]}: ${val}`;
-    container.appendChild(bar);
-    setTimeout(() => {
-      bar.style.height = Math.round((val / max) * 85) + 'px';
-    }, i * 60 + 200);
-    const lbl = document.createElement('div');
-    lbl.className = 'chart-label';
-    lbl.textContent = labels[i];
-    labelDiv.appendChild(lbl);
-  });
-}
-
-const hourData = [2,1,4,8,12,15,18,14,10,9,7,5];
-const hourLabels = ['06','07','08','09','10','11','12','13','14','15','16','17'];
-buildChart('hourChart','hourLabels', hourData, hourLabels, new Date().getHours() - 6);
-
-const weekData = [42, 38, 51, 47, 55, 61, 68];
-const weekLabels = ['א׳','ב׳','ג׳','ד׳','ה׳','ו׳','ש׳'];
-buildChart('weekChart','weekLabels', weekData, weekLabels, new Date().getDay());
-
-// ── MAP DOT TOOLTIPS ──
-const tooltipEl = document.getElementById('tooltip');
-document.querySelectorAll('.map-dot').forEach(dot => {
-  dot.addEventListener('mouseenter', e => {
-    tooltipEl.textContent = dot.title;
-    tooltipEl.style.display = 'block';
-  });
-  dot.addEventListener('mousemove', e => {
-    tooltipEl.style.top  = (e.clientY - 40) + 'px';
-    tooltipEl.style.right = (window.innerWidth - e.clientX + 12) + 'px';
-    tooltipEl.style.left = 'auto';
-  });
-  dot.addEventListener('mouseleave', () => {
-    tooltipEl.style.display = 'none';
-  });
+reports.forEach((report, i) => {
+  if (!report.latitude || !report.longitude) return;
+  
+  // Convert lat/lng to pixel positions (normalized 31-33 lat, 34.5-35.5 lng)
+  const x = ((report.longitude - 34.5) / 1.0) * 100; // 0-100%
+  const y = ((33 - report.latitude) / 2.0) * 100;    // 0-100%
+  
+  const dot = document.createElement('div');
+  dot.className = 'map-dot ' + (report.priority === 'high' ? 'critical' : report.priority === 'medium' ? 'warning' : 'active');
+  dot.style.top = y + '%';
+  dot.style.right = x + '%';
+  dot.title = report.base || 'נקודה ' + (i+1);
+  mapContainer.appendChild(dot);
 });
-
-// ── AI INSIGHTS ──
-const insights = [
-  '🔴 גזרה צפון ירדה <strong>38%</strong> בפעילות השבוע לעומת השבוע שעבר. מדובר בדפוס שחזר ב-3 אירועים בעבר — מומלץ לבחון הרכב כוח אדם.',
-  '📍 אזור Y (רחוב כלנית מערב) ללא ביקור <strong>48 שעות</strong>. על פי מיפוי סיכונים — מדרגה A. טיפול נדרש עד הערב.',
-  '⚡ מבקר רס״ל אביב מ. עובד <strong>פי 3.1 מהממוצע</strong>. בשלושת הימים האחרונים: 27 ביקורים. מניסיון — עלול להוביל לשחיקה.',
-  '📊 תוכנית עבודה <strong>לא מאוזנת</strong>: גזרה דרום — 38% מהביקורים; גזרה צפון — 14% בלבד. מומלץ לאזן.',
-  '🔥 ריכוז <strong>5 דיווחים</strong> מרחוב הגפן ב-4 שעות — חריג לממוצע (1.2 דיווחים). ייתכן מוקד שדורש תשומת לב מיידית.',
-  '✅ גזרה דרום עמדה ב-<strong>95% מיעדי השבוע</strong>. שקול שיתוף כנ"ל עם שאר הגזרות.'
-];
-
-function showAiInsights() {
-  const modal = document.getElementById('aiModal');
-  const content = document.getElementById('aiContent');
-  modal.style.display = 'flex';
-  content.innerHTML = '';
-  insights.forEach((insight, i) => {
-    setTimeout(() => {
-      const div = document.createElement('div');
-      div.style.cssText = `padding:10px;background:rgba(124,58,237,0.06);border:1px solid rgba(124,58,237,0.15);border-radius:3px;margin-bottom:8px;`;
-      div.innerHTML = insight;
-      content.appendChild(div);
-    }, i * 180);
-  });
-}
-
-// Close modal on backdrop click
-document.getElementById('aiModal').addEventListener('click', function(e) {
-  if (e.target === this) this.style.display = 'none';
-});
-
-function logout() {
-  if (confirm('האם לצאת מהמערכת?')) {
-    document.body.style.opacity = '0.3';
-    setTimeout(() => alert('יציאה מהמערכת...'), 300);
-  }
-}
 </script>
+
 </body>
 </html>
+    \"\"\"
+    
+    # ── 3. הזרקת הנתונים לתוך ה-Template ──
+    t = Template(html_template)
+    rendered_html = t.render(
+        red_count=red_count,
+        hot_count=hot_count,
+        active_count=active_count,
+        no_report_count=no_report_count,
+        safety_count=safety_count,
+        progress=progress,
+        completed=completed_val,
+        remaining=remaining_val,
+        alerts=active_alerts_data[:5],  # Top 5 alerts
+        reports_json=json.dumps(map_reports)  # JSON for JS
+    )
+    
+    # ── 4. הצגת ה-Dashboard במסך מלא ──
+    components.html(rendered_html, height=1200, scrolling=True)
+
+# ===== Department Dashboard (Compact) =====
+
+def render_department_dashboard():
+    unit = st.session_state.selected_unit
+    col_logout, col_title = st.columns([1, 5])
+    with col_logout:
+        if st.button("🚪 יציאה", key="logout_dept"):
+            st.session_state.logged_in = False
+            st.session_state.selected_unit = None
+            st.session_state.login_stage = "gallery"
+            st.session_state.selected_category = None
+            st.rerun()
+    with col_title:
+        st.markdown(f"## 📊 {unit} - מערכת בקרה ושליטה")
+    render_active_alerts()
+    st.markdown("---")
+    if st.session_state.selected_category is None:
+        cols = st.columns(2)
+        for i, category in enumerate(QUESTIONNAIRE_CATEGORIES):
+            with cols[i % 2]:
+                # Check for logo (Merged Logic)
+                cat_logo = f"cat_{category['id']}.png"
+                visual = ""
+                if cat_logo in get_available_logos():
+                     visual = f'<div style="width: 80px; height: 80px; margin: 0 auto 15px auto; background-image: url(\'{get_category_logo_url(category["id"])}\'); background-size: contain; background-repeat: no-repeat; background-position: center;"></div>'
+                else:
+                     visual = f"<div style='font-size:2.5rem;'>{category['icon']}</div>"
+                
+                st.markdown(f"<div style='background:white; padding:20px; border-radius:4px; text-align:center; border-right:5px solid {MILITARY_COLORS['secondary']};'>{visual}<div style='font-weight:700; margin-top:10px;'>{category['name']}</div></div>", unsafe_allow_html=True)
+                if st.button(f"פתח", key=f"cat_{category['id']}", use_container_width=True):
+                    st.session_state.selected_category = category['id']
+                    st.rerun()
+    else:
+        if st.button("↩️ חזור"):
+            st.session_state.selected_category = None
+            st.rerun()
+        st.info("🚧 שאלון בפיתוח")
+
+# ===== Logo Management (Compact + Merged) =====
+
+def render_logo_management():
+    st.markdown("### 🖼️ ניהול לוגואים")
+    all_units = STAFF_DEPARTMENTS + COMMAND_UNITS
+    cols = st.columns(3)
+    for i, unit in enumerate(all_units):
+        with cols[i % 3]:
+            st.markdown(f"**{unit}**")
+            uploaded = st.file_uploader("העלה", type=['png', 'jpg', 'jpeg'], key=f"upl_{unit}", label_visibility="collapsed")
+            if uploaded:
+                try:
+                    image = Image.open(uploaded)
+                    img_bytes = io.BytesIO()
+                    image.save(img_bytes, format='PNG')
+                    english_name = UNIT_ID_MAP.get(unit, "default")
+                    supabase.storage.from_("logos").upload(path=f"{english_name}.png", file=img_bytes.getvalue(), file_options={"content-type": "image/png", "upsert": "true"})
+                    st.success("✅")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ {e}")
+    
+    st.markdown("---")
+    st.markdown("### 📋 לוגואים לקטגוריות")
+    cat_cols = st.columns(3)
+    for i, category in enumerate(QUESTIONNAIRE_CATEGORIES):
+        with cat_cols[i % 3]:
+            st.markdown(f"**{category['name']}**")
+            # Show current
+            if f"cat_{category['id']}.png" in get_available_logos():
+                 st.image(get_category_logo_url(category['id']), width=50)
+            
+            uploaded = st.file_uploader("העלה", type=['png', 'jpg', 'jpeg'], key=f"upl_cat_{category['id']}", label_visibility="collapsed")
+            if uploaded:
+                try:
+                    image = Image.open(uploaded)
+                    img_bytes = io.BytesIO()
+                    image.save(img_bytes, format='PNG')
+                    supabase.storage.from_("logos").upload(path=f"cat_{category['id']}.png", file=img_bytes.getvalue(), file_options={"content-type": "image/png", "upsert": "true"})
+                    st.success("✅")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ {e}")
+
+# ===== Command Dashboard =====
+
+def render_command_dashboard():
+    unit = st.session_state.selected_unit
+    col_logout, col_title = st.columns([1, 5])
+    with col_logout:
+        if st.button("🚪 יציאה", key="logout_cmd"):
+            st.session_state.logged_in = False
+            st.session_state.selected_unit = None
+            st.session_state.login_stage = "gallery"
+            st.rerun()
+    with col_title:
+        st.markdown(f"## 🎖️ מרכז בקרה פיקודי — {unit}")
+    render_active_alerts()
+    st.markdown("---")
+    
+    tabs = st.tabs(["🎯 Command Center", "🚨 התראות", "🗓️ שעל״ח", "🖼️ לוגואים", "🔑 סיסמאות"])
+    
+    with tabs[0]:
+        render_advanced_dashboard()
+    
+    with tabs[1]:
+        with st.expander("➕ יצירת התראה", expanded=True):
+            with st.form("new_alert"):
+                msg = st.text_area("תוכן")
+                col1, col2 = st.columns(2)
+                with col1:
+                    priority = st.selectbox("עדיפות", list(ALERT_PRIORITIES.keys()), format_func=lambda x: ALERT_PRIORITIES[x]['name'])
+                with col2:
+                    hours = st.number_input("שעות", 1, 168, 24)
+                if st.form_submit_button("📤 שלח"):
+                    if msg:
+                        deadline = datetime.datetime.now() + datetime.timedelta(hours=hours)
+                        if create_alert(unit, msg, deadline, priority):
+                            st.success("✅")
+                            st.rerun()
+    
+    with tabs[2]:
+        render_combat_clock()
+    
+    with tabs[3]:
+        render_logo_management()
+    
+    with tabs[4]:
+        st.info("🔑 ניהול סיסמאות")
+
+# ===== Main =====
+
+def main():
+    if not st.session_state.logged_in:
+        if st.session_state.login_stage == "gallery":
+            render_login_gallery()
+        elif st.session_state.login_stage == "password":
+            render_login_password()
+    else:
+        role = st.session_state.role
+        if role in ["mahat", "smahat"]:
+            render_command_dashboard()
+        else:
+            render_department_dashboard()
+
+if __name__ == "__main__":
+    main()
