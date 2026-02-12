@@ -2266,263 +2266,263 @@ def render_command_dashboard():
                # ===== קוד מעודכן לטבלה המפורטת =====
 # החלף את החלק של display_df בטאב "ניתוח יחידה" עם הקוד הזה:
 
-st.markdown("---")
-
-# ===== טבלה מורחבת עם כל העמודות החדשות =====
-st.markdown("#### 📋 דוחות מפורטים - תצוגה מלאה")
-
-# בניית רשימת עמודות בסדר לוגי
-base_columns = ['date', 'base', 'inspector']
-
-# עמודות מצב בסיסיות
-status_columns = []
-if 'e_status' in unit_df.columns:
-    status_columns.append('e_status')
-if 'k_cert' in unit_df.columns:
-    status_columns.append('k_cert')
-
-# 🆕 עמודות תקלות כשרות (הכל!)
-kashrut_issues_columns = []
-if 'k_issues' in unit_df.columns:
-    kashrut_issues_columns.append('k_issues')
-if 'k_issues_description' in unit_df.columns:
-    kashrut_issues_columns.append('k_issues_description')
-if 'k_separation' in unit_df.columns:
-    kashrut_issues_columns.append('k_separation')
-if 'p_mix' in unit_df.columns:
-    kashrut_issues_columns.append('p_mix')
-if 'k_products' in unit_df.columns:
-    kashrut_issues_columns.append('k_products')
-if 'k_bishul' in unit_df.columns:
-    kashrut_issues_columns.append('k_bishul')
-
-# 🆕 עמודות שיעורי תורה (הכל!)
-torah_columns = []
-if 'soldier_want_lesson' in unit_df.columns:
-    torah_columns.append('soldier_want_lesson')
-if 'soldier_has_lesson' in unit_df.columns:
-    torah_columns.append('soldier_has_lesson')
-if 'soldier_lesson_teacher' in unit_df.columns:
-    torah_columns.append('soldier_lesson_teacher')
-if 'soldier_lesson_phone' in unit_df.columns:
-    torah_columns.append('soldier_lesson_phone')
-if 'soldier_yeshiva' in unit_df.columns:
-    torah_columns.append('soldier_yeshiva')
-
-# 🆕 עמודות חוסרים ונוספות
-other_columns = []
-if 'r_mezuzot_missing' in unit_df.columns:
-    other_columns.append('r_mezuzot_missing')
-if 'missing_items' in unit_df.columns:
-    other_columns.append('missing_items')
-if 'free_text' in unit_df.columns:
-    other_columns.append('free_text')
-
-# איחוד כל העמודות
-all_columns = base_columns + status_columns + kashrut_issues_columns + torah_columns + other_columns
-
-# סינון רק עמודות קיימות
-available_columns = [col for col in all_columns if col in unit_df.columns]
-
-# יצירת DataFrame לתצוגה
-if available_columns:
-    display_df = unit_df[available_columns].copy()
-    
-    # 🆕 מיפוי שמות עמודות לעברית - מלא ומפורט
-    column_mapping = {
-        # בסיסי
-        'date': 'תאריך',
-        'base': 'מוצב',
-        'inspector': 'מבקר',
+        st.markdown("---")
         
-        # מצב
-        'e_status': 'סטטוס עירוב',
-        'k_cert': 'תעודת כשרות',
+        # ===== טבלה מורחבת עם כל העמודות החדשות =====
+        st.markdown("#### 📋 דוחות מפורטים - תצוגה מלאה")
         
-        # תקלות כשרות
-        'k_issues': '❗ יש תקלות כשרות?',
-        'k_issues_description': '📝 פירוט תקלות כשרות',
-        'k_separation': 'הפרדת כלים',
-        'p_mix': '🔴 ערבוב כלים',
-        'k_products': 'רכש חוץ לא מאושר',
-        'k_bishul': 'בישול ישראל',
+        # בניית רשימת עמודות בסדר לוגי
+        base_columns = ['date', 'base', 'inspector']
         
-        # שיעורי תורה
-        'soldier_want_lesson': '💡 רצון לשיעור תורה',
-        'soldier_has_lesson': '📚 יש שיעור במוצב?',
-        'soldier_lesson_teacher': '👨‍🏫 שם מעביר השיעור',
-        'soldier_lesson_phone': '📞 טלפון מעביר השיעור',
-        'soldier_yeshiva': 'ימי ישיבה',
+        # עמודות מצב בסיסיות
+        status_columns = []
+        if 'e_status' in unit_df.columns:
+            status_columns.append('e_status')
+        if 'k_cert' in unit_df.columns:
+            status_columns.append('k_cert')
         
-        # חוסרים ונוספים
-        'r_mezuzot_missing': '📜 מזוזות חסרות',
-        'missing_items': '⚠️ חוסרים כלליים',
-        'free_text': '📝 הערות נוספות'
-    }
-    
-    # החלפת שמות העמודות
-    display_df.columns = [column_mapping.get(col, col) for col in display_df.columns]
-    
-    # הצגת הטבלה
-    st.dataframe(
-        display_df,
-        use_container_width=True,
-        hide_index=True,
-        height=400
-    )
-else:
-    st.warning("לא נמצאו עמודות להצגה")
-
-st.markdown("---")
-
-# 🆕 סיכומים מפורטים אחרי הטבלה
-st.markdown("### 📊 סיכומים מקיפים")
-
-# סיכום תקלות כשרות
-if kashrut_issues_columns:
-    st.markdown("#### 🔍 סיכום תקלות כשרות")
-    
-    cols = st.columns(min(4, len(kashrut_issues_columns)))
-    col_idx = 0
-    
-    if 'k_issues' in unit_df.columns:
-        has_issues = len(unit_df[unit_df['k_issues'] == 'כן'])
-        with cols[col_idx]:
-            st.metric("מוצבים עם תקלות", has_issues, 
-                     delta=f"-{len(unit_df) - has_issues}" if has_issues > 0 else "אין תקלות",
-                     delta_color="inverse" if has_issues > 0 else "off")
-        col_idx += 1
-    
-    if 'p_mix' in unit_df.columns:
-        mixing = len(unit_df[unit_df['p_mix'] == 'כן'])
-        with cols[col_idx % len(cols)]:
-            st.metric("🔴 ערבוב כלים", mixing, delta_color="inverse")
-        col_idx += 1
-    
-    if 'k_separation' in unit_df.columns:
-        no_sep = len(unit_df[unit_df['k_separation'] == 'לא'])
-        with cols[col_idx % len(cols)]:
-            st.metric("ללא הפרדה", no_sep, delta_color="inverse")
-        col_idx += 1
-    
-    if 'k_bishul' in unit_df.columns:
-        no_bishul = len(unit_df[unit_df['k_bishul'] == 'לא'])
-        with cols[col_idx % len(cols)]:
-            st.metric("ללא בי״ש", no_bishul, delta_color="inverse")
-    
-    # פירוט תקלות ספציפיות
-    if 'k_issues_description' in unit_df.columns:
-        issues_with_description = unit_df[unit_df['k_issues_description'].notna() & (unit_df['k_issues_description'] != '')]
-        if len(issues_with_description) > 0:
-            st.markdown("##### 📝 פירוט תקלות שדווחו:")
-            for idx, row in issues_with_description.iterrows():
-                base_name = row.get('base', 'לא ידוע')
-                description = row.get('k_issues_description', '')
-                date_str = row.get('date').strftime('%d/%m/%Y') if pd.notna(row.get('date')) else 'לא ידוע'
-                st.markdown(f"""
-                <div style='padding: 10px; background-color: #fee2e2; border-right: 4px solid #ef4444; 
-                            border-radius: 5px; margin-bottom: 10px;'>
-                    <div style='font-weight: 700;'>📍 {base_name} | 📅 {date_str}</div>
-                    <div style='margin-top: 5px; color: #475569;'>{description}</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-# סיכום שיעורי תורה
-if torah_columns:
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("#### 📚 סיכום שיעורי תורה")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    if 'soldier_want_lesson' in unit_df.columns:
-        want_lesson = len(unit_df[unit_df['soldier_want_lesson'] == 'כן'])
-        col1.metric("💡 מעוניינים בשיעור", want_lesson,
-                   help="מספר המוצבים שביקשו שיעור תורה")
-    
-    if 'soldier_has_lesson' in unit_df.columns:
-        has_lesson = len(unit_df[unit_df['soldier_has_lesson'] == 'כן'])
-        col2.metric("📚 יש שיעור פעיל", has_lesson,
-                   help="מוצבים שכבר יש בהם שיעור תורה")
-    
-    if 'r_mezuzot_missing' in unit_df.columns:
-        total_mezuzot = int(unit_df['r_mezuzot_missing'].sum())
-        col3.metric("📜 סה״כ מזוזות חסרות", total_mezuzot,
-                   delta_color="inverse" if total_mezuzot > 0 else "off")
-    
-    # רשימת מעבירי שיעורים עם פרטי קשר
-    if 'soldier_lesson_teacher' in unit_df.columns and 'soldier_has_lesson' in unit_df.columns:
-        active_lessons = unit_df[
-            (unit_df['soldier_has_lesson'] == 'כן') & 
-            (unit_df['soldier_lesson_teacher'].notna()) & 
-            (unit_df['soldier_lesson_teacher'] != '')
-        ]
+        # 🆕 עמודות תקלות כשרות (הכל!)
+        kashrut_issues_columns = []
+        if 'k_issues' in unit_df.columns:
+            kashrut_issues_columns.append('k_issues')
+        if 'k_issues_description' in unit_df.columns:
+            kashrut_issues_columns.append('k_issues_description')
+        if 'k_separation' in unit_df.columns:
+            kashrut_issues_columns.append('k_separation')
+        if 'p_mix' in unit_df.columns:
+            kashrut_issues_columns.append('p_mix')
+        if 'k_products' in unit_df.columns:
+            kashrut_issues_columns.append('k_products')
+        if 'k_bishul' in unit_df.columns:
+            kashrut_issues_columns.append('k_bishul')
         
-        if len(active_lessons) > 0:
-            st.markdown("##### 👨‍🏫 רשימת מעבירי שיעורים:")
-            for idx, row in active_lessons.iterrows():
-                teacher = row.get('soldier_lesson_teacher', 'לא ידוע')
-                phone = row.get('soldier_lesson_phone', '')
-                base_name = row.get('base', 'לא ידוע')
-                
-                phone_str = f" | 📞 {phone}" if phone else ""
-                st.markdown(f"""
-                <div style='padding: 10px; background-color: #dbeafe; border-right: 4px solid #3b82f6; 
-                            border-radius: 5px; margin-bottom: 8px;'>
-                    <div style='font-weight: 700;'>📍 {base_name}</div>
-                    <div style='margin-top: 5px;'>
-                        👨‍🏫 {teacher}{phone_str}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.info("💡 אין מוצבים עם מעבירי שיעורים רשומים")
-    
-    # מוצבים שרוצים שיעור אבל אין להם
-    if 'soldier_want_lesson' in unit_df.columns and 'soldier_has_lesson' in unit_df.columns:
-        want_but_no_lesson = unit_df[
-            (unit_df['soldier_want_lesson'] == 'כן') & 
-            (unit_df['soldier_has_lesson'] == 'לא')
-        ]
+        # 🆕 עמודות שיעורי תורה (הכל!)
+        torah_columns = []
+        if 'soldier_want_lesson' in unit_df.columns:
+            torah_columns.append('soldier_want_lesson')
+        if 'soldier_has_lesson' in unit_df.columns:
+            torah_columns.append('soldier_has_lesson')
+        if 'soldier_lesson_teacher' in unit_df.columns:
+            torah_columns.append('soldier_lesson_teacher')
+        if 'soldier_lesson_phone' in unit_df.columns:
+            torah_columns.append('soldier_lesson_phone')
+        if 'soldier_yeshiva' in unit_df.columns:
+            torah_columns.append('soldier_yeshiva')
         
-        if len(want_but_no_lesson) > 0:
-            st.markdown("##### ⚠️ מוצבים שמעוניינים בשיעור אך אין להם:")
-            bases_list = ", ".join(want_but_no_lesson['base'].unique())
-            st.warning(f"📍 {bases_list}")
-            st.info("💡 יש לתאם מעביר שיעור למוצבים אלו")
-
-# סיכום חוסרים כלליים
-if 'missing_items' in unit_df.columns:
-    items_with_missing = unit_df[unit_df['missing_items'].notna() & (unit_df['missing_items'] != '')]
-    if len(items_with_missing) > 0:
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("#### ⚠️ חוסרים כלליים שדווחו")
+        # 🆕 עמודות חוסרים ונוספות
+        other_columns = []
+        if 'r_mezuzot_missing' in unit_df.columns:
+            other_columns.append('r_mezuzot_missing')
+        if 'missing_items' in unit_df.columns:
+            other_columns.append('missing_items')
+        if 'free_text' in unit_df.columns:
+            other_columns.append('free_text')
         
-        for idx, row in items_with_missing.iterrows():
-            base_name = row.get('base', 'לא ידוע')
-            missing = row.get('missing_items', '')
-            date_str = row.get('date').strftime('%d/%m/%Y') if pd.notna(row.get('date')) else 'לא ידוע'
+        # איחוד כל העמודות
+        all_columns = base_columns + status_columns + kashrut_issues_columns + torah_columns + other_columns
+        
+        # סינון רק עמודות קיימות
+        available_columns = [col for col in all_columns if col in unit_df.columns]
+        
+        # יצירת DataFrame לתצוגה
+        if available_columns:
+            display_df = unit_df[available_columns].copy()
             
-            st.markdown(f"""
-            <div style='padding: 12px; background-color: #fef3c7; border-right: 4px solid #f59e0b; 
-                        border-radius: 5px; margin-bottom: 10px;'>
-                <div style='font-weight: 700;'>📍 {base_name} | 📅 {date_str}</div>
-                <div style='margin-top: 5px; color: #475569;'>{missing}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-st.markdown("---")
-
-# אפשרות להורדת דוח מלא (Excel)
-full_report_data = create_full_report_excel(unit_df)
-if full_report_data:
-    st.download_button(
-        label="📥 הורד דוח פעילות מלא (Excel)",
-        data=full_report_data,
-        file_name=f"full_activity_report_{selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-        key=f"dl_full_report_{selected_unit}"
-    )
+            # 🆕 מיפוי שמות עמודות לעברית - מלא ומפורט
+            column_mapping = {
+                # בסיסי
+                'date': 'תאריך',
+                'base': 'מוצב',
+                'inspector': 'מבקר',
+                
+                # מצב
+                'e_status': 'סטטוס עירוב',
+                'k_cert': 'תעודת כשרות',
+                
+                # תקלות כשרות
+                'k_issues': '❗ יש תקלות כשרות?',
+                'k_issues_description': '📝 פירוט תקלות כשרות',
+                'k_separation': 'הפרדת כלים',
+                'p_mix': '🔴 ערבוב כלים',
+                'k_products': 'רכש חוץ לא מאושר',
+                'k_bishul': 'בישול ישראל',
+                
+                # שיעורי תורה
+                'soldier_want_lesson': '💡 רצון לשיעור תורה',
+                'soldier_has_lesson': '📚 יש שיעור במוצב?',
+                'soldier_lesson_teacher': '👨‍🏫 שם מעביר השיעור',
+                'soldier_lesson_phone': '📞 טלפון מעביר השיעור',
+                'soldier_yeshiva': 'ימי ישיבה',
+                
+                # חוסרים ונוספים
+                'r_mezuzot_missing': '📜 מזוזות חסרות',
+                'missing_items': '⚠️ חוסרים כלליים',
+                'free_text': '📝 הערות נוספות'
+            }
+            
+            # החלפת שמות העמודות
+            display_df.columns = [column_mapping.get(col, col) for col in display_df.columns]
+            
+            # הצגת הטבלה
+            st.dataframe(
+                display_df,
+                use_container_width=True,
+                hide_index=True,
+                height=400
+            )
+        else:
+            st.warning("לא נמצאו עמודות להצגה")
+        
+        st.markdown("---")
+        
+        # 🆕 סיכומים מפורטים אחרי הטבלה
+        st.markdown("### 📊 סיכומים מקיפים")
+        
+        # סיכום תקלות כשרות
+        if kashrut_issues_columns:
+            st.markdown("#### 🔍 סיכום תקלות כשרות")
+            
+            cols = st.columns(min(4, len(kashrut_issues_columns)))
+            col_idx = 0
+            
+            if 'k_issues' in unit_df.columns:
+                has_issues = len(unit_df[unit_df['k_issues'] == 'כן'])
+                with cols[col_idx]:
+                    st.metric("מוצבים עם תקלות", has_issues, 
+                             delta=f"-{len(unit_df) - has_issues}" if has_issues > 0 else "אין תקלות",
+                             delta_color="inverse" if has_issues > 0 else "off")
+                col_idx += 1
+            
+            if 'p_mix' in unit_df.columns:
+                mixing = len(unit_df[unit_df['p_mix'] == 'כן'])
+                with cols[col_idx % len(cols)]:
+                    st.metric("🔴 ערבוב כלים", mixing, delta_color="inverse")
+                col_idx += 1
+            
+            if 'k_separation' in unit_df.columns:
+                no_sep = len(unit_df[unit_df['k_separation'] == 'לא'])
+                with cols[col_idx % len(cols)]:
+                    st.metric("ללא הפרדה", no_sep, delta_color="inverse")
+                col_idx += 1
+            
+            if 'k_bishul' in unit_df.columns:
+                no_bishul = len(unit_df[unit_df['k_bishul'] == 'לא'])
+                with cols[col_idx % len(cols)]:
+                    st.metric("ללא בי״ש", no_bishul, delta_color="inverse")
+            
+            # פירוט תקלות ספציפיות
+            if 'k_issues_description' in unit_df.columns:
+                issues_with_description = unit_df[unit_df['k_issues_description'].notna() & (unit_df['k_issues_description'] != '')]
+                if len(issues_with_description) > 0:
+                    st.markdown("##### 📝 פירוט תקלות שדווחו:")
+                    for idx, row in issues_with_description.iterrows():
+                        base_name = row.get('base', 'לא ידוע')
+                        description = row.get('k_issues_description', '')
+                        date_str = row.get('date').strftime('%d/%m/%Y') if pd.notna(row.get('date')) else 'לא ידוע'
+                        st.markdown(f"""
+                        <div style='padding: 10px; background-color: #fee2e2; border-right: 4px solid #ef4444; 
+                                    border-radius: 5px; margin-bottom: 10px;'>
+                            <div style='font-weight: 700;'>📍 {base_name} | 📅 {date_str}</div>
+                            <div style='margin-top: 5px; color: #475569;'>{description}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+        
+        # סיכום שיעורי תורה
+        if torah_columns:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("#### 📚 סיכום שיעורי תורה")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            if 'soldier_want_lesson' in unit_df.columns:
+                want_lesson = len(unit_df[unit_df['soldier_want_lesson'] == 'כן'])
+                col1.metric("💡 מעוניינים בשיעור", want_lesson,
+                           help="מספר המוצבים שביקשו שיעור תורה")
+            
+            if 'soldier_has_lesson' in unit_df.columns:
+                has_lesson = len(unit_df[unit_df['soldier_has_lesson'] == 'כן'])
+                col2.metric("📚 יש שיעור פעיל", has_lesson,
+                           help="מוצבים שכבר יש בהם שיעור תורה")
+            
+            if 'r_mezuzot_missing' in unit_df.columns:
+                total_mezuzot = int(unit_df['r_mezuzot_missing'].sum())
+                col3.metric("📜 סה״כ מזוזות חסרות", total_mezuzot,
+                           delta_color="inverse" if total_mezuzot > 0 else "off")
+            
+            # רשימת מעבירי שיעורים עם פרטי קשר
+            if 'soldier_lesson_teacher' in unit_df.columns and 'soldier_has_lesson' in unit_df.columns:
+                active_lessons = unit_df[
+                    (unit_df['soldier_has_lesson'] == 'כן') & 
+                    (unit_df['soldier_lesson_teacher'].notna()) & 
+                    (unit_df['soldier_lesson_teacher'] != '')
+                ]
+                
+                if len(active_lessons) > 0:
+                    st.markdown("##### 👨‍🏫 רשימת מעבירי שיעורים:")
+                    for idx, row in active_lessons.iterrows():
+                        teacher = row.get('soldier_lesson_teacher', 'לא ידוע')
+                        phone = row.get('soldier_lesson_phone', '')
+                        base_name = row.get('base', 'לא ידוע')
+                        
+                        phone_str = f" | 📞 {phone}" if phone else ""
+                        st.markdown(f"""
+                        <div style='padding: 10px; background-color: #dbeafe; border-right: 4px solid #3b82f6; 
+                                    border-radius: 5px; margin-bottom: 8px;'>
+                            <div style='font-weight: 700;'>📍 {base_name}</div>
+                            <div style='margin-top: 5px;'>
+                                👨‍🏫 {teacher}{phone_str}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.info("💡 אין מוצבים עם מעבירי שיעורים רשומים")
+            
+            # מוצבים שרוצים שיעור אבל אין להם
+            if 'soldier_want_lesson' in unit_df.columns and 'soldier_has_lesson' in unit_df.columns:
+                want_but_no_lesson = unit_df[
+                    (unit_df['soldier_want_lesson'] == 'כן') & 
+                    (unit_df['soldier_has_lesson'] == 'לא')
+                ]
+                
+                if len(want_but_no_lesson) > 0:
+                    st.markdown("##### ⚠️ מוצבים שמעוניינים בשיעור אך אין להם:")
+                    bases_list = ", ".join(want_but_no_lesson['base'].unique())
+                    st.warning(f"📍 {bases_list}")
+                    st.info("💡 יש לתאם מעביר שיעור למוצבים אלו")
+        
+        # סיכום חוסרים כלליים
+        if 'missing_items' in unit_df.columns:
+            items_with_missing = unit_df[unit_df['missing_items'].notna() & (unit_df['missing_items'] != '')]
+            if len(items_with_missing) > 0:
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("#### ⚠️ חוסרים כלליים שדווחו")
+                
+                for idx, row in items_with_missing.iterrows():
+                    base_name = row.get('base', 'לא ידוע')
+                    missing = row.get('missing_items', '')
+                    date_str = row.get('date').strftime('%d/%m/%Y') if pd.notna(row.get('date')) else 'לא ידוע'
+                    
+                    st.markdown(f"""
+                    <div style='padding: 12px; background-color: #fef3c7; border-right: 4px solid #f59e0b; 
+                                border-radius: 5px; margin-bottom: 10px;'>
+                        <div style='font-weight: 700;'>📍 {base_name} | 📅 {date_str}</div>
+                        <div style='margin-top: 5px; color: #475569;'>{missing}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # אפשרות להורדת דוח מלא (Excel)
+        full_report_data = create_full_report_excel(unit_df)
+        if full_report_data:
+            st.download_button(
+                label="📥 הורד דוח פעילות מלא (Excel)",
+                data=full_report_data,
+                file_name=f"full_activity_report_{selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key=f"dl_full_report_{selected_unit}"
+            )
     
     # ===== טאב 5: מעקב חוסרים - מתוקן =====
     with tabs[4]:
