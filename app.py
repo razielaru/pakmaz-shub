@@ -742,116 +742,143 @@ def add_gps_privacy_offset(lat: float, lon: float, offset_meters: int = 300) -> 
 # ===== מעקב חוסרים =====
 
 def detect_and_track_deficits(report_data: dict, report_id: str, unit: str):
-    """זיהוי אוטומטי של חוסרים מדוח חדש ויצירת רשומות מעקב"""
+    """
+    🔧 תיקון: זיהוי אוטומטי חכם של חוסרים עם סנכרון מלא
+    - מזהה חוסרים חדשים לפי מוצב (ולא רק יחידה)
+    - מעדכן חוסרים קיימים אם הכמות השתנתה
+    - סוגר אוטומטית חוסרים שהושלמו (10→0)
+    """
     try:
-        deficits_to_track = []
+        base = report_data.get('base', 'לא ידוע')  # ✅ עכשיו לפי מוצב!
+        current_date = datetime.datetime.now().isoformat()
         
-        # בדיקת מזוזות
-        mezuzot_missing = int(report_data.get('r_mezuzot_missing', 0))
-        if mezuzot_missing > 0:
-            deficits_to_track.append({
-                'unit': unit, 'deficit_type': 'mezuzot', 'deficit_count': mezuzot_missing,
-                'status': 'open', 'detected_date': datetime.now().isoformat(), 'report_id': report_id
-            })
+        # רשימת כל סוגי החוסרים לבדיקה
+        deficit_checks = [
+            ('mezuzot', int(report_data.get('r_mezuzot_missing', 0))),
+            ('eruv_kelim', 1 if report_data.get('p_mix', 'לא') == 'כן' else 0),
+            ('kashrut_cert', 1 if report_data.get('k_cert', 'לא') == 'לא' else 0),
+            ('eruv_status', 1 if report_data.get('e_status', 'תקין') == 'פסול' else 0),
+            ('shabbat_supervisor', 1 if report_data.get('k_shabbat_supervisor', 'כן') == 'לא' else 0),
+        ]
         
-        # בדיקת ספרי תורה
-        torah_missing = int(report_data.get('r_torah_missing', 0))
-        if torah_missing > 0:
-            deficits_to_track.append({
-                'unit': unit, 'deficit_type': 'torah', 'deficit_count': torah_missing,
-                'status': 'open', 'detected_date': datetime.now().isoformat(), 'report_id': report_id
-            })
-        
-        # בדיקת ציציות
-        tzitzit_missing = int(report_data.get('r_tzitzit_missing', 0))
-        if tzitzit_missing > 0:
-            deficits_to_track.append({
-                'unit': unit, 'deficit_type': 'tzitzit', 'deficit_count': tzitzit_missing,
-                'status': 'open', 'detected_date': datetime.now().isoformat(), 'report_id': report_id
-            })
-        
-        # בדיקת תפילין
-        tefillin_missing = int(report_data.get('r_tefillin_missing', 0))
-        if tefillin_missing > 0:
-            deficits_to_track.append({
-                'unit': unit, 'deficit_type': 'tefillin', 'deficit_count': tefillin_missing,
-                'status': 'open', 'detected_date': datetime.now().isoformat(), 'report_id': report_id
-            })
-        
-        # בדיקת עירוב כלים
-        if report_data.get('k_eruv_kelim', 'לא') == 'כן':
-            deficits_to_track.append({
-                'unit': unit, 'deficit_type': 'eruv_kelim', 'deficit_count': 1,
-                'status': 'open', 'detected_date': datetime.now().isoformat(), 'report_id': report_id
-            })
-        
-        # בדיקת תעודת כשרות
-        if report_data.get('k_cert', 'לא') == 'לא':
-            deficits_to_track.append({
-                'unit': unit, 'deficit_type': 'kashrut_cert', 'deficit_count': 1,
-                'status': 'open', 'detected_date': datetime.now().isoformat(), 'report_id': report_id
-            })
-        
-        # הוספת חוסרים לטבלה
-        if deficits_to_track:
-            supabase.table("deficit_tracking").insert(deficits_to_track).execute()
-        
-        # סגירת חוסרים שנפתרו
-        close_resolved_deficits(unit, report_data)
+        for deficit_type, current_count in deficit_checks:
+            # ✅ בדיקה אם יש חוסר פתוח מסוג זה עבור אותו מוצב
+            existing = supabase.table("deficit_tracking")\
+                .select("*")\
+                .eq("unit", unit)\
+                .eq("base", base)\
+                .eq("deficit_type", deficit_type)\
+                .eq("status", "open")\
+                .execute()
+            
+            if current_count > 0:
+                # ✅ יש חוסר בדוח הנוכחי
+                if existing.data:
+                    # ✅ עדכון חוסר קיים אם הכמות השתנתה
+                    existing_deficit = existing.data[0]
+                    if existing_deficit['deficit_count'] != current_count:
+                        supabase.table("deficit_tracking").update({
+                            'deficit_count': current_count,
+                            'updated_at': current_date,
+                            'last_report_id': report_id
+                        }).eq("id", existing_deficit['id']).execute()
+                else:
+                    # ✅ יצירת רשומת חוסר חדשה
+                    supabase.table("deficit_tracking").insert({
+                        'unit': unit,
+                        'base': base,
+                        'deficit_type': deficit_type,
+                        'deficit_count': current_count,
+                        'status': 'open',
+                        'detected_date': current_date,
+                        'report_id': report_id,
+                        'last_report_id': report_id
+                    }).execute()
+            else:
+                # ✅ אין חוסר בדוח הנוכחי - סגירה אוטומטית!
+                if existing.data:
+                    for deficit in existing.data:
+                        supabase.table("deficit_tracking").update({
+                            'status': 'closed',
+                            'resolved_date': current_date,
+                            'updated_at': current_date,
+                            'resolution_report_id': report_id,
+                            'notes': f'✅ החוסר הושלם אוטומטית - דווח 0 בדוח מתאריך {current_date[:10]}'
+                        }).eq("id", deficit['id']).execute()
         
     except Exception as e:
-        st.warning(f"שגיאה במעקב חוסרים: {e}")
+        print(f"⚠️ שגיאה במעקב חוסרים: {e}")
 
 
-def close_resolved_deficits(unit: str, current_report: dict):
-    """סגירת חוסרים שנפתרו על בסיס דוח נוכחי"""
-    try:
-        open_deficits = supabase.table("deficit_tracking").select("*").eq("unit", unit).eq("status", "open").execute()
-        
-        if not open_deficits.data:
-            return
-        
-        for deficit in open_deficits.data:
-            should_close = False
-            
-            if deficit['deficit_type'] == 'mezuzot' and int(current_report.get('r_mezuzot_missing', 0)) == 0:
-                should_close = True
-            elif deficit['deficit_type'] == 'torah' and int(current_report.get('r_torah_missing', 0)) == 0:
-                should_close = True
-            elif deficit['deficit_type'] == 'tzitzit' and int(current_report.get('r_tzitzit_missing', 0)) == 0:
-                should_close = True
-            elif deficit['deficit_type'] == 'tefillin' and int(current_report.get('r_tefillin_missing', 0)) == 0:
-                should_close = True
-            elif deficit['deficit_type'] == 'eruv_kelim' and current_report.get('k_eruv_kelim', 'לא') == 'לא':
-                should_close = True
-            elif deficit['deficit_type'] == 'kashrut_cert' and current_report.get('k_cert', 'לא') == 'כן':
-                should_close = True
-            
-            if should_close:
-                supabase.table("deficit_tracking").update({
-                    'status': 'closed', 'resolved_date': datetime.now().isoformat(),
-                    'updated_at': datetime.now().isoformat()
-                }).eq("id", deficit['id']).execute()
+def calculate_total_deficits_from_reports(df):
+    """
+    ✅ חישוב מדויק של סך החוסרים מהדוחות
+    לוקח את הדוח האחרון לכל מוצב ומסכם
+    """
+    import pandas as pd
     
-    except Exception as e:
-        st.warning(f"שגיאה בסגירת חוסרים: {e}")
+    if df.empty or 'date' not in df.columns:
+        return {'mezuzot': 0, 'eruv_kelim': 0, 'kashrut_cert': 0, 'eruv_broken': 0, 'no_supervisor': 0}
+    
+    # המרת תאריכים אם צריך
+    if not pd.api.types.is_datetime64_any_dtype(df['date']):
+        df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    
+    # ✅ קבלת הדוח האחרון לכל מוצב
+    latest_reports = df.sort_values('date').groupby('base').tail(1)
+    
+    # ✅ חישוב סך החוסרים מהדוחות האחרונים
+    total_mezuzot = latest_reports['r_mezuzot_missing'].sum() if 'r_mezuzot_missing' in latest_reports.columns else 0
+    total_eruv_kelim = len(latest_reports[latest_reports['p_mix'] == 'כן']) if 'p_mix' in latest_reports.columns else 0
+    total_no_cert = len(latest_reports[latest_reports['k_cert'] == 'לא']) if 'k_cert' in latest_reports.columns else 0
+    total_eruv_broken = len(latest_reports[latest_reports['e_status'] == 'פסול']) if 'e_status' in latest_reports.columns else 0
+    total_no_supervisor = len(latest_reports[latest_reports['k_shabbat_supervisor'] == 'לא']) if 'k_shabbat_supervisor' in latest_reports.columns else 0
+    
+    return {
+        'mezuzot': int(total_mezuzot),
+        'eruv_kelim': total_eruv_kelim,
+        'kashrut_cert': total_no_cert,
+        'eruv_broken': total_eruv_broken,
+        'no_supervisor': total_no_supervisor
+    }
 
 
 def get_open_deficits(units: list):
-    """קבלת חוסרים פתוחים עבור יחידות"""
+    """✅ קבלת חוסרים פתוחים - עם סינון נכון"""
     try:
-        result = supabase.table("deficit_tracking").select("*").in_("unit", units).eq("status", "open").order("detected_date", desc=True).execute()
+        result = supabase.table("deficit_tracking")\
+            .select("*")\
+            .in_("unit", units)\
+            .eq("status", "open")\
+            .order("detected_date", desc=True)\
+            .execute()
+        
+        import pandas as pd
         return pd.DataFrame(result.data) if result.data else pd.DataFrame()
     except Exception as e:
-        st.error(f"שגיאה בטעינת חוסרים: {e}")
+        print(f"❌ שגיאה בטעינת חוסרים: {e}")
+        import streamlit as st
+        st.error(f"❌ שגיאה בטעינת חוסרים: {e}")
+        import pandas as pd
         return pd.DataFrame()
 
 
 def get_deficit_statistics(units: list):
-    """קבלת סטטיסטיקות חוסרים"""
+    """✅ סטטיסטיקות חוסרים - מדויקות ומסונכרנות"""
     try:
-        open_result = supabase.table("deficit_tracking").select("*", count="exact").in_("unit", units).eq("status", "open").execute()
-        closed_result = supabase.table("deficit_tracking").select("*").in_("unit", units).eq("status", "closed").execute()
+        import pandas as pd
+        
+        open_result = supabase.table("deficit_tracking")\
+            .select("*", count="exact")\
+            .in_("unit", units)\
+            .eq("status", "open")\
+            .execute()
+        
+        closed_result = supabase.table("deficit_tracking")\
+            .select("*")\
+            .in_("unit", units)\
+            .eq("status", "closed")\
+            .execute()
         
         avg_resolution_days = 0
         if closed_result.data:
@@ -870,23 +897,27 @@ def get_deficit_statistics(units: list):
             'avg_resolution_days': avg_resolution_days
         }
     except Exception as e:
-        st.error(f"שגיאה בחישוב סטטיסטיקות: {e}")
+        print(f"❌ שגיאה בחישוב סטטיסטיקות: {e}")
+        import streamlit as st
+        st.error(f"❌ שגיאה בחישוב סטטיסטיקות: {e}")
         return {'total_open': 0, 'total_closed': 0, 'avg_resolution_days': 0}
 
 
 def update_deficit_status(deficit_id: str, status: str, notes: str = ""):
-    """עדכון סטטוס חוסר"""
+    """✅ עדכון סטטוס חוסר"""
     try:
-        update_data = {'status': status, 'updated_at': datetime.now().isoformat()}
+        update_data = {'status': status, 'updated_at': datetime.datetime.now().isoformat()}
         if notes:
             update_data['notes'] = notes
         if status == 'closed':
-            update_data['resolved_date'] = datetime.now().isoformat()
+            update_data['resolved_date'] = datetime.datetime.now().isoformat()
         
         supabase.table("deficit_tracking").update(update_data).eq("id", deficit_id).execute()
         return True
     except Exception as e:
-        st.error(f"שגיאה בעדכון סטטוס: {e}")
+        print(f"❌ שגיאה בעדכון סטטוס: {e}")
+        import streamlit as st
+        st.error(f"❌ שגיאה בעדכון סטטוס: {e}")
         return False
 
 
@@ -1162,8 +1193,10 @@ def generate_inspector_stats(df):
 
 
 def create_full_report_excel(df):
-    """יצירת קובץ Excel מלא עם סיכום ונתונים גולמיים"""
-    import io
+    """
+    🔧 תיקון: יצירת קובץ Excel מלא עם סיכום ונתונים גולמיים
+    כולל עמודות חדשות: נאמן כשרות, תקלות, טרקלין, ויקוק
+    """
     try:
         import openpyxl
     except ImportError:
@@ -1192,40 +1225,101 @@ def create_full_report_excel(df):
         }
         pd.DataFrame(summary_data).to_excel(writer, sheet_name='סיכום מנהלים', index=False)
         
-        # --- גיליון 2: פירוט דוחות מלא ---
-        # מיפוי שמות עמודות לאנגלית -> עברית
+        # --- גיליון 2: פירוט דוחות מלא - 🔧 עם עמודות חדשות ---
         column_mapping = {
-            # כללי
-            'date': 'תאריך', 'time': 'שעה', 'base': 'מוצב/בסיס', 'inspector': 'מבקר',
+            # ==== כללי ====
+            'date': 'תאריך', 
+            'time': 'שעה', 
+            'base': 'מוצב/בסיס', 
+            'inspector': 'מבקר',
             'unit': 'יחידה', 
             
-            # כשרות
-            'k_cert': 'תעודת כשרות', 'k_cook_type': 'סוג מטבח',
-            'k_issues': 'תקלות כשרות', 'k_shabbat_supervisor': 'נאמן כשרות בשבת',
-            'k_pikubok': 'פיקבוק', 'k_separation': 'הפרדה (בשר/חלב)', 
-            'k_briefing': 'תדריך כשרות', 'k_products': 'מוצרים כשרים', 
-            'k_leafs': 'ירקות עלים', 'k_bishul': 'בישול ישראל',
-            'k_eggs': 'בדיקת ביצים', 'k_machshir': 'מכשיר', 
+            # ==== כשרות - 🆕 עמודות חשובות ====
+            'k_cert': 'תעודת כשרות', 
+            'k_cook_type': 'סוג מטבח',
+            
+            # 🆕 נאמן כשרות ותקלות
+            'k_shabbat_supervisor': '🆕 נאמן כשרות בשבת (כן/לא)',
+            'k_issues': '🆕 תקלות כשרות (כן/לא)',
+            'k_shabbat_photo_url': '🆕 תמונת נאמן כשרות',
+            'k_issues_photo_url': '🆕 תמונת תקלה',
+            
+            # כשרות - עמודות קיימות
+            'k_pikubok': 'פיקבוק', 
+            'k_separation': 'הפרדה (בשר/חלב)', 
+            'k_briefing': 'תדריך כשרות', 
+            'k_products': 'מוצרים כשרים', 
+            'k_leafs': 'ירקות עלים', 
+            'k_bishul': 'בישול ישראל',
+            'k_eggs': 'בדיקת ביצים', 
+            'k_machshir': 'מכשיר', 
             'k_heater': 'פלטה/חימום', 
+            'k_dates': 'תאריכים לתבלינים',
+            'k_holes': 'חירור גסטרונומים',
+            'k_app': 'מולאה אפליקציה',
             
-            # עירוב
-            'e_status': 'סטטוס עירוב', 'e_check': 'בדיקת עירוב', 
+            # ==== טרקלין - 🆕 פירוט מלא ====
+            't_private': '🆕 טרקלין - כלים פרטיים (כן/לא)',
+            't_kitchen_tools': '🆕 טרקלין - כלי מטבח (כן/לא)',
+            't_procedure': '🆕 טרקלין - נוהל סגירה (כן/לא)',
+            't_friday': '🆕 טרקלין - כלים חשמליים סגורים בשבת (כן/לא)',
+            't_app': 'טרקלין - מולאה אפליקציה',
+            
+            # ==== ויקוק (WeCook) - 🆕 פירוט מלא ====
+            'w_location': '🆕 ויקוק - מיקום',
+            'w_private': '🆕 ויקוק - כלים פרטיים (כן/לא)',
+            'w_kitchen_tools': '🆕 ויקוק - כלי מטבח (כן/לא)',
+            'w_procedure': '🆕 ויקוק - עובד לפי פקודה (כן/לא)',
+            'w_guidelines': '🆕 ויקוק - הנחיות (כן/לא)',
+            
+            # ==== פילבוקס ====
+            'p_pakal': 'פילבוקס - פקל רבנות',
+            'p_marked': 'פילבוקס - כלים מסומנים',
+            'p_mix': '🆕 פילבוקס - ערבוב כלים (כן/לא)',
+            'p_kasher': 'פילבוקס - נדרשת הכשרה',
+            
+            # ==== עירוב ====
+            'e_status': 'סטטוס עירוב', 
+            'e_check': 'בדיקת עירוב', 
             'e_doc': 'תיעוד עירוב',
+            'e_photo': 'תצלום אווירי',
             
-            # בית כנסת וציוד דת
-            's_clean': 'ניקיון בית כנסת', 's_books': 'ספרי קודש', 
-            's_geniza': 'גניזה', 's_havdala': 'ערכת הבדלה',
-            'r_mezuzot_missing': 'מזוזות חסרות', 'r_netilot': 'נטלות',
+            # ==== בית כנסת וציוד דת ====
+            's_clean': 'ניקיון בית כנסת', 
+            's_board': 'לוח רבנות מעודכן',
+            's_books': 'ספרי קודש', 
+            's_geniza': 'גניזה', 
+            's_havdala': 'ערכת הבדלה',
+            's_gemach': 'גמח טלית ותפילין',
+            's_smartbis': 'תקלת בינוי (סמארט-ביס)',
+            
+            # ==== נהלים ====
+            'r_sg': 'הוראות רבנות בש.ג',
+            'r_hamal': 'הוראות רבנות בחמל',
+            'r_sign': 'שילוט על מתקנים (שבת)',
+            'r_mezuzot_missing': '🆕 מזוזות חסרות (מספר)',
+            'r_netilot': 'נטלות',
             'r_shabbat_device': 'התקן מים לשבת',
+            
+            # ==== חוסרים ====
             'missing_items': 'חוסרים (פירוט)',
             
-            # חיילים ודת
-            'soldier_food': 'אוכל לחיילים דתיים', 'soldier_lessons': 'שיעורי תורה',
-            'soldier_talk_cmd': 'שיח מפקדים', 'soldier_prayers': 'תפילות',
+            # ==== חיילים ודת - מעודכן ====
+            'soldier_yeshiva': 'ימי ישיבה (כן/לא)',
+            'soldier_want_lesson': '🆕 רצון לשיעור תורה (כן/לא)',
+            'soldier_has_lesson': '🆕 יש שיעור תורה במוצב (כן/לא)',
+            'soldier_lesson_teacher': '🆕 מעביר שיעור התורה (שם)',
+            'soldier_lesson_phone': '🆕 טלפון מעביר השיעור',
+            'soldier_food': 'אוכל לחיילים דתיים (כן/לא)', 
+            'soldier_lessons': 'שיעורי תורה בגדוד',
+            'soldier_shabbat_training': 'אימונים בשבת (כן/לא)',
+            'soldier_knows_rabbi': 'מכיר את הרב (כן/לא)',
+            'soldier_talk_cmd': 'שיח מפקדים (כן/לא)', 
+            'soldier_prayers': 'זמני תפילות (כן/לא)',
             
-            # תמונות והערות
-            'photo_url': 'תמונה ראשית', 'k_issues_photo_url': 'תמונה - תקלה',
-            'k_shabbat_photo_url': 'תמונה - נאמן', 'free_text': 'הערות נוספות'
+            # ==== תמונות והערות ====
+            'photo_url': 'תמונה ראשית', 
+            'free_text': 'הערות נוספות'
         }
         
         # בחירת עמודות שקיימות ב-DF
@@ -1238,7 +1332,7 @@ def create_full_report_excel(df):
         else:
             # יצירת גיליון ריק עם כותרות בלבד
             pd.DataFrame(columns=column_mapping.values()).to_excel(writer, sheet_name='פירוט דוחות', index=False)
-            
+    
     return output.getvalue()
 
 def create_inspector_excel(df):
@@ -2186,59 +2280,148 @@ def render_command_dashboard():
         else:
             st.info("לא נמצאו דוחות ליחידה זו")
     
-    # ===== טאב 5: מעקב חוסרים =====
+    # ===== טאב 5: מעקב חוסרים - מתוקן =====
     with tabs[4]:
         st.markdown("### 📋 מעקב חוסרים פתוחים")
         
-        # קבלת חוסרים פתוחים
+        # ✅ קבלת חוסרים פתוחים
         accessible_units_list = accessible_units if isinstance(accessible_units, list) else list(accessible_units)
         deficits_df = get_open_deficits(accessible_units_list)
+        
+        # ✅ קבלת סטטיסטיקות מדויקות
         stats = get_deficit_statistics(accessible_units_list)
         
-        # סטטיסטיקות
-        col1, col2, col3 = st.columns(3)
+        # ✅ חישוב נוסף מהדוחות עצמם (לאימות)
+        total_from_reports = calculate_total_deficits_from_reports(df)
+        
+        # סטטיסטיקות - שורה עליונה
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("🔴 חוסרים פתוחים", stats['total_open'])
+            st.metric("🔴 חוסרים פתוחים", stats['total_open'], 
+                     help="מספר החוסרים הפתוחים במערכת המעקב")
         with col2:
-            st.metric("✅ חוסרים שנסגרו", stats['total_closed'])
+            # תצוגה של המזוזות החסרות מחישוב מהדוחות
+            mezuzot_delta = total_from_reports['mezuzot'] - stats.get('total_mezuzot_tracked', 0) if 'total_mezuzot_tracked' in stats else None
+            st.metric("📜 מזוזות (מדוחות)", total_from_reports['mezuzot'],
+                     delta=f"+{mezuzot_delta}" if mezuzot_delta and mezuzot_delta > 0 else None,
+                     help="חישוב מהדוח האחרון של כל מוצב")
         with col3:
+            st.metric("✅ חוסרים שנסגרו", stats['total_closed'],
+                     help="חוסרים שהושלמו ונסגרו")
+        with col4:
             avg_days = stats['avg_resolution_days']
-            st.metric("⏱️ זמן ממוצע לפתרון", f"{avg_days:.1f} ימים" if avg_days > 0 else "אין נתונים")
+            st.metric("⏱️ זמן ממוצע לפתרון", 
+                     f"{avg_days:.1f} ימים" if avg_days > 0 else "אין נתונים",
+                     help="זמן ממוצע בימים עד סגירת חוסר")
         
         st.markdown("---")
         
+        # סטטיסטיקות נוספות - שורה שנייה
+        st.markdown("#### 📊 פירוט חוסרים לפי סוג")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
+        with col1:
+            st.metric("📜 מזוזות", total_from_reports['mezuzot'], 
+                     help="סך כל המזוזות החסרות")
+        with col2:
+            st.metric("🔴 ערבוב כלים", total_from_reports['eruv_kelim'],
+                     help="מוצבים עם ערבוב כלים")
+        with col3:
+            st.metric("📋 בלי תעודה", total_from_reports['kashrut_cert'],
+                     help="מוצבים ללא תעודת כשרות")
+        with col4:
+            st.metric("🚧 עירוב פסול", total_from_reports['eruv_broken'],
+                     help="מוצבים עם עירוב פסול")
+        with col5:
+            st.metric("👤 בלי נאמן", total_from_reports['no_supervisor'],
+                     help="מוצבים ללא נאמן כשרות בשבת")
+        
+        st.markdown("---")
+        
+        # ✅ הצגת חוסרים לפי יחידה ומוצב
         if not deficits_df.empty:
-            # מיפוי שמות סוגי חוסרים
             deficit_names = {
                 'mezuzot': 'מזוזות חסרות',
-                'torah': 'ספרי תורה חסרים',
-                'tzitzit': 'ציציות חסרות',
-                'tefillin': 'תפילין חסרים',
-                'eruv_kelim': 'עירוב כלים',
-                'kashrut_cert': 'תעודת כשרות'
+                'eruv_kelim': 'ערבוב כלים',
+                'kashrut_cert': 'תעודת כשרות חסרה',
+                'eruv_status': 'עירוב פסול',
+                'shabbat_supervisor': 'נאמן כשרות חסר'
             }
             
-            # הצגת חוסרים לפי יחידה
-            for unit in deficits_df['unit'].unique():
+            # קבוצה לפי יחידה
+            for unit in sorted(deficits_df['unit'].unique()):
                 unit_deficits = deficits_df[deficits_df['unit'] == unit]
                 
-                with st.expander(f"🔴 {unit} - {len(unit_deficits)} חוסרים פתוחים"):
-                    for _, deficit in unit_deficits.iterrows():
-                        deficit_type_he = deficit_names.get(deficit['deficit_type'], deficit['deficit_type'])
-                        detected_date = pd.to_datetime(deficit['detected_date']).strftime('%d/%m/%Y')
-                        days_open = (pd.Timestamp.now() - pd.to_datetime(deficit['detected_date'])).days
+                # ספירת חוסרים לפי סוג
+                deficit_types_count = unit_deficits['deficit_type'].value_counts()
+                summary_text = ", ".join([f"{deficit_names.get(dt, dt)}: {count}" 
+                                         for dt, count in deficit_types_count.items()])
+                
+                with st.expander(f"🔴 {unit} - {len(unit_deficits)} חוסרים פתוחים ({summary_text})"):
+                    # ✅ קבוצה נוספת לפי מוצב
+                    bases = unit_deficits['base'].unique() if 'base' in unit_deficits.columns else ['לא ידוע']
+                    
+                    for base in sorted(bases):
+                        base_deficits = unit_deficits[unit_deficits['base'] == base] if 'base' in unit_deficits.columns else unit_deficits
                         
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.markdown(f"**{deficit_type_he}** (כמות: {deficit['deficit_count']})")
-                            st.caption(f"זוהה ב-{detected_date} | פתוח {days_open} ימים")
-                        with col2:
-                            if st.button("סמן כסגור", key=f"close_{deficit['id']}"):
-                                if update_deficit_status(deficit['id'], 'closed'):
-                                    st.success("✅ החוסר סומן כסגור!")
-                                    st.rerun()
+                        st.markdown(f"**📍 {base}:**")
+                        
+                        for _, deficit in base_deficits.iterrows():
+                            deficit_type_he = deficit_names.get(deficit['deficit_type'], deficit['deficit_type'])
+                            detected_date = pd.to_datetime(deficit['detected_date']).strftime('%d/%m/%Y') if pd.notna(deficit.get('detected_date')) else 'לא ידוע'
+                            days_open = (pd.Timestamp.now() - pd.to_datetime(deficit['detected_date'])).days if pd.notna(deficit.get('detected_date')) else 0
+                            
+                            # צבע לפי חומרת החוסר
+                            severity_color = "#ef4444" if days_open > 30 else "#f59e0b" if days_open > 14 else "#10b981"
+                            
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                st.markdown(f"""
+                                <div style="padding: 10px; border-right: 4px solid {severity_color}; background-color: #f8fafc; border-radius: 5px; margin-bottom: 10px;">
+                                    <div style="font-weight: 700; font-size: 1.1rem;">• {deficit_type_he}</div>
+                                    <div style="color: #64748b; font-size: 0.9rem;">
+                                        כמות: <b>{deficit['deficit_count']}</b> | 
+                                        זוהה: {detected_date} | 
+                                        פתוח: <span style="color: {severity_color}; font-weight: 600;">{days_open} ימים</span>
+                                    </div>
+                                    {f"<div style='color: #475569; font-size: 0.85rem; margin-top: 5px;'>💬 {deficit.get('notes', '')}</div>" if deficit.get('notes') else ""}
+                                </div>
+                                """, unsafe_allow_html=True)
+                            
+                            with col2:
+                                if st.button("✅ סגור", key=f"close_{deficit['id']}", use_container_width=True):
+                                    if update_deficit_status(deficit['id'], 'closed', notes="נסגר ידנית על ידי מפקד"):
+                                        st.success("✅ החוסר סומן כסגור!")
+                                        time.sleep(0.5)
+                                        st.rerun()
+                        
+                        st.markdown("---")
+            
+            # כפתור רענון
+            if st.button("🔄 רענן מעקב חוסרים", use_container_width=True):
+                clear_cache()
+                st.rerun()
+        
         else:
-            st.success("🎉 אין חוסרים פתוחים! כל היחידות במצב תקין.")
+            st.success("🎉 אין חוסרים פתוחים במערכת המעקב!")
+            
+            # בדיקה אם יש אי-התאמה
+            if any(v > 0 for v in total_from_reports.values()):
+                st.warning("⚠️ **שים לב**: נמצאו חוסרים בדוחות האחרונים, אך הם עדיין לא במערכת המעקב.")
+                st.info("💡 חוסרים חדשים יווצרו אוטומטית בדוח הבא שיוגש.")
+                
+                # הצגת החוסרים שנמצאו בדוחות
+                st.markdown("**חוסרים שנמצאו בדוחות:**")
+                if total_from_reports['mezuzot'] > 0:
+                    st.markdown(f"- 📜 **{total_from_reports['mezuzot']} מזוזות חסרות**")
+                if total_from_reports['eruv_kelim'] > 0:
+                    st.markdown(f"- 🔴 **{total_from_reports['eruv_kelim']} מוצבים עם ערבוב כלים**")
+                if total_from_reports['kashrut_cert'] > 0:
+                    st.markdown(f"- 📋 **{total_from_reports['kashrut_cert']} מוצבים ללא תעודת כשרות**")
+                if total_from_reports['eruv_broken'] > 0:
+                    st.markdown(f"- 🚧 **{total_from_reports['eruv_broken']} מוצבים עם עירוב פסול**")
+                if total_from_reports['no_supervisor'] > 0:
+                    st.markdown(f"- 👤 **{total_from_reports['no_supervisor']} מוצבים ללא נאמן כשרות**")
     
     # ===== טאב 6: מפה מבצעית =====
     with tabs[5]:
@@ -2783,15 +2966,39 @@ def render_unit_report():
         missing = st.text_area("פירוט חוסרים")
         
         st.markdown("### 💬 שיחת חתך")
+        
         c1, c2 = st.columns(2)
         soldier_yeshiva = c1.radio("האם יש ימי ישיבה?", ["כן", "לא"], horizontal=True, key="so1")
-        soldier_lessons = c2.text_input("שיעורים בגדוד")
+        
+        # 🆕 שאלה חדשה - רצון לשיעור תורה
+        soldier_want_lesson = c2.radio("האם יש רצון לשיעור תורה?", ["כן", "לא"], horizontal=True, key="so_want_lesson")
+        
+        # 🆕 שאלה חדשה - שיעור תורה קיים
+        c1, c2 = st.columns(2)
+        soldier_has_lesson = c1.radio("יש שיעור תורה במוצב?", ["כן", "לא"], horizontal=True, key="so_has_lesson")
+        
+        # 🆕 אם יש שיעור - שדות נוספים
+        soldier_lesson_teacher = ""
+        soldier_lesson_phone = ""
+        
+        if soldier_has_lesson == "כן":
+            col_teacher, col_phone = st.columns(2)
+            with col_teacher:
+                soldier_lesson_teacher = st.text_input("שם מעביר השיעור", key="so_lesson_teacher", 
+                                                       placeholder="לדוגמה: הרב כהן")
+            with col_phone:
+                soldier_lesson_phone = st.text_input("טלפון מעביר השיעור", key="so_lesson_phone",
+                                                     placeholder="לדוגמה: 050-1234567")
+        
+        # שאלות קיימות
         c1, c2 = st.columns(2)
         soldier_food = c1.radio("האם המענה הכשרותי מספק?", ["כן", "לא"], horizontal=True, key="so2")
         soldier_shabbat_training = c2.radio("האם יש אימונים בשבת?", ["כן", "לא"], horizontal=True, key="so3")
+        
         c1, c2 = st.columns(2)
         soldier_knows_rabbi = c1.radio("האם מכיר את הרב?", ["כן", "לא"], horizontal=True, key="so4")
         soldier_prayers = c2.radio("האם יש זמני תפילות?", ["כן", "לא"], horizontal=True, key="so5")
+        
         soldier_talk_cmd = st.radio("האם יש שיח מפקדים?", ["כן", "לא"], horizontal=True, key="so6")
         
         st.markdown("---")
@@ -2830,7 +3037,13 @@ def render_unit_report():
                     "t_private": t_private, "t_kitchen_tools": t_kitchen_tools, "t_procedure": t_procedure,
                     "t_friday": t_friday, "t_app": t_app, "w_location": w_location, "w_private": w_private,
                     "w_kitchen_tools": w_kitchen_tools, "w_procedure": w_procedure, "w_guidelines": w_guidelines,
-                    "soldier_yeshiva": soldier_yeshiva, "soldier_lessons": soldier_lessons, "soldier_food": soldier_food,
+                    "w_kitchen_tools": w_kitchen_tools, "w_procedure": w_procedure, "w_guidelines": w_guidelines,
+                    "soldier_yeshiva": soldier_yeshiva,
+                    "soldier_want_lesson": soldier_want_lesson,  # 🆕
+                    "soldier_has_lesson": soldier_has_lesson,    # 🆕
+                    "soldier_lesson_teacher": soldier_lesson_teacher,  # 🆕
+                    "soldier_lesson_phone": soldier_lesson_phone,      # 🆕
+                    "soldier_food": soldier_food,
                     "soldier_shabbat_training": soldier_shabbat_training, "soldier_knows_rabbi": soldier_knows_rabbi,
                     "soldier_prayers": soldier_prayers, "soldier_talk_cmd": soldier_talk_cmd, "free_text": free_text,
                     "time": str(time_v), "p_pakal": p_pakal, "missing_items": missing,
