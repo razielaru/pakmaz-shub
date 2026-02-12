@@ -1240,7 +1240,10 @@ def create_full_report_excel(df):
             
             # 🆕 נאמן כשרות ותקלות
             'k_shabbat_supervisor': '🆕 נאמן כשרות בשבת (כן/לא)',
+            'k_shabbat_supervisor_name': '🆕 שם נאמן כשרות',
+            'k_shabbat_supervisor_phone': '🆕 טלפון נאמן כשרות',
             'k_issues': '🆕 תקלות כשרות (כן/לא)',
+            'k_issues_description': '🆕 פירוט תקלות כשרות',
             'k_shabbat_photo_url': '🆕 תמונת נאמן כשרות',
             'k_issues_photo_url': '🆕 תמונת תקלה',
             
@@ -2917,6 +2920,20 @@ def render_unit_report():
         k_issues = c1.radio("יש תקלות כשרות?", ["כן", "לא"], horizontal=True, key="k_issues")
         k_shabbat_supervisor = c2.radio("יש נאמן כשרות בשבת?", ["כן", "לא"], horizontal=True, key="k_shabbat_sup")
         
+        # 🆕 פירוט תקלות (אם יש)
+        k_issues_description = ""
+        if k_issues == "כן":
+            k_issues_description = c1.text_area("פרט את תקלות הכשרות שנמצאו", key="k_issues_desc")
+            
+        # 🆕 פרטי נאמן כשרות (אם יש)
+        k_shabbat_supervisor_name = ""
+        k_shabbat_supervisor_phone = ""
+        if k_shabbat_supervisor == "כן":
+            with c2:
+                col_sup_name, col_sup_phone = st.columns(2)
+                k_shabbat_supervisor_name = col_sup_name.text_input("שם נאמן כשרות", key="k_sup_name")
+                k_shabbat_supervisor_phone = col_sup_phone.text_input("טלפון נאמן", key="k_sup_phone")
+        
         # תמונות לתקלות ונאמן
         c1, c2 = st.columns(2)
         k_issues_photo = c1.file_uploader("📷 תמונת תקלה (אם יש)", type=['jpg', 'png', 'jpeg'], key="k_issues_photo")
@@ -3057,8 +3074,12 @@ def render_unit_report():
                     "k_leafs": k_leafs, "k_holes": k_holes, "k_bishul": k_bishul,
                     "k_eggs": k_eggs, "k_machshir": k_machshir, "k_heater": k_heater, "k_app": k_app,
                     # שדות חדשים
+                    # שדות חדשים
                     "k_issues": k_issues,
+                    "k_issues_description": k_issues_description,  # 🆕
                     "k_shabbat_supervisor": k_shabbat_supervisor,
+                    "k_shabbat_supervisor_name": k_shabbat_supervisor_name,    # 🆕
+                    "k_shabbat_supervisor_phone": k_shabbat_supervisor_phone,  # 🆕
                     "k_issues_photo_url": k_issues_photo_url,
                     "k_shabbat_photo_url": k_shabbat_photo_url
                 }
@@ -3080,7 +3101,9 @@ def render_unit_report():
                             # ניסיון חוזר ללא השדות החדשים (שמירה שקטה של בסיס הדוח)
                             # רשימת כל השדות החדשים שאולי חסרים
                             new_fields = [
-                                "k_issues", "k_shabbat_supervisor", "k_issues_photo_url", "k_shabbat_photo_url",
+                                "k_issues", "k_issues_description", "k_shabbat_supervisor", 
+                                "k_shabbat_supervisor_name", "k_shabbat_supervisor_phone",
+                                "k_issues_photo_url", "k_shabbat_photo_url",
                                 "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone"
                             ]
                             for field in new_fields:
