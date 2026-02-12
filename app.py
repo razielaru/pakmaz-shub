@@ -3078,7 +3078,12 @@ def render_unit_report():
                         # טיפול בשגיאה אם העמודות החדשות עדיין לא קיימות במסד הנתונים
                         if "PGRST204" in str(e) or "Could not find" in str(e):
                             # ניסיון חוזר ללא השדות החדשים (שמירה שקטה של בסיס הדוח)
-                            for field in ["k_issues", "k_shabbat_supervisor", "k_issues_photo_url", "k_shabbat_photo_url"]:
+                            # רשימת כל השדות החדשים שאולי חסרים
+                            new_fields = [
+                                "k_issues", "k_shabbat_supervisor", "k_issues_photo_url", "k_shabbat_photo_url",
+                                "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone"
+                            ]
+                            for field in new_fields:
                                 data.pop(field, None)
                             result = supabase.table("reports").insert(data).execute()
                         else:
