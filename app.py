@@ -1753,6 +1753,20 @@ def render_command_dashboard():
         st.info("📊 אין נתונים זמינים כרגע. התחל בדיווח ראשון כדי לראות ניתוחים ותובנות.")
         return
     
+    # כפתור הורדה בולט לדוחות
+    st.markdown("---")
+    full_report_data = create_full_report_excel(df)
+    if full_report_data:
+        st.download_button(
+            label="📥 הורד דוח מלא (Excel)",
+            data=full_report_data,
+            file_name=f"full_report_{role}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key=f"dl_main_{role}"
+        )
+    st.markdown("---")
+
     # טאבים לפי תפקיד
     if role == 'pikud':
         tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🗺️ Map", "⚙️ ניהול"])
@@ -2612,8 +2626,17 @@ def render_command_dashboard():
                         
                         for _, deficit in base_deficits.iterrows():
                             deficit_type_he = deficit_names.get(deficit['deficit_type'], deficit['deficit_type'])
-                            detected_date = pd.to_datetime(deficit['detected_date']).strftime('%d/%m/%Y') if pd.notna(deficit.get('detected_date')) else 'לא ידוע'
-                            days_open = (pd.Timestamp.now() - pd.to_datetime(deficit['detected_date'])).days if pd.notna(deficit.get('detected_date')) else 0
+                            try:
+                                detected_dt = pd.to_datetime(deficit.get('detected_date'), errors='coerce')
+                                if pd.notna(detected_dt):
+                                    detected_date = detected_dt.strftime('%d/%m/%Y')
+                                    days_open = (pd.Timestamp.now() - detected_dt).days
+                                else:
+                                    detected_date = 'לא ידוע'
+                                    days_open = 0
+                            except Exception:
+                                detected_date = 'לא ידוע'
+                                days_open = 0
                             
                             # צבע לפי חומרת החוסר
                             severity_color = "#ef4444" if days_open > 30 else "#f59e0b" if days_open > 14 else "#10b981"
