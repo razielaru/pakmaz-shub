@@ -2672,12 +2672,16 @@ def render_command_dashboard():
         st.markdown("### 🛰️ תמונת מצב גזרתית - רבנות פקמ״ז")
         st.info("🔐 **ביטחון מידע:** המיקומים מוזזים 300 מטר מהמיקום המדויק לצורכי אבטחת מידע")
         
+        # טעינת כל הנתונים למפה (מבט ארצי)
+        all_map_data = load_reports_cached(None)
+        map_df = pd.DataFrame(all_map_data) if all_map_data else pd.DataFrame()
+        
         # בדיקה אם יש עמודות מיקום
-        has_location_columns = 'latitude' in df.columns and 'longitude' in df.columns
+        has_location_columns = not map_df.empty and 'latitude' in map_df.columns and 'longitude' in map_df.columns
         
         if has_location_columns:
             # ניקוי נתונים ריקים
-            valid_map = df.dropna(subset=['latitude', 'longitude']).copy()
+            valid_map = map_df.dropna(subset=['latitude', 'longitude']).copy()
             
             # ברירת מחדל למרכז המפה (אזור יהודה ושומרון)
             center_lat = 31.9
@@ -2737,9 +2741,14 @@ def render_command_dashboard():
                 )
                 
                 st.plotly_chart(fig, use_container_width=True)
-                st.info(f"💡 המפה פעילה וממוקדת על אזור יהודה ושומרון. יש {len(df)} דוחות בסה\"כ, אך אף אחד לא כולל מיקום GPS. שלח דיווח חדש עם GPS מופעל כדי לראות נקודות על המפה.")
+                st.info(f"💡 המפה פעילה וממוקדת על אזור יהודה ושומרון. יש {len(map_df)} דוחות בסה\"כ, אך אף אחד לא כולל מיקום GPS. שלח דיווח חדש עם GPS מופעל כדי לראות נקודות על המפה.")
         else:
             # אין עמודות GPS בכלל - הצג מפה ריקה
+            # Center defaults need to be defined if not reached above, but logic prevents undefined reference because of indentation scope.
+            # However, center_lat was defined inside the if. Let's define default outside.
+            center_lat = 31.9
+            center_lon = 35.2
+            
             fig = px.scatter_mapbox(
                 lat=[center_lat],
                 lon=[center_lon],
@@ -3068,6 +3077,111 @@ def render_unit_report():
                     st.warning("⚠️ **דורש תשומת לב!** יש נושאים שדורשים טיפול")
         
         st.markdown("---")
+
+        # ===== טבלה מורחבת עם כל העמודות החדשות - נוסף עבור רבני חטמ״ר =====
+        st.markdown("#### 📋 דוחות מפורטים - תצוגה מלאה")
+        
+        # בניית רשימת עמודות בסדר לוגי
+        base_columns = ['date', 'base', 'inspector']
+        
+        # עמודות מצב בסיסיות
+        status_columns = []
+        if 'e_status' in unit_df.columns:
+            status_columns.append('e_status')
+        if 'k_cert' in unit_df.columns:
+            status_columns.append('k_cert')
+        
+        # 🆕 עמודות תקלות כשרות (הכל!)
+        kashrut_issues_columns = []
+        if 'k_issues' in unit_df.columns:
+            kashrut_issues_columns.append('k_issues')
+        if 'k_issues_description' in unit_df.columns:
+            kashrut_issues_columns.append('k_issues_description')
+        if 'k_separation' in unit_df.columns:
+            kashrut_issues_columns.append('k_separation')
+        if 'p_mix' in unit_df.columns:
+            kashrut_issues_columns.append('p_mix')
+        if 'k_products' in unit_df.columns:
+            kashrut_issues_columns.append('k_products')
+        if 'k_bishul' in unit_df.columns:
+            kashrut_issues_columns.append('k_bishul')
+        
+        # 🆕 עמודות שיעורי תורה (הכל!)
+        torah_columns = []
+        if 'soldier_want_lesson' in unit_df.columns:
+            torah_columns.append('soldier_want_lesson')
+        if 'soldier_has_lesson' in unit_df.columns:
+            torah_columns.append('soldier_has_lesson')
+        if 'soldier_lesson_teacher' in unit_df.columns:
+            torah_columns.append('soldier_lesson_teacher')
+        if 'soldier_lesson_phone' in unit_df.columns:
+            torah_columns.append('soldier_lesson_phone')
+        if 'soldier_yeshiva' in unit_df.columns:
+            torah_columns.append('soldier_yeshiva')
+        
+        # 🆕 עמודות חוסרים ונוספות
+        other_columns = []
+        if 'r_mezuzot_missing' in unit_df.columns:
+            other_columns.append('r_mezuzot_missing')
+        if 'missing_items' in unit_df.columns:
+            other_columns.append('missing_items')
+        if 'free_text' in unit_df.columns:
+            other_columns.append('free_text')
+        
+        # איחוד כל העמודות
+        all_columns = base_columns + status_columns + kashrut_issues_columns + torah_columns + other_columns
+        
+        # סינון רק עמודות קיימות
+        available_columns = [col for col in all_columns if col in unit_df.columns]
+        
+        # יצירת DataFrame לתצוגה
+        if available_columns:
+            display_df = unit_df[available_columns].copy()
+            
+            # 🆕 מיפוי שמות עמודות לעברית - מלא ומפורט
+            column_mapping = {
+                # בסיסי
+                'date': 'תאריך',
+                'base': 'מוצב',
+                'inspector': 'מבקר',
+                
+                # מצב
+                'e_status': 'סטטוס עירוב',
+                'k_cert': 'תעודת כשרות',
+                
+                # תקלות כשרות
+                'k_issues': '❗ יש תקלות כשרות?',
+                'k_issues_description': '📝 פירוט תקלות כשרות',
+                'k_separation': 'הפרדת כלים',
+                'p_mix': '🔴 ערבוב כלים',
+                'k_products': 'רכש חוץ לא מאושר',
+                'k_bishul': 'בישול ישראל',
+                
+                # שיעורי תורה
+                'soldier_want_lesson': '💡 רצון לשיעור תורה',
+                'soldier_has_lesson': '📚 יש שיעור במוצב?',
+                'soldier_lesson_teacher': '👨‍🏫 שם מעביר השיעור',
+                'soldier_lesson_phone': '📞 טלפון מעביר השיעור',
+                'soldier_yeshiva': 'ימי ישיבה',
+                
+                # חוסרים ונוספים
+                'r_mezuzot_missing': '📜 מזוזות חסרות',
+                'missing_items': '⚠️ חוסרים כלליים',
+                'free_text': '📝 הערות נוספות'
+            }
+            
+            # החלפת שמות העמודות
+            display_df.columns = [column_mapping.get(col, col) for col in display_df.columns]
+            
+            # הצגת הטבלה
+            st.dataframe(
+                display_df,
+                use_container_width=True,
+                hide_index=True,
+                height=400
+            )
+        else:
+            st.warning("לא נמצאו עמודות להצגה")
     
     # טופס דיווח (רק אם לא במצב מפקד)
     if not st.session_state.commander_authenticated:
