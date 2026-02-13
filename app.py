@@ -3632,96 +3632,64 @@ def render_unit_report():
                     st.info("אין נתונים זמינים")
             
             # טאב 2: מיקומים
+
             with stats_tabs[1]:
                 st.markdown("### 📍 מפת מיקומים")
+                st.info("🔐 **ביטחון מידע:** המיקומים מוזזים 300 מטר מהמיקום המדויק לצורכי אבטחת מידע")
                 
-                if not stats['top_locations'].empty and 'base' in unit_df.columns:
-                    # מיפוי מוצבים לקואורדינטות (אזור יהודה ושומרון)
-                    base_coordinates = {
-                        "מוצב בנימין": [31.9, 35.25],
-                        "מוצב שומרון": [32.2, 35.2],
-                        "מוצב יהודה": [31.7, 35.1],
-                        "מוצב עציון": [31.65, 35.12],
-                        "מוצב אפרים": [32.1, 35.15],
-                        "מוצב מנשה": [32.3, 35.18],
-                        "מוצב הבקעה": [31.85, 35.45],
-                        # ברירת מחדל לכל מוצב אחר
-                    }
+                # בדיקה אם יש עמודות מיקום
+                has_location_columns = not unit_df.empty and 'latitude' in unit_df.columns and 'longitude' in unit_df.columns
+                
+                if has_location_columns:
+                    # ניקוי נתונים ריקים
+                    valid_map = unit_df.dropna(subset=['latitude', 'longitude']).copy()
                     
-                    # צבעים לפי חטמ"ר
-                    unit_colors = {
-                        "חטמ״ר בנימין": [30, 58, 138, 200],      # כחול כהה
-                        "חטמ״ר שומרון": [96, 165, 250, 200],     # כחול שמיים
-                        "חטמ״ר יהודה": [34, 197, 94, 200],       # ירוק בהיר
-                        "חטמ״ר עציון": [251, 146, 60, 200],      # כתום זהוב
-                        "חטמ״ר אפרים": [239, 68, 68, 200],       # אדום
-                        "חטמ״ר מנשה": [168, 85, 247, 200],       # סגול
-                        "חטמ״ר הבקעה": [219, 39, 119, 200],      # ורוד כהה
-                    }
-                    
-                    # יצירת נתונים למפה
-                    map_data = []
-                    for base_name, count in stats['top_locations'].items():
-                        # קבלת קואורדינטות או שימוש בברירת מחדל
-                        coords = base_coordinates.get(base_name, [31.9, 35.2])
-                        # הוספת רעש קטן למניעת חפיפה
-                        import random
-                        lat = coords[0] + random.uniform(-0.02, 0.02)
-                        lon = coords[1] + random.uniform(-0.02, 0.02)
+                    if not valid_map.empty:
+                        # מיפוי צבעים לפי יחידה (Folium format)
+                        unit_color_map = {
+                            "חטמ״ר בנימין": "#1e3a8a",
+                            "חטמ״ר שומרון": "#60a5fa",
+                            "חטמ״ר יהודה": "#22c55e",
+                            "חטמ״ר עציון": "#fb923c",
+                            "חטמ״ר אפרים": "#ef4444",
+                            "חטמ״ר מנשה": "#a855f7",
+                            "חטמ״ר הבקעה": "#db2777"
+                        }
                         
-                        # מציאת היחידה של המוצב
-                        base_reports = unit_df[unit_df['base'] == base_name]
-                        unit_name = base_reports['unit'].mode()[0] if not base_reports.empty and 'unit' in base_reports.columns else st.session_state.selected_unit
-                        color = unit_colors.get(unit_name, [100, 100, 100, 200])
+                        # חישוב מרכז המפה
+                        center_lat = valid_map['latitude'].mean()
+                        center_lon = valid_map['longitude'].mean()
                         
-                        map_data.append({
-                            "lat": lat,
-                            "lon": lon,
-                            "base": base_name,
-                            "unit": unit_name,
-                            "reports": int(count),
-                            "size": count * 100,
-                            "color": color
-                        })
-                    
-                    if map_data:
-                        map_df = pd.DataFrame(map_data)
+                        # יצירת מפת Folium
+                        m = create_street_level_map(center=(center_lat, center_lon), zoom_start=13)
                         
-                        # המרת צבעים ל-RGB string
-                        map_df['color_str'] = map_df['color'].apply(lambda c: f'rgb({c[0]},{c[1]},{c[2]})')
+                        # הוספת כל הנקודות למפה
+                        for _, row in valid_map.iterrows():
+                            add_unit_marker_to_folium(m, row, unit_color_map)
                         
-                        # יצירת מפה עם plotly
-                        fig = px.scatter_mapbox(
-                            map_df,
-                            lat="lat",
-                            lon="lon",
-                            hover_name="base",
-                            hover_data={"unit": True, "reports": True, "lat": False, "lon": False, "color_str": False, "size": False},
-                            color="unit",
-                            size="reports",
-                            color_discrete_map={
-                                "חטמ״ר בנימין": "rgb(30,58,138)",
-                                "חטמ״ר שומרון": "rgb(96,165,250)",
-                                "חטמ״ר יהודה": "rgb(34,197,94)",
-                                "חטמ״ר עציון": "rgb(251,146,60)",
-                                "חטמ״ר אפרים": "rgb(239,68,68)",
-                                "חטמ״ר מנשה": "rgb(168,85,247)",
-                                "חטמ״ר הבקעה": "rgb(219,39,119)"
-                            },
-                            zoom=8,
-                            height=500
-                        )
+                        # הצגת המפה
+                        st_folium(m, width=1200, height=500, returned_objects=[], key=f"map_hatmar_{unit}")
                         
-                        fig.update_layout(
-                            mapbox_style="carto-positron",
-                            margin={"r": 0, "t": 0, "l": 0, "b": 0}
-                        )
+                        # מקרא
+                        st.markdown("#### 🔑 מקרא")
+                        legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;'>"
                         
-                        st.plotly_chart(fig, use_container_width=True)
+                        # מקרא ייחודי ליחידה הנוכחית או כללי אם יש ערבוב
+                        unique_units = sorted(valid_map['unit'].unique()) if 'unit' in valid_map.columns else [unit]
+                        
+                        for u in unique_units:
+                            color = unit_color_map.get(u, "#808080")
+                            legend_html += f"<div><span style='color: {color}; font-size: 1.5rem;'>●</span> {u}</div>"
+                        legend_html += "</div>"
+                        st.markdown(legend_html, unsafe_allow_html=True)
+                        
+                        st.success("✅ **מפה ברמת רחוב** - זום עד 20 | שמות רחובות בעברית | שכבות: רחובות + לווין")
+                        st.info("💡 **נקודות גדולות** = בעיות (עירוב פסול או כשרות לא תקינה)")
+                        
                     else:
-                        st.info("אין נתוני מיקום זמינים")
+                        st.info("אין נתונים עם מיקום GPS תקין להצגה.")
                 else:
-                    st.info("אין נתוני מיקום זמינים")
+                    st.warning("⚠️ לא נמצאו נתוני מיקום (GPS) בדוחות היחידה.")
             
             # טאב 3: שעות פעילות
             with stats_tabs[2]:
