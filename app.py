@@ -2397,7 +2397,7 @@ def render_command_dashboard():
             st.download_button(
                 label="⬇️ לחץ להורדת כל הנתונים (Excel)",
                 data=full_report_excel_cmd,
-                file_name=f"דוח_מלא_{selected_unit}_{pd.Timestamp.now().strftime('%d_%m_%Y_%H_%M')}.xlsx",
+                file_name=f"דוח_מלא_{selected_unit}_{datetime.date.today().strftime('%d_%m_%Y')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
                 type="primary",
@@ -3333,7 +3333,7 @@ def render_unit_report():
             st.download_button(
                 label="⬇️ לחץ להורדת כל הנתונים (Excel)",
                 data=full_report_excel,
-                file_name=f"דוח_מלא_{unit}_{pd.Timestamp.now().strftime('%d_%m_%Y_%H_%M')}.xlsx",
+                file_name=f"דוח_מלא_{unit}_{datetime.date.today().strftime('%d_%m_%Y')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
                 type="primary",
