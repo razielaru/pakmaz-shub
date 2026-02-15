@@ -1208,16 +1208,19 @@ def generate_inspector_stats(df):
 
 def create_full_report_excel(df):
     """
-    יצירת קובץ Excel ממוקד - תואם לטבלת 'דוחות מפורטים' באתר
+    יצירת קובץ Excel מעוצב - תואם לטבלת 'דוחות מפורטים' באתר
+    כולל עיצוב, כיוון מימין לשמאל, ופילטרים
     """
     try:
         import io
         import pandas as pd
-        
+        from openpyxl.styles import Font, PatternFill, Side, Alignment, Border
+        from openpyxl.utils import get_column_letter
+
         if df.empty:
             return None
             
-        # 1. הגדרת העמודות בסדר שאתה רואה באתר
+        # 1. הגדרת העמודות
         column_mapping = {
             'date': 'תאריך',
             'base': 'מוצב',
@@ -1239,22 +1242,68 @@ def create_full_report_excel(df):
             'free_text': '📝 הערות נוספות'
         }
         
-        # 2. סינון רק של העמודות שקיימות בנתונים
+        # 2. סינון ועיבוד נתונים
         available_cols = [col for col in column_mapping.keys() if col in df.columns]
         export_df = df[available_cols].copy()
-        
-        # 3. שינוי שמות הכותרות לעברית
         export_df.rename(columns=column_mapping, inplace=True)
         
-        # 4. המרת תאריך לפורמט קריא אם הוא אובייקט זמן
         if 'תאריך' in export_df.columns:
             export_df['תאריך'] = pd.to_datetime(export_df['תאריך']).dt.strftime('%d/%m/%Y %H:%M')
 
-        # 5. יצירת הקובץ בזיכרון
+        # 3. יצירת הקובץ עם עיצוב
         output = io.BytesIO()
+        
+        # שימוש ב-ExcelWriter עם openpyxl
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             export_df.to_excel(writer, index=False, sheet_name='דוחות רבנות')
-        
+            
+            # קבלת הגיליון לעיצוב
+            workbook = writer.book
+            worksheet = writer.sheets['דוחות רבנות']
+            
+            # כיוון גיליון מימין לשמאל
+            worksheet.sheet_view.rightToLeft = True
+            
+            # סגנונות
+            header_font = Font(name='Arial', size=11, bold=True, color='FFFFFF')
+            header_fill = PatternFill(start_color='1E3A8A', end_color='1E3A8A', fill_type='solid') # כחול כהה
+            border_style = Side(border_style='thin', color='000000')
+            thin_border = Border(left=border_style, right=border_style, top=border_style, bottom=border_style)
+            alignment_right = Alignment(horizontal='right', vertical='center', wrap_text=True)
+            alignment_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            
+            # עיצוב כותרות
+            for cell in worksheet[1]:
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.border = thin_border
+                cell.alignment = alignment_center
+                
+            # עיצוב תאים והתאמת רוחב
+            for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row):
+                for cell in row:
+                    cell.border = thin_border
+                    cell.alignment = alignment_right
+                    
+            # הוספת פילטרים
+            worksheet.auto_filter.ref = worksheet.dimensions
+            
+            # התאמת רוחב עמודות
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = get_column_letter(column[0].column)
+                
+                # חישוב אורך מקסימלי (עם גבול סביר)
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                        
+                adjusted_width = min(max_length + 2, 40) # מקסימום רוחב
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+
         return output.getvalue()
         
     except Exception as e:
