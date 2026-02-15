@@ -3703,25 +3703,10 @@ def render_unit_report():
                         file_name=f"full_unit_summary_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True,
-                        key="dl_main_summary_unit"
+                        key=f"dl_main_summary_unit_{pd.Timestamp.now().strftime('%H%M%S')}"
                     )
-            
-            st.markdown("---")
-
-            # כפתורי הורדה נוספים (ניתן להשאיר או להסיר, נשאיר כגיבוי)
-            col_dl1, col_dl2 = st.columns(2)
-            
-            with col_dl1:
-                excel_data = create_inspector_excel(unit_df)
-                if excel_data:
-                    st.download_button(
-                        label="📄 דוח מבקרים (Excel)",
-                        data=excel_data,
-                        file_name=f"inspector_stats_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="dl_inspectors_top"
-                    )
+                else:
+                    st.warning("⚠️ לא ניתן ליצור דוח מלא")
                 
             
             st.markdown("---")
