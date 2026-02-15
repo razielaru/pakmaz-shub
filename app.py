@@ -3665,326 +3665,325 @@ def render_unit_report():
         else:
             st.error("❌ לא ניתן ליצור קובץ Excel")
     
-    # טופס דיווח (רק אם לא במצב מפקד)
-
-    
-    # --- סטטיסטיקות מבקרים ---
-    st.markdown("---")
-    st.markdown("## 📊 סטטיסטיקות מבקרים")
-    
-    # טעינת דוחות של היחידה (ללא קאש)
-    # ניקוי קאש לפני טעינה כדי להבטיח נתונים עדכניים
-    clear_cache()
-    unit_reports_raw = supabase.table("reports").select("*").eq("unit", st.session_state.selected_unit).execute().data
-    unit_df = pd.DataFrame(unit_reports_raw)
-    
-    if not unit_df.empty and 'date' in unit_df.columns:
-        # המרת תאריכים
-        unit_df['date'] = pd.to_datetime(unit_df['date'], errors='coerce')
+    # ===== רק אם מחובר כרב חטמ"ר - הצג הכל =====
+    if st.session_state.commander_authenticated:
+        # --- סטטיסטיקות מבקרים ---
+        st.markdown("---")
+        st.markdown("## 📊 סטטיסטיקות מבקרים")
         
-        stats = generate_inspector_stats(unit_df)
+        # טעינת דוחות של היחידה (ללא קאש)
+        # ניקוי קאש לפני טעינה כדי להבטיח נתונים עדכניים
+        clear_cache()
+        unit_reports_raw = supabase.table("reports").select("*").eq("unit", st.session_state.selected_unit).execute().data
+        unit_df = pd.DataFrame(unit_reports_raw)
         
-        if stats:
-            # מדדים עיקריים
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("📝 סה\"כ דוחות החודש", stats['total_reports'])
-            with col2:
-                st.metric("👥 מבקרים פעילים", stats['unique_inspectors'])
-            with col3:
-                if not stats['top_inspectors'].empty:
-                    top_inspector = stats['top_inspectors'].index[0]
-                    top_count = stats['top_inspectors'].iloc[0]
-                    st.metric("🏆 מבקר מוביל", f"{top_inspector} ({top_count})")
+        if not unit_df.empty and 'date' in unit_df.columns:
+            # המרת תאריכים
+            unit_df['date'] = pd.to_datetime(unit_df['date'], errors='coerce')
             
-            # הוספת בלוק ציון ומדד (חדש!)
-            st.markdown("---")
-            st.markdown("### 🎖️ מדד כשירות יחידה וסיכום פעילות")
+            stats = generate_inspector_stats(unit_df)
             
-            unit_score = calculate_unit_score(unit_df)
-            unit_badge, badge_color = get_unit_badge(unit_score)
-            
-            col_s1, col_s2, col_s3 = st.columns([1, 1, 2])
-            with col_s1:
-                st.metric("ציון משוקלל", f"{unit_score:.1f}/100")
-            with col_s2:
-                st.markdown(f"<div style='background:{badge_color}; color:white; padding:10px; border-radius:8px; text-align:center; font-weight:bold; margin-top: 5px;'>{unit_badge}</div>", unsafe_allow_html=True)
-            with col_s3:
-                # כפתור הורדה ראשי כאן
-                full_report_data_main = create_full_report_excel(unit_df)
-                if full_report_data_main:
-                    st.download_button(
-                        label="📥 הורד סיכום יחידה מלא (Excel)",
-                        data=full_report_data_main,
-                        file_name=f"full_unit_summary_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="dl_main_summary_unit"
-                    )
-            
-            st.markdown("---")
-
-            # כפתורי הורדה נוספים (ניתן להשאיר או להסיר, נשאיר כגיבוי)
-            col_dl1, col_dl2 = st.columns(2)
-            
-            with col_dl1:
-                excel_data = create_inspector_excel(unit_df)
-                if excel_data:
-                    st.download_button(
-                        label="📄 דוח מבקרים (Excel)",
-                        data=excel_data,
-                        file_name=f"inspector_stats_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="dl_inspectors_top"
-                    )
-                    
-            with col_dl2:
-                full_report_data = create_full_report_excel(unit_df)
-                if full_report_data:
-                    st.download_button(
-                        label="📊 דוח פעילות מלא (Excel)",
-                        data=full_report_data,
-                        file_name=f"full_activity_report_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="dl_full_report_top"
-                    )
-            
-            st.markdown("---")
-
-            # טאבים לסטטיסטיקות
-            stats_tabs = st.tabs(["🏆 טבלת מובילים", "📍 מיקומים", "⏰ שעות פעילות", "📈 התקדמות"])
-            
-            # טאב 1: טבלת מובילים
-            with stats_tabs[0]:
-                st.markdown("### 🏆 9 המבקרים המובילים")
+            if stats:
+                # מדדים עיקריים
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("📝 סה\"כ דוחות החודש", stats['total_reports'])
+                with col2:
+                    st.metric("👥 מבקרים פעילים", stats['unique_inspectors'])
+                with col3:
+                    if not stats['top_inspectors'].empty:
+                        top_inspector = stats['top_inspectors'].index[0]
+                        top_count = stats['top_inspectors'].iloc[0]
+                        st.metric("🏆 מבקר מוביל", f"{top_inspector} ({top_count})")
                 
-                if not stats['top_inspectors'].empty:
-                    # יצירת טבלה מעוצבת - 9 הראשונים
-                    leaderboard_data = []
-                    number_emojis = {
-                        1: "🥇", 2: "🥈", 3: "🥉",
-                        4: "4️⃣", 5: "5️⃣", 6: "6️⃣",
-                        7: "7️⃣", 8: "8️⃣", 9: "9️⃣"
-                    }
-                    
-                    for idx, (inspector, count) in enumerate(stats['top_inspectors'].head(9).items(), 1):
-                        medal = number_emojis.get(idx, f"#{idx}")
-                        leaderboard_data.append({
-                            "מקום": medal,
-                            "שם המבקר": inspector,
-                            "דוחות": count
-                        })
-                    
-                    leaderboard_df = pd.DataFrame(leaderboard_data)
-                    
-                    # תצוגה משופרת עם עיצוב ממורכז
-                    # שימוש ב-HTML לעיצוב מדליות ממורכזות
-                    html_table = "<table style='width:100%; text-align:center; border-collapse: collapse; color: #000000;'>"
-                    html_table += "<thead><tr style='background-color: #f0f2f6;'>"
-                    html_table += "<th style='padding: 12px; font-size: 16px; color: #000000;'>מקום</th>"
-                    html_table += "<th style='padding: 12px; font-size: 16px; color: #000000;'>שם המבקר</th>"
-                    html_table += "<th style='padding: 12px; font-size: 16px; color: #000000;'>דוחות</th>"
-                    html_table += "</tr></thead><tbody>"
-                    
-                    for _, row in leaderboard_df.iterrows():
-                        html_table += "<tr style='border-bottom: 1px solid #e0e0e0;'>"
-                        html_table += f"<td style='padding: 10px; font-size: 24px; color: #000000;'>{row['מקום']}</td>"
-                        html_table += f"<td style='padding: 10px; text-align: right; font-size: 16px; color: #000000;'>{row['שם המבקר']}</td>"
-                        html_table += f"<td style='padding: 10px; font-size: 16px; color: #000000;'>{row['דוחות']}</td>"
-                        html_table += "</tr>"
-                    
-                    html_table += "</tbody></table>"
-                    st.markdown(html_table, unsafe_allow_html=True)
-                    
-
-                else:
-                    st.info("אין נתונים זמינים")
-            
-            # טאב 2: מיקומים
-
-            with stats_tabs[1]:
-                st.markdown("### 📍 מפת מיקומים")
-                st.info("🔐 **ביטחון מידע:** המיקומים מוזזים 300 מטר מהמיקום המדויק לצורכי אבטחת מידע")
+                # הוספת בלוק ציון ומדד (חדש!)
+                st.markdown("---")
+                st.markdown("### 🎖️ מדד כשירות יחידה וסיכום פעילות")
                 
-                # בדיקה אם יש עמודות מיקום
-                has_location_columns = not unit_df.empty and 'latitude' in unit_df.columns and 'longitude' in unit_df.columns
+                unit_score = calculate_unit_score(unit_df)
+                unit_badge, badge_color = get_unit_badge(unit_score)
                 
-                if has_location_columns:
-                    # ניקוי נתונים ריקים
-                    valid_map = unit_df.dropna(subset=['latitude', 'longitude']).copy()
+                col_s1, col_s2, col_s3 = st.columns([1, 1, 2])
+                with col_s1:
+                    st.metric("ציון משוקלל", f"{unit_score:.1f}/100")
+                with col_s2:
+                    st.markdown(f"<div style='background:{badge_color}; color:white; padding:10px; border-radius:8px; text-align:center; font-weight:bold; margin-top: 5px;'>{unit_badge}</div>", unsafe_allow_html=True)
+                with col_s3:
+                    # כפתור הורדה ראשי כאן
+                    full_report_data_main = create_full_report_excel(unit_df)
+                    if full_report_data_main:
+                        st.download_button(
+                            label="📥 הורד סיכום יחידה מלא (Excel)",
+                            data=full_report_data_main,
+                            file_name=f"full_unit_summary_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                            key="dl_main_summary_unit"
+                        )
+                
+                st.markdown("---")
+    
+                # כפתורי הורדה נוספים (ניתן להשאיר או להסיר, נשאיר כגיבוי)
+                col_dl1, col_dl2 = st.columns(2)
+                
+                with col_dl1:
+                    excel_data = create_inspector_excel(unit_df)
+                    if excel_data:
+                        st.download_button(
+                            label="📄 דוח מבקרים (Excel)",
+                            data=excel_data,
+                            file_name=f"inspector_stats_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                            key="dl_inspectors_top"
+                        )
+                        
+                with col_dl2:
+                    full_report_data = create_full_report_excel(unit_df)
+                    if full_report_data:
+                        st.download_button(
+                            label="📊 דוח פעילות מלא (Excel)",
+                            data=full_report_data,
+                            file_name=f"full_activity_report_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True,
+                            key="dl_full_report_top"
+                        )
+                
+                st.markdown("---")
+    
+                # טאבים לסטטיסטיקות
+                stats_tabs = st.tabs(["🏆 טבלת מובילים", "📍 מיקומים", "⏰ שעות פעילות", "📈 התקדמות"])
+                
+                # טאב 1: טבלת מובילים
+                with stats_tabs[0]:
+                    st.markdown("### 🏆 9 המבקרים המובילים")
                     
-                    if not valid_map.empty:
-                        # מיפוי צבעים לפי יחידה (Folium format)
-                        unit_color_map = {
-                            "חטמ״ר בנימין": "#1e3a8a",
-                            "חטמ״ר שומרון": "#60a5fa",
-                            "חטמ״ר יהודה": "#22c55e",
-                            "חטמ״ר עציון": "#fb923c",
-                            "חטמ״ר אפרים": "#ef4444",
-                            "חטמ״ר מנשה": "#a855f7",
-                            "חטמ״ר הבקעה": "#db2777"
+                    if not stats['top_inspectors'].empty:
+                        # יצירת טבלה מעוצבת - 9 הראשונים
+                        leaderboard_data = []
+                        number_emojis = {
+                            1: "🥇", 2: "🥈", 3: "🥉",
+                            4: "4️⃣", 5: "5️⃣", 6: "6️⃣",
+                            7: "7️⃣", 8: "8️⃣", 9: "9️⃣"
                         }
                         
-                        # חישוב מרכז המפה
-                        center_lat = valid_map['latitude'].mean()
-                        center_lon = valid_map['longitude'].mean()
+                        for idx, (inspector, count) in enumerate(stats['top_inspectors'].head(9).items(), 1):
+                            medal = number_emojis.get(idx, f"#{idx}")
+                            leaderboard_data.append({
+                                "מקום": medal,
+                                "שם המבקר": inspector,
+                                "דוחות": count
+                            })
                         
-                        # יצירת מפת Folium
-                        m = create_street_level_map(center=(center_lat, center_lon), zoom_start=13)
+                        leaderboard_df = pd.DataFrame(leaderboard_data)
                         
-                        # הוספת כל הנקודות למפה
-                        for _, row in valid_map.iterrows():
-                            add_unit_marker_to_folium(m, row, unit_color_map)
+                        # תצוגה משופרת עם עיצוב ממורכז
+                        # שימוש ב-HTML לעיצוב מדליות ממורכזות
+                        html_table = "<table style='width:100%; text-align:center; border-collapse: collapse; color: #000000;'>"
+                        html_table += "<thead><tr style='background-color: #f0f2f6;'>"
+                        html_table += "<th style='padding: 12px; font-size: 16px; color: #000000;'>מקום</th>"
+                        html_table += "<th style='padding: 12px; font-size: 16px; color: #000000;'>שם המבקר</th>"
+                        html_table += "<th style='padding: 12px; font-size: 16px; color: #000000;'>דוחות</th>"
+                        html_table += "</tr></thead><tbody>"
                         
-                        # הצגת המפה
-                        st_folium(m, width=1200, height=500, returned_objects=[], key=f"map_hatmar_{unit}")
+                        for _, row in leaderboard_df.iterrows():
+                            html_table += "<tr style='border-bottom: 1px solid #e0e0e0;'>"
+                            html_table += f"<td style='padding: 10px; font-size: 24px; color: #000000;'>{row['מקום']}</td>"
+                            html_table += f"<td style='padding: 10px; text-align: right; font-size: 16px; color: #000000;'>{row['שם המבקר']}</td>"
+                            html_table += f"<td style='padding: 10px; font-size: 16px; color: #000000;'>{row['דוחות']}</td>"
+                            html_table += "</tr>"
                         
-                        # מקרא
-                        st.markdown("#### 🔑 מקרא")
-                        legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;'>"
+                        html_table += "</tbody></table>"
+                        st.markdown(html_table, unsafe_allow_html=True)
                         
-                        # מקרא ייחודי ליחידה הנוכחית או כללי אם יש ערבוב
-                        unique_units = sorted(valid_map['unit'].unique()) if 'unit' in valid_map.columns else [unit]
-                        
-                        for u in unique_units:
-                            color = unit_color_map.get(u, "#808080")
-                            legend_html += f"<div><span style='color: {color}; font-size: 1.5rem;'>●</span> {u}</div>"
-                        legend_html += "</div>"
-                        st.markdown(legend_html, unsafe_allow_html=True)
-                        
-                        st.success("✅ **מפה ברמת רחוב** - זום עד 20 | שמות רחובות בעברית | שכבות: רחובות + לווין")
-                        st.info("💡 **נקודות גדולות** = בעיות (עירוב פסול או כשרות לא תקינה)")
-                        
+    
                     else:
-                        st.info("אין נתונים עם מיקום GPS תקין להצגה.")
-                else:
-                    st.warning("⚠️ לא נמצאו נתוני מיקום (GPS) בדוחות היחידה.")
-            
-            # טאב 3: שעות פעילות
-            with stats_tabs[2]:
-                st.markdown("### ⏰ שעות פעילות")
+                        st.info("אין נתונים זמינים")
                 
-                if not stats['peak_hours'].empty:
-                    # יצירת תרשים עמודות אינטראקטיבי
-                    hours_df = pd.DataFrame({
-                        'שעה': [f"{int(h):02d}:00" for h in stats['peak_hours'].index],
-                        'דוחות': stats['peak_hours'].values
-                    })
+                # טאב 2: מיקומים
+    
+                with stats_tabs[1]:
+                    st.markdown("### 📍 מפת מיקומים")
+                    st.info("🔐 **ביטחון מידע:** המיקומים מוזזים 300 מטר מהמיקום המדויק לצורכי אבטחת מידע")
                     
-                    fig = px.bar(
-                        hours_df,
-                        x='שעה',
+                    # בדיקה אם יש עמודות מיקום
+                    has_location_columns = not unit_df.empty and 'latitude' in unit_df.columns and 'longitude' in unit_df.columns
+                    
+                    if has_location_columns:
+                        # ניקוי נתונים ריקים
+                        valid_map = unit_df.dropna(subset=['latitude', 'longitude']).copy()
+                        
+                        if not valid_map.empty:
+                            # מיפוי צבעים לפי יחידה (Folium format)
+                            unit_color_map = {
+                                "חטמ״ר בנימין": "#1e3a8a",
+                                "חטמ״ר שומרון": "#60a5fa",
+                                "חטמ״ר יהודה": "#22c55e",
+                                "חטמ״ר עציון": "#fb923c",
+                                "חטמ״ר אפרים": "#ef4444",
+                                "חטמ״ר מנשה": "#a855f7",
+                                "חטמ״ר הבקעה": "#db2777"
+                            }
+                            
+                            # חישוב מרכז המפה
+                            center_lat = valid_map['latitude'].mean()
+                            center_lon = valid_map['longitude'].mean()
+                            
+                            # יצירת מפת Folium
+                            m = create_street_level_map(center=(center_lat, center_lon), zoom_start=13)
+                            
+                            # הוספת כל הנקודות למפה
+                            for _, row in valid_map.iterrows():
+                                add_unit_marker_to_folium(m, row, unit_color_map)
+                            
+                            # הצגת המפה
+                            st_folium(m, width=1200, height=500, returned_objects=[], key=f"map_hatmar_{unit}")
+                            
+                            # מקרא
+                            st.markdown("#### 🔑 מקרא")
+                            legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;'>"
+                            
+                            # מקרא ייחודי ליחידה הנוכחית או כללי אם יש ערבוב
+                            unique_units = sorted(valid_map['unit'].unique()) if 'unit' in valid_map.columns else [unit]
+                            
+                            for u in unique_units:
+                                color = unit_color_map.get(u, "#808080")
+                                legend_html += f"<div><span style='color: {color}; font-size: 1.5rem;'>●</span> {u}</div>"
+                            legend_html += "</div>"
+                            st.markdown(legend_html, unsafe_allow_html=True)
+                            
+                            st.success("✅ **מפה ברמת רחוב** - זום עד 20 | שמות רחובות בעברית | שכבות: רחובות + לווין")
+                            st.info("💡 **נקודות גדולות** = בעיות (עירוב פסול או כשרות לא תקינה)")
+                            
+                        else:
+                            st.info("אין נתונים עם מיקום GPS תקין להצגה.")
+                    else:
+                        st.warning("⚠️ לא נמצאו נתוני מיקום (GPS) בדוחות היחידה.")
+                
+                # טאב 3: שעות פעילות
+                with stats_tabs[2]:
+                    st.markdown("### ⏰ שעות פעילות")
+                    
+                    if not stats['peak_hours'].empty:
+                        # יצירת תרשים עמודות אינטראקטיבי
+                        hours_df = pd.DataFrame({
+                            'שעה': [f"{int(h):02d}:00" for h in stats['peak_hours'].index],
+                            'דוחות': stats['peak_hours'].values
+                        })
+                        
+                        fig = px.bar(
+                            hours_df,
+                            x='שעה',
+                            y='דוחות',
+                            title="התפלגות דיווחים לפי שעות",
+                            labels={'שעה': 'שעה ביום', 'דוחות': 'מספר דוחות'},
+                            color='דוחות',
+                            color_continuous_scale='Blues'
+                        )
+                        
+                        fig.update_layout(
+                            showlegend=False,
+                            height=350,
+                            xaxis_tickangle=-45,
+                            paper_bgcolor='white',
+                            plot_bgcolor='white',
+                            font=dict(color='#1e293b')
+                        )
+                        
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # פירוט מפורט של שעות פעילות
+                        st.markdown("#### 📊 פירוט שעות פעילות")
+                        
+                        # יצירת DataFrame עם כל 24 השעות
+                        all_hours = pd.DataFrame({'hour': range(24), 'count': 0})
+                        activity_hours = stats['peak_hours'].reset_index()
+                        activity_hours.columns = ['hour', 'count']
+                        
+                        # מיזוג עם כל השעות
+                        hourly_data = all_hours.set_index('hour').combine_first(activity_hours.set_index('hour')).reset_index()
+                        hourly_data = hourly_data.sort_values('hour')
+                        
+                        # הצגת גרף עמודות מפורט
+                        fig_detailed = px.bar(
+                            hourly_data,
+                            x='hour',
+                            y='count',
+                            labels={'hour': 'שעה', 'count': 'מספר דוחות'},
+                            title='התפלגות דוחות לפי שעה (24 שעות)',
+                            color='count',
+                            color_continuous_scale='Blues'
+                        )
+                        
+                        fig_detailed.update_layout(
+                            xaxis=dict(
+                                tickmode='linear',
+                                tick0=0,
+                                dtick=1,
+                                tickformat='%02d:00'
+                            ),
+                            showlegend=False,
+                            height=400,
+                            paper_bgcolor='white',
+                            plot_bgcolor='white',
+                            font=dict(color='#1e293b')
+                        )
+                        
+                        st.plotly_chart(fig_detailed, use_container_width=True)
+                        
+                        # סטטיסטיקות מפורטות
+                        active_hours = hourly_data[hourly_data['count'] > 0]
+                        if len(active_hours) > 0:
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                peak_hour = active_hours.loc[active_hours['count'].idxmax(), 'hour']
+                                peak_count = active_hours['count'].max()
+                                st.metric("🔥 שעת שיא", f"{int(peak_hour):02d}:00", f"{int(peak_count)} דוחות")
+                            with col2:
+                                total_active_hours = len(active_hours)
+                                st.metric("⏰ שעות פעילות", f"{total_active_hours} שעות")
+                            with col3:
+                                avg_per_active_hour = active_hours['count'].mean()
+                                st.metric("📊 ממוצע לשעה פעילה", f"{avg_per_active_hour:.1f}")
+                            
+                            # רשימת שעות פעילות
+                            st.markdown("**שעות עם דיווחים:**")
+                            hours_list = ", ".join([f"{int(h):02d}:00 ({int(c)} דוחות)" for h, c in zip(active_hours['hour'], active_hours['count'])])
+                            st.caption(hours_list)
+                    else:
+                        st.info("אין מספיק נתונים להצגת שעות פעילות")
+                
+                # טאב 4: התקדמות
+                with stats_tabs[3]:
+                    st.markdown("### 📈 גרף התקדמות")
+                    
+                    # התקדמות לפי תאריך
+                    daily_reports = unit_df.groupby(unit_df['date'].dt.date).size().reset_index()
+                    daily_reports.columns = ['תאריך', 'דוחות']
+                    
+                    fig = px.line(
+                        daily_reports,
+                        x='תאריך',
                         y='דוחות',
-                        title="התפלגות דיווחים לפי שעות",
-                        labels={'שעה': 'שעה ביום', 'דוחות': 'מספר דוחות'},
-                        color='דוחות',
-                        color_continuous_scale='Blues'
+                        title="התקדמות דיווחים לאורך זמן",
+                        markers=True
                     )
-                    
-                    fig.update_layout(
-                        showlegend=False,
-                        height=350,
-                        xaxis_tickangle=-45,
-                        paper_bgcolor='white',
-                        plot_bgcolor='white',
-                        font=dict(color='#1e293b')
-                    )
-                    
+                    fig.update_layout(height=300)
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # פירוט מפורט של שעות פעילות
-                    st.markdown("#### 📊 פירוט שעות פעילות")
-                    
-                    # יצירת DataFrame עם כל 24 השעות
-                    all_hours = pd.DataFrame({'hour': range(24), 'count': 0})
-                    activity_hours = stats['peak_hours'].reset_index()
-                    activity_hours.columns = ['hour', 'count']
-                    
-                    # מיזוג עם כל השעות
-                    hourly_data = all_hours.set_index('hour').combine_first(activity_hours.set_index('hour')).reset_index()
-                    hourly_data = hourly_data.sort_values('hour')
-                    
-                    # הצגת גרף עמודות מפורט
-                    fig_detailed = px.bar(
-                        hourly_data,
-                        x='hour',
-                        y='count',
-                        labels={'hour': 'שעה', 'count': 'מספר דוחות'},
-                        title='התפלגות דוחות לפי שעה (24 שעות)',
-                        color='count',
-                        color_continuous_scale='Blues'
-                    )
-                    
-                    fig_detailed.update_layout(
-                        xaxis=dict(
-                            tickmode='linear',
-                            tick0=0,
-                            dtick=1,
-                            tickformat='%02d:00'
-                        ),
-                        showlegend=False,
-                        height=400,
-                        paper_bgcolor='white',
-                        plot_bgcolor='white',
-                        font=dict(color='#1e293b')
-                    )
-                    
-                    st.plotly_chart(fig_detailed, use_container_width=True)
-                    
-                    # סטטיסטיקות מפורטות
-                    active_hours = hourly_data[hourly_data['count'] > 0]
-                    if len(active_hours) > 0:
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            peak_hour = active_hours.loc[active_hours['count'].idxmax(), 'hour']
-                            peak_count = active_hours['count'].max()
-                            st.metric("🔥 שעת שיא", f"{int(peak_hour):02d}:00", f"{int(peak_count)} דוחות")
-                        with col2:
-                            total_active_hours = len(active_hours)
-                            st.metric("⏰ שעות פעילות", f"{total_active_hours} שעות")
-                        with col3:
-                            avg_per_active_hour = active_hours['count'].mean()
-                            st.metric("📊 ממוצע לשעה פעילה", f"{avg_per_active_hour:.1f}")
-                        
-                        # רשימת שעות פעילות
-                        st.markdown("**שעות עם דיווחים:**")
-                        hours_list = ", ".join([f"{int(h):02d}:00 ({int(c)} דוחות)" for h, c in zip(active_hours['hour'], active_hours['count'])])
-                        st.caption(hours_list)
-                else:
-                    st.info("אין מספיק נתונים להצגת שעות פעילות")
-            
-            # טאב 4: התקדמות
-            with stats_tabs[3]:
-                st.markdown("### 📈 גרף התקדמות")
-                
-                # התקדמות לפי תאריך
-                daily_reports = unit_df.groupby(unit_df['date'].dt.date).size().reset_index()
-                daily_reports.columns = ['תאריך', 'דוחות']
-                
-                fig = px.line(
-                    daily_reports,
-                    x='תאריך',
-                    y='דוחות',
-                    title="התקדמות דיווחים לאורך זמן",
-                    markers=True
-                )
-                fig.update_layout(height=300)
-                st.plotly_chart(fig, use_container_width=True)
-                
-                # סטטיסטיקה נוספת
-                col1, col2 = st.columns(2)
-                with col1:
-                    avg_daily = daily_reports['דוחות'].mean()
-                    st.metric("ממוצע דוחות ליום", f"{avg_daily:.1f}")
-                with col2:
-                    max_day = daily_reports.loc[daily_reports['דוחות'].idxmax()]
-                    st.metric("יום שיא", f"{max_day['תאריך']} ({int(max_day['דוחות'])})")
+                    # סטטיסטיקה נוספת
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        avg_daily = daily_reports['דוחות'].mean()
+                        st.metric("ממוצע דוחות ליום", f"{avg_daily:.1f}")
+                    with col2:
+                        max_day = daily_reports.loc[daily_reports['דוחות'].idxmax()]
+                        st.metric("יום שיא", f"{max_day['תאריך']} ({int(max_day['דוחות'])})")
+            else:
+                st.info("אין מספיק נתונים להצגת סטטיסטיקות")
         else:
-            st.info("אין מספיק נתונים להצגת סטטיסטיקות")
-    else:
-        st.info("טרם הוגשו דוחות ליחידה זו")
+            st.info("טרם הוגשו דוחות ליחידה זו")
 
 # --- 10. Main ---
 def main():
