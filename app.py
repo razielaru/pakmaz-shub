@@ -1468,6 +1468,11 @@ st.markdown(f"""
         color: {COLORS['dark']}; 
     }}
     
+    /* תיקון לאייקונים של Streamlit */
+    .st-emotion-cache-1p1m4ay, .st-emotion-cache-12fmjuu {{
+        font-family: "Source Sans Pro", sans-serif !important;
+    }}
+    
     /* כרטיס יחידה - רספונסיבי */
     .login-card {{
         background: white; 
@@ -1789,7 +1794,8 @@ def render_command_dashboard():
         if df.empty:
             st.info("📊 אין נתונים זמינים כרגע.")
         else:
-            st.warning("⚠️ לא ניתן ליצור קובץ Excel כרגע")
+            # st.warning("⚠️ לא ניתן ליצור קובץ Excel כרגע")
+            pass
     
     st.markdown("---")
     
@@ -2422,18 +2428,21 @@ def render_command_dashboard():
         st.markdown("---")
         st.markdown("### 📥 הורדת דוח Excel מלא")
         
-        full_report_excel_cmd = create_full_report_excel(unit_df)
-        if full_report_excel_cmd:
-            st.download_button(
-                label="⬇️ לחץ להורדת כל הנתונים (Excel)",
-                data=full_report_excel_cmd,
-                file_name=f"דוח_מלא_{selected_unit}_{datetime.date.today().strftime('%d_%m_%Y')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                type="primary",
-                key="dl_excel_pikud_detailed"
-            )
-            st.caption("📊 הקובץ כולל את כל השאלות והתשובות מהשאלון")
+        try:
+            full_report_excel_cmd = create_full_report_excel(unit_df)
+            if full_report_excel_cmd:
+                st.download_button(
+                    label="⬇️ לחץ להורדת כל הנתונים (Excel)",
+                    data=full_report_excel_cmd,
+                    file_name=f"דוח_מלא_{selected_unit}_{datetime.date.today().strftime('%d_%m_%Y')}_{int(time.time())}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    type="primary",
+                    key=f"dl_excel_pikud_detailed_{selected_unit}_{int(time.time())}"
+                )
+        except Exception as e:
+            st.error(f"שגיאה ביצירת קובץ Excel: {e}")
+        st.caption("📊 הקובץ כולל את כל השאלות והתשובות מהשאלון")
         
         st.markdown("---")
         
