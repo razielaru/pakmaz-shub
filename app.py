@@ -1205,72 +1205,16 @@ def generate_inspector_stats(df):
         'unique_inspectors': current_month['inspector'].nunique()
     }
 
-            # הוספת בלוק ציון ומדד (חדש!)
-            st.markdown("---")
-            st.markdown("### 🎖️ מדד כשירות יחידה וסיכום פעילות")
-            
-            unit_score = calculate_unit_score(unit_df)
-            unit_badge, badge_color = get_unit_badge(unit_score)
-            
-            col_s1, col_s2, col_s3 = st.columns([1, 1, 2])
-            with col_s1:
-                st.metric("ציון משוקלל", f"{unit_score:.1f}/100")
-            with col_s2:
-                st.markdown(f"<div style='background:{badge_color}; color:white; padding:10px; border-radius:8px; text-align:center; font-weight:bold; margin-top: 5px;'>{unit_badge}</div>", unsafe_allow_html=True)
-            with col_s3:
-                # כפתור הורדה ראשי כאן
-                full_report_data_main = create_full_report_excel(unit_df)
-                if full_report_data_main:
-                    st.download_button(
-                        label="📥 הורד סיכום יחידה מלא (Excel)",
-                        data=full_report_data_main,
-                        file_name=f"full_unit_summary_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="dl_main_summary_unit"
-                    )
-            
-            st.markdown("---")
-
-            # כפתורי הורדה נוספים (ניתן להשאיר או להסיר, נשאיר כגיבוי)
-            col_dl1, col_dl2 = st.columns(2)
-            
-            with col_dl1:
-                excel_data = create_inspector_excel(unit_df)
-                if excel_data:
-                    st.download_button(
-                        label="📄 דוח מבקרים (Excel)",
-                        data=excel_data,
-                        file_name=f"inspector_stats_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="dl_inspectors_top"
-                    )
-                    
-            with col_dl2:
-                full_report_data = create_full_report_excel(unit_df)
-                if full_report_data:
-                    st.download_button(
-                        label="📊 דוח פעילות מלא (Excel)",
-                        data=full_report_data,
-                        file_name=f"full_activity_report_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="dl_full_report_top"
-        )
-    
-    st.markdown("---")
 
 def create_full_report_excel(df):
     """
-    תיקון מלא: יצירת Excel ללא שגיאות
+    ✅ תיקון מלא: יצירת Excel ללא שגיאות
     """
     try:
         import io
         import pandas as pd
         from openpyxl.styles import Font, PatternFill, Side, Alignment, Border
         from openpyxl.utils import get_column_letter
-        import openpyxl
 
         if df.empty:
             return None
@@ -1303,97 +1247,7 @@ def create_full_report_excel(df):
         
         # תאריכים
         if 'תאריך' in export_df.columns:
-            export_df['תאריך'] = pd.to_datetime(export_df['תאריך'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
-
-        # יצירת הקובץ
-        output = io.BytesIO()
-        
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            # כתיבת הגיליון
-            export_df.to_excel(writer, index=False, sheet_name='דוחות רבנות')
-            
-            # קבלת הגיליון
-            workbook = writer.book
-            worksheet = writer.sheets['דוחות רבנות']
-            
-            # וידוא שהגיליון נראה
-            worksheet.sheet_state = 'visible'
-            
-            # כיוון RTL
-            worksheet.sheet_view.rightToLeft = True
-            
-            # עיצוב
-            header_font = Font(name='Arial', size=11, bold=True, color='FFFFFF')
-            header_fill = PatternFill(start_color='1E3A8A', end_color='1E3A8A', fill_type='solid')
-            border_style = Side(border_style='thin', color='000000')
-            thin_border = Border(
-                left=border_style, right=border_style,
-                top=border_style, bottom=border_style
-            )
-            alignment_right = Alignment(horizontal='right', vertical='center', wrap_text=True)
-            
-            # עיצוב כותרות
-            for cell in worksheet[1]:
-                cell.font = header_font
-                cell.fill = header_fill
-                cell.border = thin_border
-                cell.alignment = alignment_right
-                
-            # עיצוב תאים
-            for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row):
-                for cell in row:
-                    cell.border = thin_border
-                    cell.alignment = alignment_right
-                    
-            # פילטרים
-            worksheet.auto_filter.ref = worksheet.dimensions
-            
-            # רוחב עמודות
-            for column in worksheet.columns:
-                max_length = 0
-                column_letter = get_column_letter(column[0].column)
-                for cell in column:
-                    try:
-                        if len(str(cell.value)) > max_length:
-                            max_length = len(str(cell.value))
-                    except: pass
-                worksheet.column_dimensions[column_letter].width = min(max_length + 2, 40)
-        
-        return output.getvalue()
-        
-    except Exception as e:
-        print(f"Excel Error: {e}")
-        return None
-            
-        # מיפוי עמודות
-        column_mapping = {
-            'date': 'תאריך',
-            'base': 'מוצב',
-            'inspector': 'מבקר',
-            'e_status': 'סטטוס עירוב',
-            'k_cert': 'תעודת כשרות',
-            'k_issues_description': 'פירוט תקלות',
-            'k_separation': 'הפרדת כלים',
-            'p_mix': 'ערבוב כלים',
-            'k_products': 'רכש חוץ',
-            'k_bishul': 'בישול ישראל',
-            'soldier_want_lesson': 'רצון לשיעור',
-            'soldier_has_lesson': 'יש שיעור',
-            'soldier_lesson_teacher': 'מעביר שיעור',
-            'soldier_lesson_phone': 'טלפון',
-            'r_mezuzot_missing': 'מזוזות חסרות',
-            'missing_items': 'חוסרים',
-            'free_text': 'הערות'
-        }
-        
-        # סינון עמודות
-        available_cols = [col for col in column_mapping.keys() if col in df.columns]
-        export_df = df[available_cols].copy()
-        export_df.rename(columns=column_mapping, inplace=True)
-        
-        # תאריכים
-        if 'תאריך' in export_df.columns:
-            export_df['תאריך'] = pd.to_datetime(export_df['תאריך'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
+            export_df['תאריך'] = pd.to_datetime(export_df['תאריך']).dt.strftime('%d/%m/%Y %H:%M')
 
         # יצירת הקובץ
         output = io.BytesIO()
@@ -1402,11 +1256,11 @@ def create_full_report_excel(df):
             # ✅ כתיבת הגיליון
             export_df.to_excel(writer, index=False, sheet_name='דוחות רבנות')
             
-            # קבלת הגיליון
+            # ✅ קבלת הגיליון
             workbook = writer.book
             worksheet = writer.sheets['דוחות רבנות']
             
-            # ✅ **תיקון קריטי** - וודא שהגיליון נראה!
+            # ✅ **חשוב מאוד** - וודא שהגיליון נראה
             worksheet.sheet_state = 'visible'
             
             # כיוון RTL
@@ -1455,9 +1309,10 @@ def create_full_report_excel(df):
         
         # ✅ בדיקה נוספת שהגיליון נראה (למקרה שנדרס)
         output.seek(0)
+        import openpyxl
         wb = openpyxl.load_workbook(output)
         
-        # אם אין גיליון נראה - הפוך את הראשון לנראה
+        # ✅ אם אין גיליון נראה - הפוך את הראשון לנראה
         visible_count = sum(1 for sheet in wb.worksheets if sheet.sheet_state == 'visible')
         if visible_count == 0 and len(wb.worksheets) > 0:
             wb.worksheets[0].sheet_state = 'visible'
@@ -1471,42 +1326,10 @@ def create_full_report_excel(df):
         
     except Exception as e:
         print(f"❌ Excel Error: {e}")
-        # במקרה של שגיאה, נסה ליצור קובץ פשוט יותר
-        try:
-            simple_output = io.BytesIO()
-            with pd.ExcelWriter(simple_output, engine='openpyxl') as writer:
-                export_df.to_excel(writer, index=False, sheet_name='דוחות')
-                writer.book.worksheets[0].sheet_state = 'visible'
-            simple_output.seek(0)
-            return simple_output.getvalue()
-        except:
-            return None
-```
+        return None
 
----
-
-## סיכום השינויים:
-
-### ✅ תיקון 1 - הסרת כפתורים:
-- **מחק** את כל בלוק הכפתורים מהדף הראשי (שורות 3500-3570 לערך)
-- הכפתורים **כבר קיימים** בקטע "else" של `commander_authenticated`
-- עכשיו יופיעו **רק** אחרי התחברות רב חטמ"ר
-
-### ✅ תיקון 2 - Excel:
-1. הוספת `worksheet.sheet_state = 'visible'` אחרי יצירת הגיליון
-2. בדיקה נוספת בסוף - אם אין גיליון נראה, הפוך את הראשון לנראה
-3. fallback - אם יש שגיאה, נסה ליצור קובץ פשוט
-
----
-
-## איך ליישם:
-
-1. **פתח את app.py**
-2. **מצא ומחק** את בלוק הכפתורים מהדף הראשי (תיקון 1)
-3. **מצא והחלף** את הפונקציה `create_full_report_excel` (תיקון 2)
-4. **שמור** והרץ מחדש
-
-**זהו! שני התיקונים יפתרו את הבעיות.**    """יצירת קובץ Excel עם סטטיסטיקות מבקרים (מוגבל ל-10 שורות)"""
+def create_inspector_excel(df):
+    """יצירת קובץ Excel עם סטטיסטיקות מבקרים (מוגבל ל-10 שורות)"""
     import io
     try:
         import openpyxl
@@ -3876,7 +3699,7 @@ def render_unit_report():
                     top_count = stats['top_inspectors'].iloc[0]
                     st.metric("🏆 מבקר מוביל", f"{top_inspector} ({top_count})")
             
-           # הוספת בלוק ציון ומדד (חדש!)
+            # הוספת בלוק ציון ומדד (חדש!)
             st.markdown("---")
             st.markdown("### 🎖️ מדד כשירות יחידה וסיכום פעילות")
             
@@ -3899,35 +3722,6 @@ def render_unit_report():
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True,
                         key="dl_main_summary_unit"
-                    )
-            
-            st.markdown("---")
-
-            # כפתורי הורדה נוספים (ניתן להשאיר או להסיר, נשאיר כגיבוי)
-            col_dl1, col_dl2 = st.columns(2)
-            
-            with col_dl1:
-                excel_data = create_inspector_excel(unit_df)
-                if excel_data:
-                    st.download_button(
-                        label="📄 דוח מבקרים (Excel)",
-                        data=excel_data,
-                        file_name=f"inspector_stats_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="dl_inspectors_top"
-                    )
-                    
-            with col_dl2:
-                full_report_data = create_full_report_excel(unit_df)
-                if full_report_data:
-                    st.download_button(
-                        label="📊 דוח פעילות מלא (Excel)",
-                        data=full_report_data,
-                        file_name=f"full_activity_report_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="dl_full_report_top"
                     )
             
             st.markdown("---")
