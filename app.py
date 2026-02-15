@@ -1211,10 +1211,7 @@ def create_full_report_excel(df):
     🔧 תיקון: יצירת קובץ Excel מלא עם סיכום ונתונים גולמיים
     כולל עמודות חדשות: נאמן כשרות, תקלות, טרקלין, ויקוק
     """
-    try:
-        import openpyxl
-    except ImportError:
-        return None
+    import openpyxl
         
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
