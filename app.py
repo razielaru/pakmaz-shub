@@ -2388,6 +2388,23 @@ def render_command_dashboard():
         else:
             st.warning("לא נמצאו עמודות להצגה")
         
+        # 🆕 כפתור הורדה למפקדים
+        st.markdown("---")
+        st.markdown("### 📥 הורדת דוח Excel מלא")
+        
+        full_report_excel_cmd = create_full_report_excel(unit_df)
+        if full_report_excel_cmd:
+            st.download_button(
+                label="⬇️ לחץ להורדת כל הנתונים (Excel)",
+                data=full_report_excel_cmd,
+                file_name=f"דוח_מלא_{selected_unit}_{pd.Timestamp.now().strftime('%d_%m_%Y_%H_%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                type="primary",
+                key="dl_excel_pikud_detailed"
+            )
+            st.caption("📊 הקובץ כולל את כל השאלות והתשובות מהשאלון")
+        
         st.markdown("---")
         
         # 🆕 סיכומים מפורטים אחרי הטבלה
@@ -2707,9 +2724,11 @@ def render_command_dashboard():
             # ניקוי נתונים ריקים
             valid_map = map_df.dropna(subset=['latitude', 'longitude']).copy()
             
-            # ברירת מחדל למרכז המפה (אזור יהודה ושומרון)
-            center_lat = 31.9
-            center_lon = 35.2
+            # ✅ סינון נקודות תקפות (בתוך גבולות ישראל בלבד)
+            valid_map = valid_map[
+                (valid_map['latitude'] >= 29.5) & (valid_map['latitude'] <= 33.5) &  # ✅ גבולות רוחב
+                (valid_map['longitude'] >= 34.2) & (valid_map['longitude'] <= 35.9)   # ✅ גבולות אורך
+            ]
             
             if not valid_map.empty:
                 # מיפוי צבעים לפי יחידה (Folium format)
@@ -2723,12 +2742,26 @@ def render_command_dashboard():
                     "חטמ״ר הבקעה": "#db2777"
                 }
                 
-                # חישוב מרכז המפה
+                # ✅ חישוב מרכז דינמי לפי כל הנקודות (לא רק בית אל!)
                 center_lat = valid_map['latitude'].mean()
                 center_lon = valid_map['longitude'].mean()
                 
-                # יצירת מפת Folium
-                m = create_street_level_map(center=(center_lat, center_lon), zoom_start=13)
+                # ✅ חישוב רמת זום דינמית לפי פיזור הנקודות
+                lat_range = valid_map['latitude'].max() - valid_map['latitude'].min()
+                lon_range = valid_map['longitude'].max() - valid_map['longitude'].min()
+                
+                # ✅ ככל שהפיזור גדול יותר, הזום קטן יותר
+                if lat_range > 1.0 or lon_range > 1.0:
+                    zoom_level = 9  # זום רחב לכל הארץ
+                elif lat_range > 0.5 or lon_range > 0.5:
+                    zoom_level = 10  # זום בינוני
+                else:
+                    zoom_level = 12  # זום צמוד
+                
+                st.success(f"✅ נמצאו {len(valid_map)} נקודות למיפוי | מרכז: ({center_lat:.4f}, {center_lon:.4f})")
+                
+                # יצירת מפת Folium עם מרכז דינמי
+                m = create_street_level_map(center=(center_lat, center_lon), zoom_start=zoom_level)
                 
                 # הוספת כל הנקודות למפה
                 for _, row in valid_map.iterrows():
@@ -2742,30 +2775,29 @@ def render_command_dashboard():
                 legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;'>"
                 for unit in sorted(valid_map['unit'].unique()):
                     color = unit_color_map.get(unit, "#808080")
-                    legend_html += f"<div><span style='color: {color}; font-size: 1.5rem;'>●</span> {unit}</div>"
+                    count = len(valid_map[valid_map['unit'] == unit])
+                    legend_html += f"<div><span style='color: {color}; font-size: 1.5rem;'>●</span> {unit} ({count} דוחות)</div>"
                 legend_html += "</div>"
                 st.markdown(legend_html, unsafe_allow_html=True)
                 
                 st.success("✅ **מפה ברמת רחוב** - זום עד 20 | שמות רחובות בעברית | שכבות: רחובות + לווין")
                 st.info("💡 **נקודות גדולות** = בעיות (עירוב פסול או כשרות לא תקינה)")
                 
+                # ✅ טבלת מיקומים לדיבאג
+                with st.expander("🔍 פירוט מיקומים (לבדיקה)"):
+                    debug_df = valid_map[['base', 'latitude', 'longitude', 'unit', 'date']].copy()
+                    try:
+                         debug_df['date'] = pd.to_datetime(debug_df['date']).dt.strftime('%d/%m/%Y')
+                    except Exception:
+                         pass
+                    st.dataframe(debug_df, use_container_width=True, height=300)
+                
             else:
-                # אין נתונים עם GPS - הצג מפה ריקה ממוקדת על האזור
-                fig = px.scatter_mapbox(
-                    lat=[center_lat],
-                    lon=[center_lon],
-                    zoom=8,
-                    height=600
-                )
+                # אין נקודות תקפות
+                st.warning("⚠️ לא נמצאו נקודות GPS תקפות בגבולות ישראל")
+                st.info(f"💡 נמצאו {len(map_df)} דוחות, אך אף אחד לא כולל מיקום תקין")
                 
-                fig.update_layout(
-                    mapbox_style="open-street-map",
-                    margin={"r": 0, "t": 0, "l": 0, "b": 0},
-                    showlegend=False
-                )
-                
-                st.plotly_chart(fig, use_container_width=True)
-                st.info(f"💡 המפה פעילה וממוקדת על אזור יהודה ושומרון. יש {len(map_df)} דוחות בסה\"כ, אך אף אחד לא כולל מיקום GPS. שלח דיווח חדש עם GPS מופעל כדי לראות נקודות על המפה.")
+
         else:
             # אין עמודות GPS בכלל - הצג מפה ריקה
             # Center defaults need to be defined if not reached above, but logic prevents undefined reference because of indentation scope.
@@ -3291,6 +3323,25 @@ def render_unit_report():
             )
         else:
             st.warning("לא נמצאו עמודות להצגה")
+            
+        # 🆕 כפתור הורדה חובה - למובייל ומחשב
+        st.markdown("---")
+        st.markdown("### 📥 הורדת דוח Excel מלא")
+        
+        full_report_excel = create_full_report_excel(unit_df)
+        if full_report_excel:
+            st.download_button(
+                label="⬇️ לחץ להורדת כל הנתונים (Excel)",
+                data=full_report_excel,
+                file_name=f"דוח_מלא_{unit}_{pd.Timestamp.now().strftime('%d_%m_%Y_%H_%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                type="primary",
+                key="dl_excel_hatmar_detailed"
+            )
+            st.caption("📊 הקובץ כולל את כל השאלות והתשובות מהשאלון")
+        else:
+            st.error("❌ שגיאה ביצירת קובץ Excel")
     
     # טופס דיווח (רק אם לא במצב מפקד)
     if not st.session_state.commander_authenticated:
@@ -3317,6 +3368,11 @@ def render_unit_report():
         if gps_lat:
             st.success(f"✅ מיקום נקלט: {gps_lat:.4f}, {gps_lon:.4f}")
             
+            # ✅ בדיקה אם המיקום בגבולות ישראל
+            if not (29.5 <= gps_lat <= 33.5 and 34.2 <= gps_lon <= 35.9):
+                st.error(f"🚨 **שגיאה:** המיקום ({gps_lat:.4f}, {gps_lon:.4f}) מחוץ לגבולות ישראל!")
+                st.warning("💡 ייתכן שהמכשיר שלך נותן מיקום שגוי. נסה להפעיל מחדש את ה-GPS")
+            
             # בדיקת מרחק מבסיסים ידועים
             nearest_base, distance = find_nearest_base(gps_lat, gps_lon)
             
@@ -3326,6 +3382,7 @@ def render_unit_report():
                 st.warning(f"⚠️ **מרחק בינוני:** {nearest_base} ({distance:.1f} ק\"מ) - וודא שהמיקום נכון")
             else:
                 st.error(f"🚨 **התראה:** {distance:.1f} ק\"מ מ-{nearest_base} - מיקום חריג!")
+                st.info(f"💡 המיקום שנקלט: ירושלים = lat: 31.7683, lon: 35.2137")
         
         c1, c2, c3 = st.columns(3)
         date = c1.date_input("תאריך", datetime.date.today())
