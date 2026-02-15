@@ -2494,17 +2494,7 @@ def render_command_dashboard():
         
         st.markdown("---")
         
-        # אפשרות להורדת דוח מלא (Excel)
-        full_report_data = create_full_report_excel(unit_df)
-        if full_report_data:
-            st.download_button(
-                label="📥 הורד דוח פעילות מלא (Excel)",
-                data=full_report_data,
-                file_name=f"full_activity_report_{selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                key=f"dl_full_report_{selected_unit}"
-            )
+
     
     # ===== טאב 5: מעקב חוסרים - מתוקן =====
     with tabs[4]:
