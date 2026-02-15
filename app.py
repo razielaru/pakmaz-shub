@@ -3722,18 +3722,7 @@ def render_unit_report():
                         use_container_width=True,
                         key="dl_inspectors_top"
                     )
-                    
-            with col_dl2:
-                full_report_data = create_full_report_excel(unit_df)
-                if full_report_data:
-                    st.download_button(
-                        label="📊 דוח פעילות מלא (Excel)",
-                        data=full_report_data,
-                        file_name=f"full_activity_report_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="dl_full_report_top"
-                    )
+                
             
             st.markdown("---")
 
