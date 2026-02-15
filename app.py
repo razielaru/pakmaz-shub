@@ -1762,7 +1762,8 @@ def render_command_dashboard():
     with col_title:
         st.markdown(f"## 🎯 מרכז בקרה פיקודי - {unit}")
     
-    # ✅ תיקון: הכנת קובץ Excel מראש - לפני הטאבים!
+    # ✅ הכנת הקובץ מראש - לפני הטאבים!
+    # תיקון: הכנת קובץ Excel מראש - לפני הטאבים!
     excel_file_ready = None
     if not df.empty:
         try:
@@ -1780,7 +1781,7 @@ def render_command_dashboard():
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
             type="primary",
-            key="main_download_excel_top"
+            key="global_excel_download"
         )
     else:
         if df.empty:
@@ -3407,6 +3408,8 @@ def render_unit_report():
                 st.warning(f"⚠️ **מרחק בינוני:** {nearest_base} ({distance:.1f} ק\"מ) - וודא שהמיקום נכון")
             else:
                 st.error(f"🚨 **התראה:** {distance:.1f} ק\"מ מ-{nearest_base} - מיקום חריג!")
+        else:
+            st.warning("📡 מחפש מיקום GPS... אנא המתן עד להופעת אישור ירוק לפני השליחה")
         
         c1, c2, c3 = st.columns(3)
         date = c1.date_input("תאריך", datetime.date.today())
