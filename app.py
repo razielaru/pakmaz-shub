@@ -126,16 +126,30 @@ def secure_location_offset(lat: float, lon: float, unique_id: str, offset_meters
     - לא ניתן לנחש את המיקום המקורי
     - ההזזה היא 300 מטר בכיוון אקראי (אבל קבוע)
     """
+    # ✅ תיקון: השתמש רק ב-unit+base ללא תאריך (כדי שהמיקום יישאר קבוע)
+    try:
+        stable_id = f"{unique_id.split('_')[0]}_{unique_id.split('_')[1]}" if '_' in unique_id else unique_id
+    except:
+        stable_id = unique_id
+    
     # יצירת seed קבוע מהמזהה
-    seed = int(hashlib.sha256(unique_id.encode()).hexdigest(), 16) % (10**8)
-    random.seed(seed)
+    seed = int(hashlib.sha256(stable_id.encode()).hexdigest(), 16) % (10**8)
+    
+    # ✅ שמירת המצב הנוכחי של random
+    current_random_state = random.getstate()
+    
+    # יצירת random generator נפרד
+    rng = random.Random(seed)
     
     # המרה למעלות (111km = 1 מעלה)
     offset_deg = offset_meters / 111000
     
     # זווית ומרחק אקראיים (אבל קבועים לאותו ID)
-    angle = random.uniform(0, 2 * math.pi)
-    dist = random.uniform(offset_deg * 0.7, offset_deg)
+    angle = rng.uniform(0, 2 * math.pi)
+    dist = rng.uniform(offset_deg * 0.7, offset_deg)
+    
+    # ✅ שחזור המצב של random
+    random.setstate(current_random_state)
     
     # חישוב offset
     lat_offset = dist * math.cos(angle)
@@ -1748,24 +1762,37 @@ def render_command_dashboard():
     with col_title:
         st.markdown(f"## 🎯 מרכז בקרה פיקודי - {unit}")
     
-    # בדיקה אם יש נתונים
-    if df.empty:
-        st.info("📊 אין נתונים זמינים כרגע. התחל בדיווח ראשון כדי לראות ניתוחים ותובנות.")
-        return
+    # ✅ תיקון: הכנת קובץ Excel מראש - לפני הטאבים!
+    excel_file_ready = None
+    if not df.empty:
+        try:
+            excel_file_ready = create_full_report_excel(df)
+        except Exception as e:
+            st.error(f"שגיאה ביצירת קובץ Excel: {e}")
     
-    # כפתור הורדה בולט לדוחות
+    # ✅ כפתור הורדה בולט - מחוץ לכל לוגיקה מורכבת
     st.markdown("---")
-    full_report_data = create_full_report_excel(df)
-    if full_report_data:
+    if excel_file_ready:
         st.download_button(
-            label="📥 הורד דוח מלא (Excel)",
-            data=full_report_data,
-            file_name=f"full_report_{role}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+            label="📥 הורד דוח מלא (Excel) - כל הנתונים",
+            data=excel_file_ready,
+            file_name=f"full_report_{role}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
-            key=f"dl_main_{role}"
+            type="primary",
+            key="main_download_excel_top"
         )
+    else:
+        if df.empty:
+            st.info("📊 אין נתונים זמינים כרגע. התחל בדיווח ראשון כדי לראות ניתוחים ותובנות.")
+        else:
+            st.warning("⚠️ לא ניתן ליצור קובץ Excel כרגע")
+    
     st.markdown("---")
+    
+    # המשך הקוד הקיים עם הטאבים...
+    if df.empty:
+        return  # ✅ עצור כאן אם אין נתונים
 
     # טאבים לפי תפקיד
     if role == 'pikud':
@@ -2724,14 +2751,17 @@ def render_command_dashboard():
             # ניקוי נתונים ריקים
             valid_map = map_df.dropna(subset=['latitude', 'longitude']).copy()
             
-            # ✅ סינון נקודות תקפות (בתוך גבולות ישראל בלבד)
+            # ✅ תיקון: הרחבת גבולות לכל ישראל (מאילת עד החרמון)
             valid_map = valid_map[
-                (valid_map['latitude'] >= 29.5) & (valid_map['latitude'] <= 33.5) &  # ✅ גבולות רוחב
-                (valid_map['longitude'] >= 34.2) & (valid_map['longitude'] <= 35.9)   # ✅ גבולות אורך
+                (valid_map['latitude'] >= 29.0) & (valid_map['latitude'] <= 33.5) &  # ✅ כל ישראל
+                (valid_map['longitude'] >= 34.0) & (valid_map['longitude'] <= 36.0)   # ✅ כולל ירושלים
             ]
             
+            # ✅ הצגת מידע דיבאג
+            st.info(f"🔍 נמצאו {len(map_df)} דוחות עם מיקום | {len(valid_map)} תקינים | מסוננו: {len(map_df) - len(valid_map)}")
+            
             if not valid_map.empty:
-                # מיפוי צבעים לפי יחידה (Folium format)
+                # מיפוי צבעים לפי יחידה
                 unit_color_map = {
                     "חטמ״ר בנימין": "#1e3a8a",
                     "חטמ״ר שומרון": "#60a5fa",
@@ -2742,28 +2772,27 @@ def render_command_dashboard():
                     "חטמ״ר הבקעה": "#db2777"
                 }
                 
-                # ✅ חישוב מרכז דינמי לפי כל הנקודות (לא רק בית אל!)
+                # חישוב מרכז דינמי
                 center_lat = valid_map['latitude'].mean()
                 center_lon = valid_map['longitude'].mean()
                 
-                # ✅ חישוב רמת זום דינמית לפי פיזור הנקודות
+                # חישוב רמת זום דינמית
                 lat_range = valid_map['latitude'].max() - valid_map['latitude'].min()
                 lon_range = valid_map['longitude'].max() - valid_map['longitude'].min()
                 
-                # ✅ ככל שהפיזור גדול יותר, הזום קטן יותר
-                if lat_range > 1.0 or lon_range > 1.0:
-                    zoom_level = 9  # זום רחב לכל הארץ
+                if lat_range > 1.5 or lon_range > 1.5:
+                    zoom_level = 8  # זום רחב לכל הארץ
                 elif lat_range > 0.5 or lon_range > 0.5:
-                    zoom_level = 10  # זום בינוני
+                    zoom_level = 10
                 else:
-                    zoom_level = 12  # זום צמוד
+                    zoom_level = 12
                 
-                st.success(f"✅ נמצאו {len(valid_map)} נקודות למיפוי | מרכז: ({center_lat:.4f}, {center_lon:.4f})")
+                st.success(f"✅ מציג {len(valid_map)} נקודות | מרכז: ({center_lat:.4f}, {center_lon:.4f}) | זום: {zoom_level}")
                 
-                # יצירת מפת Folium עם מרכז דינמי
+                # יצירת מפת Folium
                 m = create_street_level_map(center=(center_lat, center_lon), zoom_start=zoom_level)
                 
-                # הוספת כל הנקודות למפה
+                # הוספת נקודות
                 for _, row in valid_map.iterrows():
                     add_unit_marker_to_folium(m, row, unit_color_map)
                 
@@ -2773,53 +2802,29 @@ def render_command_dashboard():
                 # מקרא
                 st.markdown("#### 🔑 מקרא חטמ״רים")
                 legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;'>"
-                for unit in sorted(valid_map['unit'].unique()):
-                    color = unit_color_map.get(unit, "#808080")
-                    count = len(valid_map[valid_map['unit'] == unit])
-                    legend_html += f"<div><span style='color: {color}; font-size: 1.5rem;'>●</span> {unit} ({count} דוחות)</div>"
+                for unit_name in sorted(valid_map['unit'].unique()):
+                    color = unit_color_map.get(unit_name, "#808080")
+                    count = len(valid_map[valid_map['unit'] == unit_name])
+                    legend_html += f"<div><span style='color: {color}; font-size: 1.5rem;'>●</span> {unit_name} ({count})</div>"
                 legend_html += "</div>"
                 st.markdown(legend_html, unsafe_allow_html=True)
                 
-                st.success("✅ **מפה ברמת רחוב** - זום עד 20 | שמות רחובות בעברית | שכבות: רחובות + לווין")
-                st.info("💡 **נקודות גדולות** = בעיות (עירוב פסול או כשרות לא תקינה)")
-                
-                # ✅ טבלת מיקומים לדיבאג
-                with st.expander("🔍 פירוט מיקומים (לבדיקה)"):
-                    debug_df = valid_map[['base', 'latitude', 'longitude', 'unit', 'date']].copy()
-                    try:
-                         debug_df['date'] = pd.to_datetime(debug_df['date']).dt.strftime('%d/%m/%Y')
-                    except Exception:
-                         pass
-                    st.dataframe(debug_df, use_container_width=True, height=300)
-                
+                # ✅ טבלת דיבאג מפורטת
+                with st.expander("🔍 פירוט מיקומים (דיבאג)"):
+                    st.write(f"**סה\"כ דוחות:** {len(all_map_data)}")
+                    st.write(f"**עם lat/lon:** {len(map_df)}")
+                    st.write(f"**בגבולות ישראל:** {len(valid_map)}")
+                    
+                    if not valid_map.empty:
+                        debug_df = valid_map[['base', 'unit', 'date', 'latitude', 'longitude']].copy()
+                        debug_df['date'] = pd.to_datetime(debug_df['date']).dt.strftime('%d/%m/%Y %H:%M')
+                        st.dataframe(debug_df.sort_values('date', ascending=False), use_container_width=True, height=300)
+                    
             else:
-                # אין נקודות תקפות
-                st.warning("⚠️ לא נמצאו נקודות GPS תקפות בגבולות ישראל")
-                st.info(f"💡 נמצאו {len(map_df)} דוחות, אך אף אחד לא כולל מיקום תקין")
-                
-
+                st.warning("⚠️ לא נמצאו נקודות GPS תקפות")
+                st.info(f"יש {len(map_df)} דוחות אבל כולם מחוץ לגבולות ישראל")
         else:
-            # אין עמודות GPS בכלל - הצג מפה ריקה
-            # Center defaults need to be defined if not reached above, but logic prevents undefined reference because of indentation scope.
-            # However, center_lat was defined inside the if. Let's define default outside.
-            center_lat = 31.9
-            center_lon = 35.2
-            
-            fig = px.scatter_mapbox(
-                lat=[center_lat],
-                lon=[center_lon],
-                zoom=8,
-                height=600
-            )
-            
-            fig.update_layout(
-                mapbox_style="open-street-map",
-                margin={"r": 0, "t": 0, "l": 0, "b": 0},
-                showlegend=False
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-            st.warning("⚠️ עמודות המיקום (latitude/longitude) לא קיימות בבסיס הנתונים. יש להוסיף אותן ב-Supabase כדי להציג נקודות על המפה.")
+            st.warning("⚠️ לא קיימות עמודות מיקום במסד הנתונים. יש להוסיף אותן ב-Supabase כדי להציג נקודות על המפה.")
     
     # ===== טאב 7: ניהול (רק פיקוד) =====
     if role == 'pikud':
@@ -3006,6 +3011,11 @@ def create_enhanced_excel_report(df, unit_name=""):
     return output.getvalue()
 
 def render_unit_report():
+    """הטופס המלא"""
+    unit = st.session_state.selected_unit
+    
+    # ✅ ניקוי cache בכל טעינה כדי למנוע שגיאות schema
+    clear_cache()
     """הטופס המלא"""
     unit = st.session_state.selected_unit
     
@@ -3328,20 +3338,28 @@ def render_unit_report():
         st.markdown("---")
         st.markdown("### 📥 הורדת דוח Excel מלא")
         
-        full_report_excel = create_full_report_excel(unit_df)
-        if full_report_excel:
+        # הכנת הקובץ מראש
+        excel_file_hatmar = None
+        if not unit_df.empty:
+            try:
+                excel_file_hatmar = create_full_report_excel(unit_df)
+            except Exception as e:
+                st.error(f"שגיאה ביצירת Excel: {e}")
+        
+        # הצגת הכפתור
+        if excel_file_hatmar:
             st.download_button(
                 label="⬇️ לחץ להורדת כל הנתונים (Excel)",
-                data=full_report_excel,
-                file_name=f"דוח_מלא_{unit}_{datetime.date.today().strftime('%d_%m_%Y')}.xlsx",
+                data=excel_file_hatmar,
+                file_name=f"דוח_מלא_{unit}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
                 type="primary",
-                key="dl_excel_hatmar_detailed"
+                key=f"dl_excel_hatmar_{pd.Timestamp.now().strftime('%H%M%S')}"
             )
             st.caption("📊 הקובץ כולל את כל השאלות והתשובות מהשאלון")
         else:
-            st.error("❌ שגיאה ביצירת קובץ Excel")
+            st.error("❌ לא ניתן ליצור קובץ Excel")
     
     # טופס דיווח (רק אם לא במצב מפקד)
     if not st.session_state.commander_authenticated:
@@ -3366,12 +3384,19 @@ def render_unit_report():
         gps_lat, gps_lon = (loc['latitude'], loc['longitude']) if loc and loc.get('latitude') else (None, None)
         
         if gps_lat:
-            st.success(f"✅ מיקום נקלט: {gps_lat:.4f}, {gps_lon:.4f}")
+            # ✅ הצגת המיקום המדויק שנקלט
+            st.success(f"✅ מיקום GPS נקלט: {gps_lat:.6f}, {gps_lon:.6f}")
+            
+            # ✅ הדפסה ללוג (תוכל לראות בקונסול של Streamlit)
+            print(f"🔍 DEBUG - GPS נקלט: lat={gps_lat}, lon={gps_lon}, base={base if 'base' in locals() else 'לא הוגדר'}")
             
             # ✅ בדיקה אם המיקום בגבולות ישראל
             if not (29.5 <= gps_lat <= 33.5 and 34.2 <= gps_lon <= 35.9):
                 st.error(f"🚨 **שגיאה:** המיקום ({gps_lat:.4f}, {gps_lon:.4f}) מחוץ לגבולות ישראל!")
                 st.warning("💡 ייתכן שהמכשיר שלך נותן מיקום שגוי. נסה להפעיל מחדש את ה-GPS")
+                st.info("📍 **למידע:** ירושלים היא בערך lat=31.7683, lon=35.2137")
+            else:
+                st.info(f"✅ המיקום תקין - בגבולות ישראל")
             
             # בדיקת מרחק מבסיסים ידועים
             nearest_base, distance = find_nearest_base(gps_lat, gps_lon)
@@ -3382,7 +3407,6 @@ def render_unit_report():
                 st.warning(f"⚠️ **מרחק בינוני:** {nearest_base} ({distance:.1f} ק\"מ) - וודא שהמיקום נכון")
             else:
                 st.error(f"🚨 **התראה:** {distance:.1f} ק\"מ מ-{nearest_base} - מיקום חריג!")
-                st.info(f"💡 המיקום שנקלט: ירושלים = lat: 31.7683, lon: 35.2137")
         
         c1, c2, c3 = st.columns(3)
         date = c1.date_input("תאריך", datetime.date.today())
@@ -3606,11 +3630,21 @@ def render_unit_report():
                 }
                 
                 # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
+                # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
                 if gps_lat and gps_lon:
-                    # הוספת רעש למיקום GPS לצורכי אבטחה (~300 מטר)
-                    lat_with_offset, lon_with_offset = add_gps_privacy_offset(gps_lat, gps_lon, offset_meters=300)
-                    data["latitude"] = lat_with_offset
-                    data["longitude"] = lon_with_offset
+                    # ✅ בדיקה נוספת שהמיקום תקין
+                    if 29.5 <= gps_lat <= 33.5 and 34.2 <= gps_lon <= 35.9:
+                        # הוספת רעש למיקום GPS לצורכי אבטחה (~300 מטר)
+                        # ✅ שימוש ב-secure_location_offset עם ID יציב
+                        unique_id_for_offset = f"{unit}_{base}"
+                        lat_with_offset, lon_with_offset = secure_location_offset(gps_lat, gps_lon, unique_id_for_offset, offset_meters=300)
+                        data["latitude"] = lat_with_offset
+                        data["longitude"] = lon_with_offset
+                        
+                        # ✅ הדפסה ללוג
+                        print(f"💾 שומר למסד נתונים: lat={lat_with_offset:.6f}, lon={lon_with_offset:.6f}")
+                    else:
+                        st.warning("⚠️ המיקום לא נשמר כי הוא מחוץ לגבולות ישראל")
                 
                 try:
                     # ניסיון לשמור את הדוח
