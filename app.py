@@ -3321,7 +3321,7 @@ def render_unit_report():
                             st.error(f"❌ שגיאה בשמירה: {error_msg}")
                 else: st.error("⚠️ חסרים פרטי חובה (מוצב, מבקר או תמונה)")
         
-        return
+
 
     # ===== רק אם מחובר כרב חטמ"ר - הצג הכל =====
     if st.session_state.commander_authenticated:
