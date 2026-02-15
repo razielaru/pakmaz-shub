@@ -1269,17 +1269,13 @@ def generate_inspector_stats(df):
                         key="dl_full_report_top"
                     )
             
-            st.markdown("---")
-**רק אם מחובר כרב חטמ"ר - הכפתורים כבר קיימים בקטע "else" של commander_authenticated**
+# ... קוד קודם ...
+            st.markdown("---")
+# רק אם מחובר כרב חטמ"ר - הכפתורים כבר קיימים בקטע "else" של commander_authenticated
 
----
+# ---
 
-## תיקון 2: שגיאת Excel - "At least one sheet must be visible"
-
-### מצא את הפונקציה create_full_report_excel (בסביבות שורה 2700)
-
-**החלף את הפונקציה כולה** בזו:
-
+# ## תיקון 2: שגיאת Excel - "At least one sheet must be visible"
 ```python
 def create_full_report_excel(df):
     """
