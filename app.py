@@ -2849,87 +2849,52 @@ def render_command_dashboard():
 
 def create_enhanced_excel_report(df, unit_name=""):
     """
-    🔧 יצירת קובץ Excel משופר עם עיצוב וסינון
+    🔧 תיקון: יצירת Excel מוגן משגיאות 'No visible sheets'
     """
     try:
+        import io
+        import pandas as pd
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-    except ImportError:
-        return create_full_report_excel(df)  # חזרה לפונקציה הרגילה אם אין openpyxl
-        
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        # --- גיליון 1: סיכום מנהלים ---
-        summary_data = {
-            'מדד': [
-                'שם היחידה',
-                'סה"כ דוחות',
-                'מספר מבקרים',
-                'מספר מוצבים',
-                'תאריך ראשון',
-                'תאריך אחרון',
-                'נוצר בתאריך'
-            ],
-            'ערך': [
-                unit_name,
-                len(df),
-                df['inspector'].nunique() if 'inspector' in df.columns else 0,
-                df['base'].nunique() if 'base' in df.columns else 0,
-                df['date'].min().strftime('%d/%m/%Y') if not df.empty and 'date' in df.columns else '-',
-                df['date'].max().strftime('%d/%m/%Y') if not df.empty and 'date' in df.columns else '-',
-                datetime.datetime.now().strftime('%d/%m/%Y %H:%M')
-            ]
-        }
-        summary_df = pd.DataFrame(summary_data)
-        summary_df.to_excel(writer, sheet_name='סיכום', index=False)
-        
-        # עיצוב גיליון סיכום
-        ws_summary = writer.sheets['סיכום']
-        for cell in ws_summary[1]:
-            cell.font = Font(bold=True, size=12, color="FFFFFF")
-            cell.fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
-            cell.alignment = Alignment(horizontal="right")
-        
-        # --- גיליון 2: נתונים מפורטים ---
-        column_mapping = {
-            'date': 'תאריך', 'time': 'שעה', 'base': 'מוצב', 'inspector': 'מבקר',
-            'unit': 'יחידה', 'k_cert': 'תעודת כשרות', 'k_cook_type': 'סוג מטבח',
-            'k_shabbat_supervisor': 'נאמן כשרות בשבת', 'k_shabbat_supervisor_name': 'שם נאמן',
-            'k_shabbat_supervisor_phone': 'טלפון נאמן', 'k_issues': 'תקלות כשרות',
-            'k_issues_description': 'פירוט תקלות', 't_private': 'טרקלין - כלים פרטיים',
-            't_kitchen_tools': 'טרקלין - כלי מטבח', 't_procedure': 'טרקלין - נוהל סגירה',
-            't_friday': 'טרקלין - כלים סגורים בשבת', 'w_location': 'ויקוק - מיקום',
-            'w_private': 'ויקוק - כלים פרטיים', 'soldier_want_lesson': 'רצון לשיעור תורה',
-            'soldier_has_lesson': 'יש שיעור במוצב', 'soldier_lesson_teacher': 'מעביר שיעור',
-            'soldier_lesson_phone': 'טלפון מעביר', 'p_mix': 'ערבוב כלים',
-            'e_status': 'סטטוס עירוב', 'r_mezuzot_missing': 'מזוזות חסרות',
-            's_clean': 'ניקיון בית כנסת', 'missing_items': 'חוסרים', 'free_text': 'הערות'
-        }
-        
-        existing_cols = [col for col in column_mapping.keys() if col in df.columns]
-        if existing_cols:
-            details_df = df[existing_cols].copy()
-            details_df.rename(columns=column_mapping, inplace=True)
-            details_df.to_excel(writer, sheet_name='נתונים מפורטים', index=False)
+
+        if df.empty:
+            return None
             
-            # עיצוב גיליון נתונים
-            ws_details = writer.sheets['נתונים מפורטים']
-            for cell in ws_details[1]:
-                cell.font = Font(bold=True, size=11, color="FFFFFF")
-                cell.fill = PatternFill(start_color="3B82F6", end_color="3B82F6", fill_type="solid")
-                cell.alignment = Alignment(horizontal="right")
+        output = io.BytesIO()
+        
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # --- גיליון 1: סיכום מנהלים ---
+            # אנחנו יוצרים את הגיליון הזה קודם כדי לוודא שתמיד יש לפחות גיליון אחד
+            summary_data = {
+                'מדד': ['שם היחידה', 'סה"כ דוחות', 'נוצר בתאריך'],
+                'ערך': [unit_name, len(df), datetime.datetime.now().strftime('%d/%m/%Y %H:%M')]
+            }
+            summary_df = pd.DataFrame(summary_data)
+            summary_df.to_excel(writer, sheet_name='סיכום', index=False)
             
-            # הוספת גבולות
-            thin_border = Border(
-                left=Side(style='thin'), right=Side(style='thin'),
-                top=Side(style='thin'), bottom=Side(style='thin')
-            )
-            for row in ws_details.iter_rows(min_row=1, max_row=ws_details.max_row):
-                for cell in row:
-                    cell.border = thin_border
-                    cell.alignment = Alignment(horizontal="right")
-    
-    return output.getvalue()
+            # וידוא שהגיליון הראשון תמיד גלוי
+            writer.book.active = 0
+            writer.sheets['סיכום'].sheet_state = 'visible'
+
+            # --- גיליון 2: נתונים מפורטים ---
+            column_mapping = {
+                'date': 'תאריך', 'base': 'מוצב', 'inspector': 'מבקר',
+                'e_status': 'סטטוס עירוב', 'k_cert': 'תעודת כשרות', 
+                'free_text': 'הערות'
+            }
+            
+            existing_cols = [col for col in column_mapping.keys() if col in df.columns]
+            if existing_cols:
+                details_df = df[existing_cols].copy()
+                details_df.rename(columns=column_mapping, inplace=True)
+                details_df.to_excel(writer, sheet_name='נתונים מפורטים', index=False)
+                writer.sheets['נתונים מפורטים'].sheet_state = 'visible'
+        
+        return output.getvalue()
+        
+    except Exception as e:
+        st.error(f"שגיאה ביצירת אקסל: {e}")
+        return None
 
 def render_unit_report():
     """הטופס המלא"""
