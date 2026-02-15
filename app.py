@@ -2382,6 +2382,29 @@ def render_command_dashboard():
         else:
             st.warning("לא נמצאו עמודות להצגה")
         
+        # 🆕 כפתור הורדה למפקדים
+        st.markdown("---")
+        
+        try:
+            full_report_excel_cmd = create_full_report_excel(unit_df)
+            if full_report_excel_cmd:
+                st.download_button(
+                    label="📥 לחץ כאן להורדת קובץ Excel מלא",
+                    data=full_report_excel_cmd,
+                    file_name=f"full_report_{selected_unit}_{datetime.date.today().strftime('%d%m%y')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    type="primary",
+                    key=f"dl_excel_pikud_detailed_{selected_unit}_{int(time.time())}"
+                )
+            else:
+                st.info("ℹ️ לא ניתן ליצור קובץ Excel כרגע (אין נתונים מספיקים)")
+        except Exception as e:
+            st.error(f"שגיאה ביצירת קובץ Excel: {e}")
+            
+        st.caption("📊 הקובץ כולל את כל השאלות והתשובות מהשאלון")
+        
+        st.markdown("---")
         
         # 🆕 סיכומים מפורטים אחרי הטבלה
         st.markdown("### 📊 סיכומים מקיפים")
@@ -3671,7 +3694,49 @@ def render_unit_report():
             with col_s2:
                 st.markdown(f"<div style='background:{badge_color}; color:white; padding:10px; border-radius:8px; text-align:center; font-weight:bold; margin-top: 5px;'>{unit_badge}</div>", unsafe_allow_html=True)
             with col_s3:
-           
+                # כפתור הורדה ראשי כאן
+                full_report_data_main = create_full_report_excel(unit_df)
+                if full_report_data_main:
+                    st.download_button(
+                        label="📥 הורד סיכום יחידה מלא (Excel)",
+                        data=full_report_data_main,
+                        file_name=f"full_unit_summary_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="dl_main_summary_unit"
+                    )
+            
+            st.markdown("---")
+
+            # כפתורי הורדה נוספים (ניתן להשאיר או להסיר, נשאיר כגיבוי)
+            col_dl1, col_dl2 = st.columns(2)
+            
+            with col_dl1:
+                excel_data = create_inspector_excel(unit_df)
+                if excel_data:
+                    st.download_button(
+                        label="📄 דוח מבקרים (Excel)",
+                        data=excel_data,
+                        file_name=f"inspector_stats_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="dl_inspectors_top"
+                    )
+                    
+            with col_dl2:
+                full_report_data = create_full_report_excel(unit_df)
+                if full_report_data:
+                    st.download_button(
+                        label="📊 דוח פעילות מלא (Excel)",
+                        data=full_report_data,
+                        file_name=f"full_activity_report_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="dl_full_report_top"
+                    )
+            
+            st.markdown("---")
+
             # טאבים לסטטיסטיקות
             stats_tabs = st.tabs(["🏆 טבלת מובילים", "📍 מיקומים", "⏰ שעות פעילות", "📈 התקדמות"])
             
