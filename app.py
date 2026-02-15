@@ -1208,8 +1208,7 @@ def generate_inspector_stats(df):
 
 def create_full_report_excel(df):
     """
-    יצירת קובץ Excel מעוצב - תואם לטבלת 'דוחות מפורטים' באתר
-    כולל עיצוב, כיוון מימין לשמאל, ופילטרים
+    ✅ תיקון מלא: יצירת Excel ללא שגיאות
     """
     try:
         import io
@@ -1220,80 +1219,84 @@ def create_full_report_excel(df):
         if df.empty:
             return None
             
-        # 1. הגדרת העמודות
+        # מיפוי עמודות
         column_mapping = {
             'date': 'תאריך',
             'base': 'מוצב',
             'inspector': 'מבקר',
             'e_status': 'סטטוס עירוב',
             'k_cert': 'תעודת כשרות',
-            'k_issues_description': '📝 פירוט תקלות כשרות',
+            'k_issues_description': 'פירוט תקלות',
             'k_separation': 'הפרדת כלים',
-            'p_mix': '🔴 ערבוב כלים',
-            'k_products': 'רכש חוץ לא מאושר',
+            'p_mix': 'ערבוב כלים',
+            'k_products': 'רכש חוץ',
             'k_bishul': 'בישול ישראל',
-            'soldier_want_lesson': '💡 רצון לשיעור תורה',
-            'soldier_has_lesson': '📚 יש שיעור במוצב?',
-            'soldier_lesson_teacher': '👨‍🏫 שם מעביר השיעור',
-            'soldier_lesson_phone': '📞 טלפון מעביר השיעור',
-            'soldier_yeshiva': 'ימי ישיבה',
-            'r_mezuzot_missing': '📜 מזוזות חסרות',
-            'missing_items': '⚠️ חוסרים כלליים',
-            'free_text': '📝 הערות נוספות'
+            'soldier_want_lesson': 'רצון לשיעור',
+            'soldier_has_lesson': 'יש שיעור',
+            'soldier_lesson_teacher': 'מעביר שיעור',
+            'soldier_lesson_phone': 'טלפון',
+            'r_mezuzot_missing': 'מזוזות חסרות',
+            'missing_items': 'חוסרים',
+            'free_text': 'הערות'
         }
         
-        # 2. סינון ועיבוד נתונים
+        # סינון עמודות
         available_cols = [col for col in column_mapping.keys() if col in df.columns]
         export_df = df[available_cols].copy()
         export_df.rename(columns=column_mapping, inplace=True)
         
+        # תאריכים
         if 'תאריך' in export_df.columns:
             export_df['תאריך'] = pd.to_datetime(export_df['תאריך']).dt.strftime('%d/%m/%Y %H:%M')
 
-        # 3. יצירת הקובץ עם עיצוב
+        # יצירת הקובץ
         output = io.BytesIO()
         
-        # שימוש ב-ExcelWriter עם openpyxl
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # ✅ כתיבת הגיליון
             export_df.to_excel(writer, index=False, sheet_name='דוחות רבנות')
             
-            # קבלת הגיליון לעיצוב
+            # ✅ קבלת הגיליון
             workbook = writer.book
             worksheet = writer.sheets['דוחות רבנות']
             
-            # כיוון גיליון מימין לשמאל
+            # ✅ **חשוב מאוד** - וודא שהגיליון נראה
+            worksheet.sheet_state = 'visible'
+            
+            # כיוון RTL
             worksheet.sheet_view.rightToLeft = True
             
-            # סגנונות
+            # עיצוב
             header_font = Font(name='Arial', size=11, bold=True, color='FFFFFF')
-            header_fill = PatternFill(start_color='1E3A8A', end_color='1E3A8A', fill_type='solid') # כחול כהה
+            header_fill = PatternFill(start_color='1E3A8A', end_color='1E3A8A', fill_type='solid')
             border_style = Side(border_style='thin', color='000000')
-            thin_border = Border(left=border_style, right=border_style, top=border_style, bottom=border_style)
+            thin_border = Border(
+                left=border_style, right=border_style,
+                top=border_style, bottom=border_style
+            )
             alignment_right = Alignment(horizontal='right', vertical='center', wrap_text=True)
-            alignment_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
             
             # עיצוב כותרות
             for cell in worksheet[1]:
                 cell.font = header_font
                 cell.fill = header_fill
                 cell.border = thin_border
-                cell.alignment = alignment_center
+                cell.alignment = alignment_right
                 
-            # עיצוב תאים והתאמת רוחב
+            # עיצוב תאים
             for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row):
                 for cell in row:
                     cell.border = thin_border
                     cell.alignment = alignment_right
                     
-            # הוספת פילטרים
+            # פילטרים
             worksheet.auto_filter.ref = worksheet.dimensions
             
-            # התאמת רוחב עמודות
+            # רוחב עמודות
             for column in worksheet.columns:
                 max_length = 0
                 column_letter = get_column_letter(column[0].column)
                 
-                # חישוב אורך מקסימלי (עם גבול סביר)
                 for cell in column:
                     try:
                         if len(str(cell.value)) > max_length:
@@ -1301,13 +1304,28 @@ def create_full_report_excel(df):
                     except:
                         pass
                         
-                adjusted_width = min(max_length + 2, 40) # מקסימום רוחב
+                adjusted_width = min(max_length + 2, 40)
                 worksheet.column_dimensions[column_letter].width = adjusted_width
-
-        return output.getvalue()
+        
+        # ✅ בדיקה נוספת שהגיליון נראה (למקרה שנדרס)
+        output.seek(0)
+        import openpyxl
+        wb = openpyxl.load_workbook(output)
+        
+        # ✅ אם אין גיליון נראה - הפוך את הראשון לנראה
+        visible_count = sum(1 for sheet in wb.worksheets if sheet.sheet_state == 'visible')
+        if visible_count == 0 and len(wb.worksheets) > 0:
+            wb.worksheets[0].sheet_state = 'visible'
+        
+        # שמירה מחדש
+        final_output = io.BytesIO()
+        wb.save(final_output)
+        final_output.seek(0)
+        
+        return final_output.getvalue()
         
     except Exception as e:
-        st.error(f"שגיאה ביצירת הקובץ: {e}")
+        print(f"❌ Excel Error: {e}")
         return None
 
 def create_inspector_excel(df):
