@@ -1208,7 +1208,8 @@ def generate_inspector_stats(df):
 
 def create_full_report_excel(df):
     """
-    ✅ תיקון מלא: יצירת Excel ללא שגיאות
+    יצירת קובץ Excel מעוצב - תואם לטבלת 'דוחות מפורטים' באתר
+    כולל עיצוב, כיוון מימין לשמאל, ופילטרים
     """
     try:
         import io
@@ -1219,84 +1220,80 @@ def create_full_report_excel(df):
         if df.empty:
             return None
             
-        # מיפוי עמודות
+        # 1. הגדרת העמודות
         column_mapping = {
             'date': 'תאריך',
             'base': 'מוצב',
             'inspector': 'מבקר',
             'e_status': 'סטטוס עירוב',
             'k_cert': 'תעודת כשרות',
-            'k_issues_description': 'פירוט תקלות',
+            'k_issues_description': '📝 פירוט תקלות כשרות',
             'k_separation': 'הפרדת כלים',
-            'p_mix': 'ערבוב כלים',
-            'k_products': 'רכש חוץ',
+            'p_mix': '🔴 ערבוב כלים',
+            'k_products': 'רכש חוץ לא מאושר',
             'k_bishul': 'בישול ישראל',
-            'soldier_want_lesson': 'רצון לשיעור',
-            'soldier_has_lesson': 'יש שיעור',
-            'soldier_lesson_teacher': 'מעביר שיעור',
-            'soldier_lesson_phone': 'טלפון',
-            'r_mezuzot_missing': 'מזוזות חסרות',
-            'missing_items': 'חוסרים',
-            'free_text': 'הערות'
+            'soldier_want_lesson': '💡 רצון לשיעור תורה',
+            'soldier_has_lesson': '📚 יש שיעור במוצב?',
+            'soldier_lesson_teacher': '👨‍🏫 שם מעביר השיעור',
+            'soldier_lesson_phone': '📞 טלפון מעביר השיעור',
+            'soldier_yeshiva': 'ימי ישיבה',
+            'r_mezuzot_missing': '📜 מזוזות חסרות',
+            'missing_items': '⚠️ חוסרים כלליים',
+            'free_text': '📝 הערות נוספות'
         }
         
-        # סינון עמודות
+        # 2. סינון ועיבוד נתונים
         available_cols = [col for col in column_mapping.keys() if col in df.columns]
         export_df = df[available_cols].copy()
         export_df.rename(columns=column_mapping, inplace=True)
         
-        # תאריכים
         if 'תאריך' in export_df.columns:
             export_df['תאריך'] = pd.to_datetime(export_df['תאריך']).dt.strftime('%d/%m/%Y %H:%M')
 
-        # יצירת הקובץ
+        # 3. יצירת הקובץ עם עיצוב
         output = io.BytesIO()
         
+        # שימוש ב-ExcelWriter עם openpyxl
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            # ✅ כתיבת הגיליון
             export_df.to_excel(writer, index=False, sheet_name='דוחות רבנות')
             
-            # ✅ קבלת הגיליון
+            # קבלת הגיליון לעיצוב
             workbook = writer.book
             worksheet = writer.sheets['דוחות רבנות']
             
-            # ✅ **חשוב מאוד** - וודא שהגיליון נראה
-            worksheet.sheet_state = 'visible'
-            
-            # כיוון RTL
+            # כיוון גיליון מימין לשמאל
             worksheet.sheet_view.rightToLeft = True
             
-            # עיצוב
+            # סגנונות
             header_font = Font(name='Arial', size=11, bold=True, color='FFFFFF')
-            header_fill = PatternFill(start_color='1E3A8A', end_color='1E3A8A', fill_type='solid')
+            header_fill = PatternFill(start_color='1E3A8A', end_color='1E3A8A', fill_type='solid') # כחול כהה
             border_style = Side(border_style='thin', color='000000')
-            thin_border = Border(
-                left=border_style, right=border_style,
-                top=border_style, bottom=border_style
-            )
+            thin_border = Border(left=border_style, right=border_style, top=border_style, bottom=border_style)
             alignment_right = Alignment(horizontal='right', vertical='center', wrap_text=True)
+            alignment_center = Alignment(horizontal='center', vertical='center', wrap_text=True)
             
             # עיצוב כותרות
             for cell in worksheet[1]:
                 cell.font = header_font
                 cell.fill = header_fill
                 cell.border = thin_border
-                cell.alignment = alignment_right
+                cell.alignment = alignment_center
                 
-            # עיצוב תאים
+            # עיצוב תאים והתאמת רוחב
             for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row):
                 for cell in row:
                     cell.border = thin_border
                     cell.alignment = alignment_right
                     
-            # פילטרים
+            # הוספת פילטרים
             worksheet.auto_filter.ref = worksheet.dimensions
             
-            # רוחב עמודות
+            # התאמת רוחב עמודות
             for column in worksheet.columns:
                 max_length = 0
                 column_letter = get_column_letter(column[0].column)
                 
+                # חישוב אורך מקסימלי (עם גבול סביר)
                 for cell in column:
                     try:
                         if len(str(cell.value)) > max_length:
@@ -1304,28 +1301,13 @@ def create_full_report_excel(df):
                     except:
                         pass
                         
-                adjusted_width = min(max_length + 2, 40)
+                adjusted_width = min(max_length + 2, 40) # מקסימום רוחב
                 worksheet.column_dimensions[column_letter].width = adjusted_width
-        
-        # ✅ בדיקה נוספת שהגיליון נראה (למקרה שנדרס)
-        output.seek(0)
-        import openpyxl
-        wb = openpyxl.load_workbook(output)
-        
-        # ✅ אם אין גיליון נראה - הפוך את הראשון לנראה
-        visible_count = sum(1 for sheet in wb.worksheets if sheet.sheet_state == 'visible')
-        if visible_count == 0 and len(wb.worksheets) > 0:
-            wb.worksheets[0].sheet_state = 'visible'
-        
-        # שמירה מחדש
-        final_output = io.BytesIO()
-        wb.save(final_output)
-        final_output.seek(0)
-        
-        return final_output.getvalue()
+
+        return output.getvalue()
         
     except Exception as e:
-        print(f"❌ Excel Error: {e}")
+        st.error(f"שגיאה ביצירת הקובץ: {e}")
         return None
 
 def create_inspector_excel(df):
@@ -2953,13 +2935,16 @@ def render_unit_report():
     """הטופס המלא"""
     unit = st.session_state.selected_unit
     
-    # ✅ ניקוי cache בכל טעינה
+    # ✅ ניקוי cache בכל טעינה כדי למנוע שגיאות schema
     clear_cache()
+    """הטופס המלא"""
+    unit = st.session_state.selected_unit
     
     # כפתור קוד גישה לרב חטמ"ר
     st.markdown("---")
     st.markdown("### 🔑 כניסה לניתוח יחידה מפורט (רב חטמ\"ר)")
     
+    # בדיקה אם כבר מחובר כמפקד
     if 'commander_authenticated' not in st.session_state:
         st.session_state.commander_authenticated = False
     
@@ -2970,9 +2955,10 @@ def render_unit_report():
         with col1:
             access_code = st.text_input("קוד גישה", type="password", key="commander_code_input")
         with col2:
-            st.write("")
-            st.write("")
+            st.write("")  # spacing
+            st.write("")  # spacing
             if st.button("🔓 כניסה", use_container_width=True):
+                # בדיקת קוד גישה
                 if unit in COMMANDER_CODES and access_code == COMMANDER_CODES[unit]:
                     st.session_state.commander_authenticated = True
                     st.session_state.commander_unit = unit
@@ -2981,350 +2967,12 @@ def render_unit_report():
                     st.rerun()
                 else:
                     st.error(f"❌ קוד גישה שגוי")
-
-        # ✅ אם לא מחובר - הצג רק את הטופס, ללא סטטיסטיקות!
-        st.markdown("---")
-        st.markdown("### 📋 דיווח ביקורת חדש")
-        
-        # כפתור יציאה
-        col_logout, col_logo, col_title = st.columns([1, 1, 6])
-        with col_logout:
-            if st.button("🚪 יציאה", key="logout_hatmar", use_container_width=True):
-                st.session_state.logged_in = False
-                st.session_state.selected_unit = None
-                st.session_state.login_stage = "gallery"
-                st.rerun()
-        with col_logo:
-            st.image(get_logo_url(unit), width=80)
-        with col_title:
-            st.title(f"📋 דיווח ביקורת - {unit}")
-        
-        with st.form("report"):
-            st.markdown("### 📍 מיקום ותאריך")
-            loc = streamlit_geolocation()
-            gps_lat, gps_lon = (loc['latitude'], loc['longitude']) if loc and loc.get('latitude') else (None, None)
-            
-            if gps_lat:
-                # ✅ הצגת המיקום המדויק שנקלט
-                st.success(f"✅ מיקום GPS נקלט: {gps_lat:.6f}, {gps_lon:.6f}")
-                
-                # ✅ הדפסה ללוג (תוכל לראות בקונסול של Streamlit)
-                print(f"🔍 DEBUG - GPS נקלט: lat={gps_lat}, lon={gps_lon}, base={base if 'base' in locals() else 'לא הוגדר'}")
-                
-                # ✅ בדיקה אם המיקום בגבולות ישראל
-                if not (29.5 <= gps_lat <= 33.5 and 34.2 <= gps_lon <= 35.9):
-                    st.error(f"🚨 **שגיאה:** המיקום ({gps_lat:.4f}, {gps_lon:.4f}) מחוץ לגבולות ישראל!")
-                    st.warning("💡 ייתכן שהמכשיר שלך נותן מיקום שגוי. נסה להפעיל מחדש את ה-GPS")
-                    st.info("📍 **למידע:** ירושלים היא בערך lat=31.7683, lon=35.2137")
-                else:
-                    st.info(f"✅ המיקום תקין - בגבולות ישראל")
-                
-                # בדיקת מרחק מבסיסים ידועים
-                nearest_base, distance = find_nearest_base(gps_lat, gps_lon)
-                
-                if distance < 2.0:
-                    st.info(f"📍 **מיקום מזוהה:** {nearest_base} ({distance:.1f} ק\"מ)")
-                elif distance < 5.0:
-                    st.warning(f"⚠️ **מרחק בינוני:** {nearest_base} ({distance:.1f} ק\"מ) - וודא שהמיקום נכון")
-                else:
-                    st.error(f"🚨 **התראה:** {distance:.1f} ק\"מ מ-{nearest_base} - מיקום חריג!")
-            else:
-                st.warning("📡 מחפש מיקום GPS... אנא המתן עד להופעת אישור ירוק לפני השליחה")
-                st.caption("ירושלים: lat ~31.7, lon ~35.2")
-            
-            c1, c2, c3 = st.columns(3)
-            date = c1.date_input("תאריך", datetime.date.today())
-            time_v = c2.time_input("שעה", datetime.datetime.now().time())
-            inspector = c3.text_input("מבקר *")
-            base = st.text_input("מוצב / מיקום *", placeholder="לדוגמה: מחנה עופר, בית אל, וכו'")
-            
-            st.markdown("### 🏠 פילבוקס / הגנ״ש")
-            c1, c2 = st.columns(2)
-            p_pakal = c1.radio("האם יש פק״ל רבנות?", ["כן", "לא"], horizontal=True, key="p1")
-            p_marked = c2.radio("האם הכלים מסומנים?", ["כן", "לא"], horizontal=True, key="p2")
-            c1, c2 = st.columns(2)
-            p_mix = c1.radio("האם זוהה ערבוב כלים?", ["כן", "לא"], horizontal=True, key="p3")
-            p_kasher = c2.radio("האם נדרשת הכשרה כלים?", ["כן", "לא"], horizontal=True, key="p4")
-            
-            st.markdown("### 📜 נהלים")
-            c1, c2 = st.columns(2)
-            r_sg = c1.radio("האם יש הוראות רבנות בש.ג?", ["כן", "לא"], horizontal=True, key="r1")
-            r_hamal = c2.radio("האם יש הוראות רבנות בחמ״ל?", ["כן", "לא"], horizontal=True, key="r2")
-            c1, c2 = st.columns(2)
-            r_sign = c1.radio("האם יש שילוט על מתקנים שיש בהם חילול שבת (כגון תמי 4)?", ["כן", "לא"], horizontal=True, key="r3")
-            r_netilot = c2.radio("האם קיימות נטלות?", ["כן", "לא"], horizontal=True, key="r4")
-            c1, c2 = st.columns(2)
-            r_mezuzot_missing = c1.number_input("כמה מזוזות חסרות?", 0)
-            r_shabbat_device = c2.radio("האם קיימים התקני שבת?", ["כן", "לא", "חלקי"], horizontal=True, key="r5")
-            
-            st.markdown("### 🕍 בית כנסת")
-            c1, c2 = st.columns(2)
-            s_board = c1.radio("האם לוח רבנות מעודכן?", ["כן", "לא"], horizontal=True, key="s1")
-            s_clean = c2.radio("האם בית הכנסת נקי?", ["כן", "לא"], horizontal=True, key="s7")
-            s_books = st.multiselect("ספרי יסוד קיימים:", ["תורת המחנה", "לוח דינים", "הלכה כסדרה", "שו״ת משיב מלחמה"])
-            c1, c2 = st.columns(2)
-            s_havdala = c1.radio("האם יש ערכת הבדלה והדלקת נרות שבת?", ["כן", "לא"], horizontal=True, key="s3")
-            s_gemach = c2.radio("האם יש גמ״ח טלית ותפילין?", ["כן", "לא"], horizontal=True, key="s4")
-            c1, c2 = st.columns(2)
-            s_smartbis = c1.radio("האם יש תקלת בינוי (אם כן עדכנת בסמארט-ביס)?", ["כן", "לא"], horizontal=True, key="s5")
-            s_geniza = c2.radio("האם יש פח גניזה?", ["כן", "לא"], horizontal=True, key="s6")
-            
-            st.markdown("### 🚧 עירוב")
-            c1, c2 = st.columns(2)
-            e_status = c1.selectbox("סטטוס עירוב", ["תקין", "פסול", "בטיפול"])
-            e_check = c2.radio("האם בוצעה בדיקה?", ["כן", "לא"], horizontal=True, key="e1")
-            c1, c2 = st.columns(2)
-            e_doc = c1.radio("האם בוצע תיעוד?", ["כן", "לא"], horizontal=True, key="e2")
-            e_photo = c2.radio("האם קיימת תצ״א?", ["כן", "לא"], horizontal=True, key="e3")
-            
-            st.markdown("### 🍽️ מטבח")
-            k_cook_type = st.selectbox("סוג מטבח", ["מבשל", "מחמם"])
-            c1, c2 = st.columns(2)
-            k_cert = c1.radio("תעודת כשרות מתוקפת?", ["כן", "לא"], horizontal=True, key="k7")
-            k_bishul = c2.radio("האם יש בישול ישראל?", ["כן", "לא"], horizontal=True, key="k8")
-            
-            # שאלות חדשות עם תמונות
-            st.markdown("#### 📸 תקלות ונאמן כשרות")
-            c1, c2 = st.columns(2)
-            k_issues = c1.radio("יש תקלות כשרות?", ["כן", "לא"], horizontal=True, key="k_issues")
-            k_shabbat_supervisor = c2.radio("יש נאמן כשרות בשבת?", ["כן", "לא"], horizontal=True, key="k_shabbat_sup")
-            
-            # 🆕 פירוט תקלות (אם יש)
-            k_issues_description = ""
-            if k_issues == "כן":
-                k_issues_description = c1.text_area("פרט את תקלות הכשרות שנמצאו", key="k_issues_desc")
-                
-            # 🆕 פרטי נאמן כשרות (אם יש)
-            k_shabbat_supervisor_name = ""
-            k_shabbat_supervisor_phone = ""
-            if k_shabbat_supervisor == "כן":
-                with c2:
-                    col_sup_name, col_sup_phone = st.columns(2)
-                    k_shabbat_supervisor_name = col_sup_name.text_input("שם נאמן כשרות", key="k_sup_name")
-                    k_shabbat_supervisor_phone = col_sup_phone.text_input("טלפון נאמן", key="k_sup_phone")
-            
-            # תמונות לתקלות ונאמן
-            c1, c2 = st.columns(2)
-            k_issues_photo = c1.file_uploader("📷 תמונת תקלה (אם יש)", type=['jpg', 'png', 'jpeg'], key="k_issues_photo")
-            
-            # הודעה דינמית לפי יום בשבוע
-            current_day = datetime.datetime.now().weekday()
-            if current_day in [3, 4]:  # חמישי ושישי
-                k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן כשרות ⚠️ (חובה בחמישי-שישי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo", help="בימי חמישי ושישי חובה להעלות תמונה של נאמן הכשרות")
-            else:
-                k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן כשרות (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo")
-            
-            c1, c2 = st.columns(2)
-            k_separation = c1.radio("האם יש הפרדה?", ["כן", "לא"], horizontal=True, key="k1")
-            k_briefing = c2.radio("האם בוצע תדריך טבחים?", ["כן", "לא"], horizontal=True, key="k2")
-            c1, c2 = st.columns(2)
-            k_products = c1.radio("האם רכש חוץ מתנהל לפי פקודה?", ["כן", "לא"], horizontal=True, key="k3")
-            k_dates = c2.radio("האם יש דף תאריכים לתבלינים?", ["כן", "לא"], horizontal=True, key="k4")
-            c1, c2 = st.columns(2)
-            k_leafs = c1.radio("האם יש שטיפת ירק?", ["כן", "לא"], horizontal=True, key="k5")
-            k_holes = c2.radio("בוצע חירור גסטרונומים?", ["כן", "לא"], horizontal=True, key="k6")
-            c1, c2 = st.columns(2)
-            k_eggs = c1.radio("האם מבוצעת בדיקת ביצים?", ["כן", "לא"], horizontal=True, key="k9")
-            k_machshir = c2.radio("האם יש חדר מכ״ש במפג״ד?", ["כן", "לא"], horizontal=True, key="k10")
-            c1, c2 = st.columns(2)
-            k_heater = c1.radio("האם יש חימום נפרד בין בשר ודגים?", ["כן", "לא"], horizontal=True, key="k11")
-            k_app = c2.radio("האם מולאה אפליקציה?", ["כן", "לא"], horizontal=True, key="k12")
-            
-            st.markdown("### ☕ טרקלין")
-            c1, c2 = st.columns(2)
-            t_private = c1.radio("האם יש כלים פרטיים?", ["כן", "לא"], horizontal=True, key="t1")
-            t_kitchen_tools = c2.radio("האם יש כלי מטבח?", ["כן", "לא"], horizontal=True, key="t2")
-            c1, c2 = st.columns(2)
-            t_procedure = c1.radio("האם נשמר נוהל סגירה?", ["כן", "לא"], horizontal=True, key="t3")
-            t_friday = c2.radio("האם הכלים החשמליים סגורים בשבת?", ["כן", "לא"], horizontal=True, key="t4")
-            t_app = st.radio("האם מולאה אפליקציה לטרקלין?", ["כן", "לא"], horizontal=True, key="t5")
-            
-            st.markdown("### 🍳 WeCook ויקווק")
-            w_location = st.text_input("מיקום הוויקוק")
-            c1, c2 = st.columns(2)
-            w_private = c1.radio("האם יש כלים פרטיים בוויקוק?", ["כן", "לא"], horizontal=True, key="w1")
-            w_kitchen_tools = c2.radio("האם יש כלי מטבח בוויקוק?", ["כן", "לא"], horizontal=True, key="w2")
-            c1, c2 = st.columns(2)
-            w_procedure = c1.radio("האם עובד לפי פקודה?", ["כן", "לא"], horizontal=True, key="w3")
-            w_guidelines = c2.radio("האם יש הנחיות?", ["כן", "לא"], horizontal=True, key="w4")
-            
-            st.markdown("### ⚠️ חוסרים")
-            missing = st.text_area("פירוט חוסרים")
-            
-            st.markdown("### 💬 שיחת חתך")
-            
-            c1, c2 = st.columns(2)
-            soldier_yeshiva = c1.radio("האם יש ימי ישיבה?", ["כן", "לא"], horizontal=True, key="so1")
-            
-            # 🆕 שאלה חדשה - רצון לשיעור תורה
-            soldier_want_lesson = c2.radio("האם יש רצון לשיעור תורה?", ["כן", "לא"], horizontal=True, key="so_want_lesson")
-            
-            # 🆕 שאלה חדשה - שיעור תורה קיים
-            c1, c2 = st.columns(2)
-            soldier_has_lesson = c1.radio("יש שיעור תורה במוצב?", ["כן", "לא"], horizontal=True, key="so_has_lesson")
-            
-            # 🆕 אם יש שיעור - שדות נוספים
-            soldier_lesson_teacher = ""
-            soldier_lesson_phone = ""
-            
-            if soldier_has_lesson == "כן":
-                col_teacher, col_phone = st.columns(2)
-                with col_teacher:
-                    soldier_lesson_teacher = st.text_input("שם מעביר השיעור", key="so_lesson_teacher", 
-                                                           placeholder="לדוגמה: הרב כהן")
-                with col_phone:
-                    soldier_lesson_phone = st.text_input("טלפון מעביר השיעור", key="so_lesson_phone",
-                                                         placeholder="לדוגמה: 050-1234567")
-            
-            # שאלות קיימות
-            c1, c2 = st.columns(2)
-            soldier_food = c1.radio("האם המענה הכשרותי מספק?", ["כן", "לא"], horizontal=True, key="so2")
-            soldier_shabbat_training = c2.radio("האם יש אימונים בשבת?", ["כן", "לא"], horizontal=True, key="so3")
-            
-            c1, c2 = st.columns(2)
-            soldier_knows_rabbi = c1.radio("האם מכיר את הרב?", ["כן", "לא"], horizontal=True, key="so4")
-            soldier_prayers = c2.radio("האם יש זמני תפילות?", ["כן", "לא"], horizontal=True, key="so5")
-            
-            soldier_talk_cmd = st.radio("האם יש שיח מפקדים?", ["כן", "לא"], horizontal=True, key="so6")
-            
-            st.markdown("---")
-            free_text = st.text_area("הערות נוספות")
-            photo = st.file_uploader("📸 תמונה (חובה)", type=['jpg', 'png', 'jpeg'])
-            
-            # שליחת הדוח
-            if st.form_submit_button("🚀 שגר דיווח", type="primary", use_container_width=True):
-                # בדיקת יום בשבוע - חמישי (3) ושישי (4) ב-Python weekday
-                current_weekday = datetime.datetime.now().weekday()
-                is_thursday_or_friday = current_weekday in [3, 4]
-                
-                # בדיקת חובת תמונת נאמן כשרות בחמישי-שישי
-                if is_thursday_or_friday and k_shabbat_supervisor == "כן" and not k_shabbat_photo:
-                    st.error("⚠️ **חובה להעלות תמונת נאמן כשרות בימי חמישי ושישי!**")
-                    st.warning("💡 נא להעלות תמונה של נאמן הכשרות בשדה המתאים למעלה")
-                elif base and inspector and photo:
-                    photo_url = upload_report_photo(photo.getvalue(), unit, base)
-                    
-                    # העלאת תמונות נוספות (תקלות כשרות ונאמן כשרות)
-                    k_issues_photo_url = None
-                    k_shabbat_photo_url = None
-                    
-                    if k_issues_photo:
-                        k_issues_photo_url = upload_report_photo(k_issues_photo.getvalue(), unit, f"{base}_kashrut_issue")
-                    
-                    if k_shabbat_photo:
-                        k_shabbat_photo_url = upload_report_photo(k_shabbat_photo.getvalue(), unit, f"{base}_shabbat_supervisor")
-                    
-                    data = {
-                        "unit": st.session_state.selected_unit, "date": datetime.datetime.now().isoformat(),
-                        "base": base, "inspector": inspector, "photo_url": photo_url,
-                        "k_cert": k_cert, "k_dates": k_dates,
-                        "e_status": e_status,
-                        "s_clean": s_clean,
-                        "t_private": t_private, "t_kitchen_tools": t_kitchen_tools, "t_procedure": t_procedure,
-                        "t_friday": t_friday, "t_app": t_app, "w_location": w_location, "w_private": w_private,
-                        "w_kitchen_tools": w_kitchen_tools, "w_procedure": w_procedure, "w_guidelines": w_guidelines,
-                        "w_kitchen_tools": w_kitchen_tools, "w_procedure": w_procedure, "w_guidelines": w_guidelines,
-                        "soldier_yeshiva": soldier_yeshiva,
-                        "soldier_want_lesson": soldier_want_lesson,  # 🆕
-                        "soldier_has_lesson": soldier_has_lesson,    # 🆕
-                        "soldier_lesson_teacher": soldier_lesson_teacher,  # 🆕
-                        "soldier_lesson_phone": soldier_lesson_phone,      # 🆕
-                        "soldier_food": soldier_food,
-                        "soldier_shabbat_training": soldier_shabbat_training, "soldier_knows_rabbi": soldier_knows_rabbi,
-                        "soldier_prayers": soldier_prayers, "soldier_talk_cmd": soldier_talk_cmd, "free_text": free_text,
-                        "time": str(time_v), "p_pakal": p_pakal, "missing_items": missing,
-                        "r_mezuzot_missing": r_mezuzot_missing, "k_cook_type": k_cook_type,
-                        "p_marked": p_marked, "p_mix": p_mix, "p_kasher": p_kasher,
-                        "r_sg": r_sg, "r_hamal": r_hamal, "r_sign": r_sign, "r_netilot": r_netilot,
-                        "r_shabbat_device": r_shabbat_device, "s_board": s_board, "s_books": str(s_books),
-                        "s_havdala": s_havdala, "s_gemach": s_gemach, "s_smartbis": s_smartbis, "s_geniza": s_geniza,
-                        "e_check": e_check, "e_doc": e_doc, "e_photo": e_photo,
-                        "k_separation": k_separation, "k_briefing": k_briefing, "k_products": k_products,
-                        "k_leafs": k_leafs, "k_holes": k_holes, "k_bishul": k_bishul,
-                        "k_eggs": k_eggs, "k_machshir": k_machshir, "k_heater": k_heater, "k_app": k_app,
-                        # שדות חדשים
-                        # שדות חדשים
-                        "k_issues": k_issues,
-                        "k_issues_description": k_issues_description,  # 🆕
-                        "k_shabbat_supervisor": k_shabbat_supervisor,
-                        "k_shabbat_supervisor_name": k_shabbat_supervisor_name,    # 🆕
-                        "k_shabbat_supervisor_phone": k_shabbat_supervisor_phone,  # 🆕
-                        "k_issues_photo_url": k_issues_photo_url,
-                        "k_shabbat_photo_url": k_shabbat_photo_url
-                    }
-                    
-                    # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
-                    # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
-                    if gps_lat and gps_lon:
-                        # ✅ בדיקה נוספת שהמיקום תקין
-                        if 29.5 <= gps_lat <= 33.5 and 34.2 <= gps_lon <= 35.9:
-                            # הוספת רעש למיקום GPS לצורכי אבטחה (~300 מטר)
-                            # ✅ שימוש ב-secure_location_offset עם ID יציב
-                            unique_id_for_offset = f"{unit}_{base}"
-                            lat_with_offset, lon_with_offset = secure_location_offset(gps_lat, gps_lon, unique_id_for_offset, offset_meters=300)
-                            data["latitude"] = lat_with_offset
-                            data["longitude"] = lon_with_offset
-                            
-                            # ✅ הדפסה ללוג
-                            print(f"💾 שומר למסד נתונים: lat={lat_with_offset:.6f}, lon={lon_with_offset:.6f}")
-                        else:
-                            st.warning("⚠️ המיקום לא נשמר כי הוא מחוץ לגבולות ישראל")
-                    
-                    try:
-                        # ניסיון לשמור את הדוח
-                        try:
-                            result = supabase.table("reports").insert(data).execute()
-                        except Exception as e:
-                            # טיפול בשגיאה אם העמודות החדשות עדיין לא קיימות במסד הנתונים
-                            if "PGRST204" in str(e) or "Could not find" in str(e):
-                                # ניסיון חוזר ללא השדות החדשים (שמירה שקטה של בסיס הדוח)
-                                # רשימת כל השדות החדשים שאולי חסרים
-                                new_fields = [
-                                    "k_issues", "k_issues_description", "k_shabbat_supervisor", 
-                                    "k_shabbat_supervisor_name", "k_shabbat_supervisor_phone",
-                                    "k_issues_photo_url", "k_shabbat_photo_url",
-                                    "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone"
-                                ]
-                                for field in new_fields:
-                                    data.pop(field, None)
-                                result = supabase.table("reports").insert(data).execute()
-                            else:
-                                raise e
-                        
-                        # מעקב אוטומטי אחר חוסרים
-                        if result.data and len(result.data) > 0:
-                            report_id = result.data[0].get('id')
-                            if report_id:
-                                detect_and_track_deficits(data, report_id, unit)
-                        
-                        st.success("✅ הדוח נשלח בהצלחה ונקלט בחמ״ל!")
-                        clear_cache()
-                        time.sleep(1)
-                        st.rerun()
-                    except Exception as e:
-                        error_msg = str(e)
-                        # אם השגיאה היא בגלל עמודות שלא קיימות, נסה בלעדיהן
-                        if any(col in error_msg for col in ["latitude", "longitude", "photo_url"]):
-                            try:
-                                # הסרת עמודות שלא קיימות
-                                data.pop("latitude", None)
-                                data.pop("longitude", None)
-                                data.pop("photo_url", None)
-                                supabase.table("reports").insert(data).execute()
-                                st.success("✅ הדוח נשלח בהצלחה!")
-                                clear_cache()
-                                time.sleep(2)
-                                st.rerun()
-                            except Exception as e2:
-                                st.error(f"❌ שגיאה בשמירה: {e2}")
-                        else:
-                            st.error(f"❌ שגיאה בשמירה: {error_msg}")
-                else: st.error("⚠️ חסרים פרטי חובה (מוצב, מבקר או תמונה)")
-        
-        return
-
-    # ===== רק אם מחובר כרב חטמ"ר - הצג הכל =====
-    if st.session_state.commander_authenticated:
+                    # Debug info
+                    if unit in COMMANDER_CODES:
+                        st.info(f"💡 רמז: הקוד הנכון מתחיל ב-'{COMMANDER_CODES[unit][:3]}...'")
+                    else:
+                        st.warning(f"⚠️ לא נמצא קוד עבור {unit}")
+    else:
         # מפקד מחובר - הצג ניתוח יחידה
         st.success(f"✅ מחובר כרב חטמ\"ר - {unit}")
         
@@ -3653,9 +3301,9 @@ def render_unit_report():
         # הצגת הכפתור
         if excel_file_hatmar:
             st.download_button(
-                label="📥 הורד דוח מפורט (Excel)",
+                label="⬇️ לחץ להורדת כל הנתונים (Excel)",
                 data=excel_file_hatmar,
-                file_name=f"detailed_report_{unit}_{pd.Timestamp.now().strftime('%Y%m%d')}.xlsx",
+                file_name=f"דוח_מלא_{unit}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
                 type="primary",
@@ -3666,7 +3314,343 @@ def render_unit_report():
             st.error("❌ לא ניתן ליצור קובץ Excel")
     
     # טופס דיווח (רק אם לא במצב מפקד)
-
+    if not st.session_state.commander_authenticated:
+        st.markdown("### 📋 דיווח ביקורת חדש")
+        
+        # כפתור יציאה בראש הדף
+        col_logout, col_logo, col_title = st.columns([1, 1, 6])
+        with col_logout:
+            if st.button("🚪 יציאה", key="logout_hatmar", use_container_width=True):
+                st.session_state.logged_in = False
+                st.session_state.selected_unit = None
+                st.session_state.login_stage = "gallery"  # חזרה לגלריה הראשית
+                st.rerun()
+        with col_logo:
+            st.image(get_logo_url(unit), width=80)
+        with col_title:
+            st.title(f"📋 דיווח ביקורת - {unit}")
+    
+    with st.form("report"):
+        st.markdown("### 📍 מיקום ותאריך")
+        loc = streamlit_geolocation()
+        gps_lat, gps_lon = (loc['latitude'], loc['longitude']) if loc and loc.get('latitude') else (None, None)
+        
+        if gps_lat:
+            # ✅ הצגת המיקום המדויק שנקלט
+            st.success(f"✅ מיקום GPS נקלט: {gps_lat:.6f}, {gps_lon:.6f}")
+            
+            # ✅ הדפסה ללוג (תוכל לראות בקונסול של Streamlit)
+            print(f"🔍 DEBUG - GPS נקלט: lat={gps_lat}, lon={gps_lon}, base={base if 'base' in locals() else 'לא הוגדר'}")
+            
+            # ✅ בדיקה אם המיקום בגבולות ישראל
+            if not (29.5 <= gps_lat <= 33.5 and 34.2 <= gps_lon <= 35.9):
+                st.error(f"🚨 **שגיאה:** המיקום ({gps_lat:.4f}, {gps_lon:.4f}) מחוץ לגבולות ישראל!")
+                st.warning("💡 ייתכן שהמכשיר שלך נותן מיקום שגוי. נסה להפעיל מחדש את ה-GPS")
+                st.info("📍 **למידע:** ירושלים היא בערך lat=31.7683, lon=35.2137")
+            else:
+                st.info(f"✅ המיקום תקין - בגבולות ישראל")
+            
+            # בדיקת מרחק מבסיסים ידועים
+            nearest_base, distance = find_nearest_base(gps_lat, gps_lon)
+            
+            if distance < 2.0:
+                st.info(f"📍 **מיקום מזוהה:** {nearest_base} ({distance:.1f} ק\"מ)")
+            elif distance < 5.0:
+                st.warning(f"⚠️ **מרחק בינוני:** {nearest_base} ({distance:.1f} ק\"מ) - וודא שהמיקום נכון")
+            else:
+                st.error(f"🚨 **התראה:** {distance:.1f} ק\"מ מ-{nearest_base} - מיקום חריג!")
+        else:
+            st.warning("📡 מחפש מיקום GPS... אנא המתן עד להופעת אישור ירוק לפני השליחה")
+            st.caption("ירושלים: lat ~31.7, lon ~35.2")
+        
+        c1, c2, c3 = st.columns(3)
+        date = c1.date_input("תאריך", datetime.date.today())
+        time_v = c2.time_input("שעה", datetime.datetime.now().time())
+        inspector = c3.text_input("מבקר *")
+        base = st.text_input("מוצב / מיקום *", placeholder="לדוגמה: מחנה עופר, בית אל, וכו'")
+        
+        st.markdown("### 🏠 פילבוקס / הגנ״ש")
+        c1, c2 = st.columns(2)
+        p_pakal = c1.radio("האם יש פק״ל רבנות?", ["כן", "לא"], horizontal=True, key="p1")
+        p_marked = c2.radio("האם הכלים מסומנים?", ["כן", "לא"], horizontal=True, key="p2")
+        c1, c2 = st.columns(2)
+        p_mix = c1.radio("האם זוהה ערבוב כלים?", ["כן", "לא"], horizontal=True, key="p3")
+        p_kasher = c2.radio("האם נדרשת הכשרה כלים?", ["כן", "לא"], horizontal=True, key="p4")
+        
+        st.markdown("### 📜 נהלים")
+        c1, c2 = st.columns(2)
+        r_sg = c1.radio("האם יש הוראות רבנות בש.ג?", ["כן", "לא"], horizontal=True, key="r1")
+        r_hamal = c2.radio("האם יש הוראות רבנות בחמ״ל?", ["כן", "לא"], horizontal=True, key="r2")
+        c1, c2 = st.columns(2)
+        r_sign = c1.radio("האם יש שילוט על מתקנים שיש בהם חילול שבת (כגון תמי 4)?", ["כן", "לא"], horizontal=True, key="r3")
+        r_netilot = c2.radio("האם קיימות נטלות?", ["כן", "לא"], horizontal=True, key="r4")
+        c1, c2 = st.columns(2)
+        r_mezuzot_missing = c1.number_input("כמה מזוזות חסרות?", 0)
+        r_shabbat_device = c2.radio("האם קיימים התקני שבת?", ["כן", "לא", "חלקי"], horizontal=True, key="r5")
+        
+        st.markdown("### 🕍 בית כנסת")
+        c1, c2 = st.columns(2)
+        s_board = c1.radio("האם לוח רבנות מעודכן?", ["כן", "לא"], horizontal=True, key="s1")
+        s_clean = c2.radio("האם בית הכנסת נקי?", ["כן", "לא"], horizontal=True, key="s7")
+        s_books = st.multiselect("ספרי יסוד קיימים:", ["תורת המחנה", "לוח דינים", "הלכה כסדרה", "שו״ת משיב מלחמה"])
+        c1, c2 = st.columns(2)
+        s_havdala = c1.radio("האם יש ערכת הבדלה והדלקת נרות שבת?", ["כן", "לא"], horizontal=True, key="s3")
+        s_gemach = c2.radio("האם יש גמ״ח טלית ותפילין?", ["כן", "לא"], horizontal=True, key="s4")
+        c1, c2 = st.columns(2)
+        s_smartbis = c1.radio("האם יש תקלת בינוי (אם כן עדכנת בסמארט-ביס)?", ["כן", "לא"], horizontal=True, key="s5")
+        s_geniza = c2.radio("האם יש פח גניזה?", ["כן", "לא"], horizontal=True, key="s6")
+        
+        st.markdown("### 🚧 עירוב")
+        c1, c2 = st.columns(2)
+        e_status = c1.selectbox("סטטוס עירוב", ["תקין", "פסול", "בטיפול"])
+        e_check = c2.radio("האם בוצעה בדיקה?", ["כן", "לא"], horizontal=True, key="e1")
+        c1, c2 = st.columns(2)
+        e_doc = c1.radio("האם בוצע תיעוד?", ["כן", "לא"], horizontal=True, key="e2")
+        e_photo = c2.radio("האם קיימת תצ״א?", ["כן", "לא"], horizontal=True, key="e3")
+        
+        st.markdown("### 🍽️ מטבח")
+        k_cook_type = st.selectbox("סוג מטבח", ["מבשל", "מחמם"])
+        c1, c2 = st.columns(2)
+        k_cert = c1.radio("תעודת כשרות מתוקפת?", ["כן", "לא"], horizontal=True, key="k7")
+        k_bishul = c2.radio("האם יש בישול ישראל?", ["כן", "לא"], horizontal=True, key="k8")
+        
+        # שאלות חדשות עם תמונות
+        st.markdown("#### 📸 תקלות ונאמן כשרות")
+        c1, c2 = st.columns(2)
+        k_issues = c1.radio("יש תקלות כשרות?", ["כן", "לא"], horizontal=True, key="k_issues")
+        k_shabbat_supervisor = c2.radio("יש נאמן כשרות בשבת?", ["כן", "לא"], horizontal=True, key="k_shabbat_sup")
+        
+        # 🆕 פירוט תקלות (אם יש)
+        k_issues_description = ""
+        if k_issues == "כן":
+            k_issues_description = c1.text_area("פרט את תקלות הכשרות שנמצאו", key="k_issues_desc")
+            
+        # 🆕 פרטי נאמן כשרות (אם יש)
+        k_shabbat_supervisor_name = ""
+        k_shabbat_supervisor_phone = ""
+        if k_shabbat_supervisor == "כן":
+            with c2:
+                col_sup_name, col_sup_phone = st.columns(2)
+                k_shabbat_supervisor_name = col_sup_name.text_input("שם נאמן כשרות", key="k_sup_name")
+                k_shabbat_supervisor_phone = col_sup_phone.text_input("טלפון נאמן", key="k_sup_phone")
+        
+        # תמונות לתקלות ונאמן
+        c1, c2 = st.columns(2)
+        k_issues_photo = c1.file_uploader("📷 תמונת תקלה (אם יש)", type=['jpg', 'png', 'jpeg'], key="k_issues_photo")
+        
+        # הודעה דינמית לפי יום בשבוע
+        current_day = datetime.datetime.now().weekday()
+        if current_day in [3, 4]:  # חמישי ושישי
+            k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן כשרות ⚠️ (חובה בחמישי-שישי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo", help="בימי חמישי ושישי חובה להעלות תמונה של נאמן הכשרות")
+        else:
+            k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן כשרות (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo")
+        
+        c1, c2 = st.columns(2)
+        k_separation = c1.radio("האם יש הפרדה?", ["כן", "לא"], horizontal=True, key="k1")
+        k_briefing = c2.radio("האם בוצע תדריך טבחים?", ["כן", "לא"], horizontal=True, key="k2")
+        c1, c2 = st.columns(2)
+        k_products = c1.radio("האם רכש חוץ מתנהל לפי פקודה?", ["כן", "לא"], horizontal=True, key="k3")
+        k_dates = c2.radio("האם יש דף תאריכים לתבלינים?", ["כן", "לא"], horizontal=True, key="k4")
+        c1, c2 = st.columns(2)
+        k_leafs = c1.radio("האם יש שטיפת ירק?", ["כן", "לא"], horizontal=True, key="k5")
+        k_holes = c2.radio("בוצע חירור גסטרונומים?", ["כן", "לא"], horizontal=True, key="k6")
+        c1, c2 = st.columns(2)
+        k_eggs = c1.radio("האם מבוצעת בדיקת ביצים?", ["כן", "לא"], horizontal=True, key="k9")
+        k_machshir = c2.radio("האם יש חדר מכ״ש במפג״ד?", ["כן", "לא"], horizontal=True, key="k10")
+        c1, c2 = st.columns(2)
+        k_heater = c1.radio("האם יש חימום נפרד בין בשר ודגים?", ["כן", "לא"], horizontal=True, key="k11")
+        k_app = c2.radio("האם מולאה אפליקציה?", ["כן", "לא"], horizontal=True, key="k12")
+        
+        st.markdown("### ☕ טרקלין")
+        c1, c2 = st.columns(2)
+        t_private = c1.radio("האם יש כלים פרטיים?", ["כן", "לא"], horizontal=True, key="t1")
+        t_kitchen_tools = c2.radio("האם יש כלי מטבח?", ["כן", "לא"], horizontal=True, key="t2")
+        c1, c2 = st.columns(2)
+        t_procedure = c1.radio("האם נשמר נוהל סגירה?", ["כן", "לא"], horizontal=True, key="t3")
+        t_friday = c2.radio("האם הכלים החשמליים סגורים בשבת?", ["כן", "לא"], horizontal=True, key="t4")
+        t_app = st.radio("האם מולאה אפליקציה לטרקלין?", ["כן", "לא"], horizontal=True, key="t5")
+        
+        st.markdown("### 🍳 WeCook ויקווק")
+        w_location = st.text_input("מיקום הוויקוק")
+        c1, c2 = st.columns(2)
+        w_private = c1.radio("האם יש כלים פרטיים בוויקוק?", ["כן", "לא"], horizontal=True, key="w1")
+        w_kitchen_tools = c2.radio("האם יש כלי מטבח בוויקוק?", ["כן", "לא"], horizontal=True, key="w2")
+        c1, c2 = st.columns(2)
+        w_procedure = c1.radio("האם עובד לפי פקודה?", ["כן", "לא"], horizontal=True, key="w3")
+        w_guidelines = c2.radio("האם יש הנחיות?", ["כן", "לא"], horizontal=True, key="w4")
+        
+        st.markdown("### ⚠️ חוסרים")
+        missing = st.text_area("פירוט חוסרים")
+        
+        st.markdown("### 💬 שיחת חתך")
+        
+        c1, c2 = st.columns(2)
+        soldier_yeshiva = c1.radio("האם יש ימי ישיבה?", ["כן", "לא"], horizontal=True, key="so1")
+        
+        # 🆕 שאלה חדשה - רצון לשיעור תורה
+        soldier_want_lesson = c2.radio("האם יש רצון לשיעור תורה?", ["כן", "לא"], horizontal=True, key="so_want_lesson")
+        
+        # 🆕 שאלה חדשה - שיעור תורה קיים
+        c1, c2 = st.columns(2)
+        soldier_has_lesson = c1.radio("יש שיעור תורה במוצב?", ["כן", "לא"], horizontal=True, key="so_has_lesson")
+        
+        # 🆕 אם יש שיעור - שדות נוספים
+        soldier_lesson_teacher = ""
+        soldier_lesson_phone = ""
+        
+        if soldier_has_lesson == "כן":
+            col_teacher, col_phone = st.columns(2)
+            with col_teacher:
+                soldier_lesson_teacher = st.text_input("שם מעביר השיעור", key="so_lesson_teacher", 
+                                                       placeholder="לדוגמה: הרב כהן")
+            with col_phone:
+                soldier_lesson_phone = st.text_input("טלפון מעביר השיעור", key="so_lesson_phone",
+                                                     placeholder="לדוגמה: 050-1234567")
+        
+        # שאלות קיימות
+        c1, c2 = st.columns(2)
+        soldier_food = c1.radio("האם המענה הכשרותי מספק?", ["כן", "לא"], horizontal=True, key="so2")
+        soldier_shabbat_training = c2.radio("האם יש אימונים בשבת?", ["כן", "לא"], horizontal=True, key="so3")
+        
+        c1, c2 = st.columns(2)
+        soldier_knows_rabbi = c1.radio("האם מכיר את הרב?", ["כן", "לא"], horizontal=True, key="so4")
+        soldier_prayers = c2.radio("האם יש זמני תפילות?", ["כן", "לא"], horizontal=True, key="so5")
+        
+        soldier_talk_cmd = st.radio("האם יש שיח מפקדים?", ["כן", "לא"], horizontal=True, key="so6")
+        
+        st.markdown("---")
+        free_text = st.text_area("הערות נוספות")
+        photo = st.file_uploader("📸 תמונה (חובה)", type=['jpg', 'png', 'jpeg'])
+        
+        # שליחת הדוח
+        if st.form_submit_button("🚀 שגר דיווח", type="primary", use_container_width=True):
+            # בדיקת יום בשבוע - חמישי (3) ושישי (4) ב-Python weekday
+            current_weekday = datetime.datetime.now().weekday()
+            is_thursday_or_friday = current_weekday in [3, 4]
+            
+            # בדיקת חובת תמונת נאמן כשרות בחמישי-שישי
+            if is_thursday_or_friday and k_shabbat_supervisor == "כן" and not k_shabbat_photo:
+                st.error("⚠️ **חובה להעלות תמונת נאמן כשרות בימי חמישי ושישי!**")
+                st.warning("💡 נא להעלות תמונה של נאמן הכשרות בשדה המתאים למעלה")
+            elif base and inspector and photo:
+                photo_url = upload_report_photo(photo.getvalue(), unit, base)
+                
+                # העלאת תמונות נוספות (תקלות כשרות ונאמן כשרות)
+                k_issues_photo_url = None
+                k_shabbat_photo_url = None
+                
+                if k_issues_photo:
+                    k_issues_photo_url = upload_report_photo(k_issues_photo.getvalue(), unit, f"{base}_kashrut_issue")
+                
+                if k_shabbat_photo:
+                    k_shabbat_photo_url = upload_report_photo(k_shabbat_photo.getvalue(), unit, f"{base}_shabbat_supervisor")
+                
+                data = {
+                    "unit": st.session_state.selected_unit, "date": datetime.datetime.now().isoformat(),
+                    "base": base, "inspector": inspector, "photo_url": photo_url,
+                    "k_cert": k_cert, "k_dates": k_dates,
+                    "e_status": e_status,
+                    "s_clean": s_clean,
+                    "t_private": t_private, "t_kitchen_tools": t_kitchen_tools, "t_procedure": t_procedure,
+                    "t_friday": t_friday, "t_app": t_app, "w_location": w_location, "w_private": w_private,
+                    "w_kitchen_tools": w_kitchen_tools, "w_procedure": w_procedure, "w_guidelines": w_guidelines,
+                    "w_kitchen_tools": w_kitchen_tools, "w_procedure": w_procedure, "w_guidelines": w_guidelines,
+                    "soldier_yeshiva": soldier_yeshiva,
+                    "soldier_want_lesson": soldier_want_lesson,  # 🆕
+                    "soldier_has_lesson": soldier_has_lesson,    # 🆕
+                    "soldier_lesson_teacher": soldier_lesson_teacher,  # 🆕
+                    "soldier_lesson_phone": soldier_lesson_phone,      # 🆕
+                    "soldier_food": soldier_food,
+                    "soldier_shabbat_training": soldier_shabbat_training, "soldier_knows_rabbi": soldier_knows_rabbi,
+                    "soldier_prayers": soldier_prayers, "soldier_talk_cmd": soldier_talk_cmd, "free_text": free_text,
+                    "time": str(time_v), "p_pakal": p_pakal, "missing_items": missing,
+                    "r_mezuzot_missing": r_mezuzot_missing, "k_cook_type": k_cook_type,
+                    "p_marked": p_marked, "p_mix": p_mix, "p_kasher": p_kasher,
+                    "r_sg": r_sg, "r_hamal": r_hamal, "r_sign": r_sign, "r_netilot": r_netilot,
+                    "r_shabbat_device": r_shabbat_device, "s_board": s_board, "s_books": str(s_books),
+                    "s_havdala": s_havdala, "s_gemach": s_gemach, "s_smartbis": s_smartbis, "s_geniza": s_geniza,
+                    "e_check": e_check, "e_doc": e_doc, "e_photo": e_photo,
+                    "k_separation": k_separation, "k_briefing": k_briefing, "k_products": k_products,
+                    "k_leafs": k_leafs, "k_holes": k_holes, "k_bishul": k_bishul,
+                    "k_eggs": k_eggs, "k_machshir": k_machshir, "k_heater": k_heater, "k_app": k_app,
+                    # שדות חדשים
+                    # שדות חדשים
+                    "k_issues": k_issues,
+                    "k_issues_description": k_issues_description,  # 🆕
+                    "k_shabbat_supervisor": k_shabbat_supervisor,
+                    "k_shabbat_supervisor_name": k_shabbat_supervisor_name,    # 🆕
+                    "k_shabbat_supervisor_phone": k_shabbat_supervisor_phone,  # 🆕
+                    "k_issues_photo_url": k_issues_photo_url,
+                    "k_shabbat_photo_url": k_shabbat_photo_url
+                }
+                
+                # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
+                # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
+                if gps_lat and gps_lon:
+                    # ✅ בדיקה נוספת שהמיקום תקין
+                    if 29.5 <= gps_lat <= 33.5 and 34.2 <= gps_lon <= 35.9:
+                        # הוספת רעש למיקום GPS לצורכי אבטחה (~300 מטר)
+                        # ✅ שימוש ב-secure_location_offset עם ID יציב
+                        unique_id_for_offset = f"{unit}_{base}"
+                        lat_with_offset, lon_with_offset = secure_location_offset(gps_lat, gps_lon, unique_id_for_offset, offset_meters=300)
+                        data["latitude"] = lat_with_offset
+                        data["longitude"] = lon_with_offset
+                        
+                        # ✅ הדפסה ללוג
+                        print(f"💾 שומר למסד נתונים: lat={lat_with_offset:.6f}, lon={lon_with_offset:.6f}")
+                    else:
+                        st.warning("⚠️ המיקום לא נשמר כי הוא מחוץ לגבולות ישראל")
+                
+                try:
+                    # ניסיון לשמור את הדוח
+                    try:
+                        result = supabase.table("reports").insert(data).execute()
+                    except Exception as e:
+                        # טיפול בשגיאה אם העמודות החדשות עדיין לא קיימות במסד הנתונים
+                        if "PGRST204" in str(e) or "Could not find" in str(e):
+                            # ניסיון חוזר ללא השדות החדשים (שמירה שקטה של בסיס הדוח)
+                            # רשימת כל השדות החדשים שאולי חסרים
+                            new_fields = [
+                                "k_issues", "k_issues_description", "k_shabbat_supervisor", 
+                                "k_shabbat_supervisor_name", "k_shabbat_supervisor_phone",
+                                "k_issues_photo_url", "k_shabbat_photo_url",
+                                "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone"
+                            ]
+                            for field in new_fields:
+                                data.pop(field, None)
+                            result = supabase.table("reports").insert(data).execute()
+                        else:
+                            raise e
+                    
+                    # מעקב אוטומטי אחר חוסרים
+                    if result.data and len(result.data) > 0:
+                        report_id = result.data[0].get('id')
+                        if report_id:
+                            detect_and_track_deficits(data, report_id, unit)
+                    
+                    st.success("✅ הדוח נשלח בהצלחה ונקלט בחמ״ל!")
+                    clear_cache()
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    error_msg = str(e)
+                    # אם השגיאה היא בגלל עמודות שלא קיימות, נסה בלעדיהן
+                    if any(col in error_msg for col in ["latitude", "longitude", "photo_url"]):
+                        try:
+                            # הסרת עמודות שלא קיימות
+                            data.pop("latitude", None)
+                            data.pop("longitude", None)
+                            data.pop("photo_url", None)
+                            supabase.table("reports").insert(data).execute()
+                            st.success("✅ הדוח נשלח בהצלחה!")
+                            clear_cache()
+                            time.sleep(2)
+                            st.rerun()
+                        except Exception as e2:
+                            st.error(f"❌ שגיאה בשמירה: {e2}")
+                    else:
+                        st.error(f"❌ שגיאה בשמירה: {error_msg}")
+            else: st.error("⚠️ חסרים פרטי חובה (מוצב, מבקר או תמונה)")
     
     # --- סטטיסטיקות מבקרים ---
     st.markdown("---")
@@ -3710,23 +3694,7 @@ def render_unit_report():
             with col_s2:
                 st.markdown(f"<div style='background:{badge_color}; color:white; padding:10px; border-radius:8px; text-align:center; font-weight:bold; margin-top: 5px;'>{unit_badge}</div>", unsafe_allow_html=True)
             with col_s3:
-                # כפתור הורדה ראשי כאן
-                full_report_data_main = create_full_report_excel(unit_df)
-                if full_report_data_main:
-                    st.download_button(
-                        label="📥 הורד סיכום יחידה מלא (Excel)",
-                        data=full_report_data_main,
-                        file_name=f"full_unit_summary_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="dl_main_summary_unit"
-                    )
-            
-            st.markdown("---")
-
-            # כפתורי הורדה נוספים (ניתן להשאיר או להסיר, נשאיר כגיבוי)
-            col_dl1, col_dl2 = st.columns(2)
-            
+                # כפתור הורדה ראשי כאן            
             with col_dl1:
                 excel_data = create_inspector_excel(unit_df)
                 if excel_data:
@@ -3737,18 +3705,6 @@ def render_unit_report():
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True,
                         key="dl_inspectors_top"
-                    )
-                    
-            with col_dl2:
-                full_report_data = create_full_report_excel(unit_df)
-                if full_report_data:
-                    st.download_button(
-                        label="📊 דוח פעילות מלא (Excel)",
-                        data=full_report_data,
-                        file_name=f"full_activity_report_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="dl_full_report_top"
                     )
             
             st.markdown("---")
