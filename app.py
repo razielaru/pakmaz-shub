@@ -1762,12 +1762,14 @@ def render_command_dashboard():
     with col_title:
         st.markdown(f"## 🎯 מרכז בקרה פיקודי - {unit}")
     
-    # ✅ הכנת הקובץ מראש - לפני הטאבים!
-    # תיקון: הכנת קובץ Excel מראש - לפני הטאבים!
+    # ✅ הכנת הקובץ מראש - לפני הטאבים (דוח ארצי מלא)
+    all_data_for_excel = load_reports_cached(None) # None = כל הארץ
+    df_full = pd.DataFrame(all_data_for_excel) if all_data_for_excel else pd.DataFrame()
+    
     excel_file_ready = None
-    if not df.empty:
+    if not df_full.empty:
         try:
-            excel_file_ready = create_full_report_excel(df)
+            excel_file_ready = create_full_report_excel(df_full)
         except Exception as e:
             st.error(f"שגיאה ביצירת קובץ Excel: {e}")
     
@@ -1775,17 +1777,17 @@ def render_command_dashboard():
     st.markdown("---")
     if excel_file_ready:
         st.download_button(
-            label="📥 הורד דוח מלא (Excel) - כל הנתונים",
+            label="📥 הורד דוח ארצי מלא (כל היחידות)",
             data=excel_file_ready,
-            file_name=f"full_report_{role}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            file_name=f"full_national_report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
             type="primary",
-            key="global_excel_download"
+            key="national_excel_btn_stable"
         )
     else:
         if df.empty:
-            st.info("📊 אין נתונים זמינים כרגע. התחל בדיווח ראשון כדי לראות ניתוחים ותובנות.")
+            st.info("📊 אין נתונים זמינים כרגע.")
         else:
             st.warning("⚠️ לא ניתן ליצור קובץ Excel כרגע")
     
@@ -2736,96 +2738,55 @@ def render_command_dashboard():
                 if total_from_reports['no_supervisor'] > 0:
                     st.markdown(f"- 👤 **{total_from_reports['no_supervisor']} מוצבים ללא נאמן כשרות**")
     
-    # ===== טאב 6: מפה מבצעית =====
+    # ===== טאב 6: מפה ארצית =====
     with tabs[5]:
-        st.markdown("### 🛰️ תמונת מצב גזרתית - רבנות פקמ״ז")
+        st.markdown("### 🛰️ תמונת מצב ארצית - כלל המגזרים")
         st.info("🔐 **ביטחון מידע:** המיקומים מוזזים 300 מטר מהמיקום המדויק לצורכי אבטחת מידע")
         
-        # טעינת כל הנתונים למפה (מבט ארצי)
-        all_map_data = load_reports_cached(None)
-        map_df = pd.DataFrame(all_map_data) if all_map_data else pd.DataFrame()
+        # שליפת כל הנתונים ללא סינון (None)
+        map_raw = load_reports_cached(None)
+        full_map_df = pd.DataFrame(map_raw) if map_raw else pd.DataFrame()
         
-        # בדיקה אם יש עמודות מיקום
-        has_location_columns = not map_df.empty and 'latitude' in map_df.columns and 'longitude' in map_df.columns
-        
-        if has_location_columns:
-            # ניקוי נתונים ריקים
-            valid_map = map_df.dropna(subset=['latitude', 'longitude']).copy()
+        if not full_map_df.empty:
+            # ניקוי וביטול סינונים גאוגרפיים
+            v_map = full_map_df.dropna(subset=['latitude', 'longitude']).copy()
+            # גבולות רחבים מאוד (כל ישראל)
+            v_map = v_map[(v_map['latitude'] > 29) & (v_map['latitude'] < 34)]
             
-            # ✅ תיקון: הרחבת גבולות לכל ישראל (מאילת עד החרמון)
-            valid_map = valid_map[
-                (valid_map['latitude'] >= 29.0) & (valid_map['latitude'] <= 33.5) &  # ✅ כל ישראל
-                (valid_map['longitude'] >= 34.0) & (valid_map['longitude'] <= 36.0)   # ✅ כולל ירושלים
-            ]
+            # יצירת מפת Folium
+            center_lat = v_map['latitude'].mean()
+            center_lon = v_map['longitude'].mean()
             
-            # ✅ הצגת מידע דיבאג
-            st.info(f"🔍 נמצאו {len(map_df)} דוחות עם מיקום | {len(valid_map)} תקינים | מסוננו: {len(map_df) - len(valid_map)}")
+            # מיפוי צבעים לפי יחידה
+            unit_color_map = {
+                "חטמ״ר בנימין": "#1e3a8a",
+                "חטמ״ר שומרון": "#60a5fa",
+                "חטמ״ר יהודה": "#22c55e",
+                "חטמ״ר עציון": "#fb923c",
+                "חטמ״ר אפרים": "#ef4444",
+                "חטמ״ר מנשה": "#a855f7",
+                "חטמ״ר הבקעה": "#db2777"
+            }
             
-            if not valid_map.empty:
-                # מיפוי צבעים לפי יחידה
-                unit_color_map = {
-                    "חטמ״ר בנימין": "#1e3a8a",
-                    "חטמ״ר שומרון": "#60a5fa",
-                    "חטמ״ר יהודה": "#22c55e",
-                    "חטמ״ר עציון": "#fb923c",
-                    "חטמ״ר אפרים": "#ef4444",
-                    "חטמ״ר מנשה": "#a855f7",
-                    "חטמ״ר הבקעה": "#db2777"
-                }
+            m = create_street_level_map(center=(center_lat, center_lon), zoom_start=8)
+            
+            for _, row in v_map.iterrows():
+                add_unit_marker_to_folium(m, row, unit_color_map)
                 
-                # חישוב מרכז דינמי
-                center_lat = valid_map['latitude'].mean()
-                center_lon = valid_map['longitude'].mean()
-                
-                # חישוב רמת זום דינמית
-                lat_range = valid_map['latitude'].max() - valid_map['latitude'].min()
-                lon_range = valid_map['longitude'].max() - valid_map['longitude'].min()
-                
-                if lat_range > 1.5 or lon_range > 1.5:
-                    zoom_level = 8  # זום רחב לכל הארץ
-                elif lat_range > 0.5 or lon_range > 0.5:
-                    zoom_level = 10
-                else:
-                    zoom_level = 12
-                
-                st.success(f"✅ מציג {len(valid_map)} נקודות | מרכז: ({center_lat:.4f}, {center_lon:.4f}) | זום: {zoom_level}")
-                
-                # יצירת מפת Folium
-                m = create_street_level_map(center=(center_lat, center_lon), zoom_start=zoom_level)
-                
-                # הוספת נקודות
-                for _, row in valid_map.iterrows():
-                    add_unit_marker_to_folium(m, row, unit_color_map)
-                
-                # הצגת המפה
-                st_folium(m, width=1200, height=700, returned_objects=[])
-                
-                # מקרא
-                st.markdown("#### 🔑 מקרא חטמ״רים")
-                legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;'>"
-                for unit_name in sorted(valid_map['unit'].unique()):
-                    color = unit_color_map.get(unit_name, "#808080")
-                    count = len(valid_map[valid_map['unit'] == unit_name])
-                    legend_html += f"<div><span style='color: {color}; font-size: 1.5rem;'>●</span> {unit_name} ({count})</div>"
-                legend_html += "</div>"
-                st.markdown(legend_html, unsafe_allow_html=True)
-                
-                # ✅ טבלת דיבאג מפורטת
-                with st.expander("🔍 פירוט מיקומים (דיבאג)"):
-                    st.write(f"**סה\"כ דוחות:** {len(all_map_data)}")
-                    st.write(f"**עם lat/lon:** {len(map_df)}")
-                    st.write(f"**בגבולות ישראל:** {len(valid_map)}")
-                    
-                    if not valid_map.empty:
-                        debug_df = valid_map[['base', 'unit', 'date', 'latitude', 'longitude']].copy()
-                        debug_df['date'] = pd.to_datetime(debug_df['date']).dt.strftime('%d/%m/%Y %H:%M')
-                        st.dataframe(debug_df.sort_values('date', ascending=False), use_container_width=True, height=300)
-                    
-            else:
-                st.warning("⚠️ לא נמצאו נקודות GPS תקפות")
-                st.info(f"יש {len(map_df)} דוחות אבל כולם מחוץ לגבולות ישראל")
+            st_folium(m, width=1200, height=700, key="global_dashboard_map", returned_objects=[])
+            
+            # מקרא
+            st.markdown("#### 🔑 מקרא חטמ״רים")
+            legend_html = "<div style='display: flex; flex-wrap: wrap; gap: 15px; margin-top: 10px;'>"
+            for unit_name in sorted(v_map['unit'].unique()) if 'unit' in v_map.columns else []:
+                color = unit_color_map.get(unit_name, "#808080")
+                count = len(v_map[v_map['unit'] == unit_name])
+                legend_html += f"<div><span style='color: {color}; font-size: 1.5rem;'>●</span> {unit_name} ({count})</div>"
+            legend_html += "</div>"
+            st.markdown(legend_html, unsafe_allow_html=True)
+
         else:
-            st.warning("⚠️ לא קיימות עמודות מיקום במסד הנתונים. יש להוסיף אותן ב-Supabase כדי להציג נקודות על המפה.")
+            st.warning("⚠️ לא נמצאו נתוני מיקום")
     
     # ===== טאב 7: ניהול (רק פיקוד) =====
     if role == 'pikud':
@@ -3107,7 +3068,7 @@ def render_unit_report():
                 )
             
             # טאבים לניתוח
-            analysis_tabs = st.tabs(["🔴 חוסרים ובעיות", "🍴 עירוב וכשרות", "🏗️ תשתיות ויומן ביקורת", "📊 סיכום כללי"])
+            analysis_tabs = st.tabs(["🔴 חוסרים ובעיות", "🍴 עירוב וכשרות", "🏗️ תשתיות ויומן ביקורת", "📊 סיכום כללי", "🛰️ מפה ארצית"])
             
             latest_report = unit_df.sort_values('date', ascending=False).iloc[0] if len(unit_df) > 0 else None
             
@@ -3227,6 +3188,37 @@ def render_unit_report():
                     st.info("👍 **טוב!** היחידה במצב סביר, יש מקום לשיפור")
                 else:
                     st.warning("⚠️ **דורש תשומת לב!** יש נושאים שדורשים טיפול")
+            
+            with analysis_tabs[4]: # מפה ארצית
+                st.markdown("#### 🛰️ מפה ארצית מלאה")
+                
+                # טעינת כל הנתונים ללא סינון
+                unit_map_raw = load_reports_cached(None) 
+                unit_map_df = pd.DataFrame(unit_map_raw) if unit_map_raw else pd.DataFrame()
+                
+                if not unit_map_df.empty:
+                    v_unit_map = unit_map_df.dropna(subset=['latitude', 'longitude']).copy()
+                    # ביטול סינונים - מציג את כל הארץ
+                    v_unit_map = v_unit_map[(v_unit_map['latitude'] > 29) & (v_unit_map['latitude'] < 34)]
+                    
+                    # מיפוי צבעים
+                    unit_color_map = {
+                        "חטמ״ר בנימין": "#1e3a8a",
+                        "חטמ״ר שומרון": "#60a5fa",
+                        "חטמ״ר יהודה": "#22c55e",
+                        "חטמ״ר עציון": "#fb923c",
+                        "חטמ״ר אפרים": "#ef4444",
+                        "חטמ״ר מנשה": "#a855f7",
+                        "חטמ״ר הבקעה": "#db2777"
+                    }
+                    
+                    m_unit = create_street_level_map(center=(31.7, 35.2), zoom_start=8)
+                    for _, row in v_unit_map.iterrows():
+                        add_unit_marker_to_folium(m_unit, row, unit_color_map)
+                        
+                    st_folium(m_unit, width=1200, height=500, key="hatmar_global_map", returned_objects=[])
+                else:
+                    st.warning("לא נמצאו נתונים למפה")
         
         st.markdown("---")
 
@@ -3410,6 +3402,7 @@ def render_unit_report():
                 st.error(f"🚨 **התראה:** {distance:.1f} ק\"מ מ-{nearest_base} - מיקום חריג!")
         else:
             st.warning("📡 מחפש מיקום GPS... אנא המתן עד להופעת אישור ירוק לפני השליחה")
+            st.caption("ירושלים: lat ~31.7, lon ~35.2")
         
         c1, c2, c3 = st.columns(3)
         date = c1.date_input("תאריך", datetime.date.today())
