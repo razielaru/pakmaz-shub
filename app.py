@@ -1271,7 +1271,6 @@ def generate_inspector_stats(df):
             
             st.markdown("---")
 ```
-
 **רק אם מחובר כרב חטמ"ר - הכפתורים כבר קיימים בקטע "else" של commander_authenticated**
 
 ---
