@@ -3658,24 +3658,6 @@ def render_unit_report():
                 st.metric("ציון משוקלל", f"{unit_score:.1f}/100")
             with col_s2:
                 st.markdown(f"<div style='background:{badge_color}; color:white; padding:10px; border-radius:8px; text-align:center; font-weight:bold; margin-top: 5px;'>{unit_badge}</div>", unsafe_allow_html=True)
-            with col_s3:
-                # כפתור הורדה ראשי כאן
-                full_report_data_main = create_full_report_excel(unit_df)
-                if full_report_data_main:
-                    st.download_button(
-                        label="📥 הורד סיכום יחידה מלא (Excel)",
-                        data=full_report_data_main,
-                        file_name=f"full_unit_summary_{st.session_state.selected_unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key=f"dl_main_summary_unit_{pd.Timestamp.now().strftime('%H%M%S')}"
-                    )
-                else:
-                    st.warning("⚠️ לא ניתן ליצור דוח מלא")
-                
-            
-            st.markdown("---")
-
             # טאבים לסטטיסטיקות
             stats_tabs = st.tabs(["🏆 טבלת מובילים", "📍 מיקומים", "⏰ שעות פעילות", "📈 התקדמות"])
             
