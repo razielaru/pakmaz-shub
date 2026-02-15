@@ -2382,29 +2382,6 @@ def render_command_dashboard():
         else:
             st.warning("לא נמצאו עמודות להצגה")
         
-        # 🆕 כפתור הורדה למפקדים
-        st.markdown("---")
-        
-        try:
-            full_report_excel_cmd = create_full_report_excel(unit_df)
-            if full_report_excel_cmd:
-                st.download_button(
-                    label="📥 לחץ כאן להורדת קובץ Excel מלא",
-                    data=full_report_excel_cmd,
-                    file_name=f"full_report_{selected_unit}_{datetime.date.today().strftime('%d%m%y')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                    type="primary",
-                    key=f"dl_excel_pikud_detailed_{selected_unit}_{int(time.time())}"
-                )
-            else:
-                st.info("ℹ️ לא ניתן ליצור קובץ Excel כרגע (אין נתונים מספיקים)")
-        except Exception as e:
-            st.error(f"שגיאה ביצירת קובץ Excel: {e}")
-            
-        st.caption("📊 הקובץ כולל את כל השאלות והתשובות מהשאלון")
-        
-        st.markdown("---")
         
         # 🆕 סיכומים מפורטים אחרי הטבלה
         st.markdown("### 📊 סיכומים מקיפים")
