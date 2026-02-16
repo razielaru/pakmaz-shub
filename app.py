@@ -3652,6 +3652,12 @@ def render_unit_report():
         if 'soldier_yeshiva' in unit_df.columns:
             torah_columns.append('soldier_yeshiva')
         
+        # 🆕 עמודות טופס בית כנסת (נוספו לבקשת המשתמש)
+        if 's_torah_id' in unit_df.columns:
+            torah_columns.append('s_torah_id')
+        if 's_torah_nusach' in unit_df.columns:
+            torah_columns.append('s_torah_nusach')
+        
         # 🆕 עמודות טרקלין וויקוק
         lounge_vikok_columns = []
         # Lounge
