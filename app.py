@@ -19,6 +19,7 @@ import math
 from typing import Tuple, Optional, List, Dict
 import folium
 from streamlit_folium import st_folium
+st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")
 
 # ===== פונקציות עזר למיקום וחישוב מרחקים =====
 
