@@ -459,8 +459,9 @@ st.markdown("""
     }
     
     /* שיפורים כלליים לכל המכשירים */
-    * {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+    /* שיפורים כלליים לכל המכשירים - תיקון אייקונים */
+    html, body, [class*="css"] {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
     
     /* RTL support */
@@ -1574,6 +1575,8 @@ def create_full_report_excel(df):
             'soldier_yeshiva': 'ימי ישיבה',
             'r_mezuzot_missing': '📜 מזוזות חסרות',
             'missing_items': '⚠️ חוסרים כלליים',
+            's_torah_id': "מס' צ' ספר תורה",
+            's_torah_nusach': "נוסח ספר תורה",
             'free_text': '📝 הערות נוספות'
         }
         
@@ -3268,6 +3271,7 @@ def create_enhanced_excel_report(df, unit_name=""):
                 'w_location': 'ויקוק-מיקום', 'w_private': 'ויקוק-פרטי', 
                 'w_kitchen_tools': 'ויקוק-מטבח', 'w_procedure': 'ויקוק-פקודה', 'w_guidelines': 'ויקוק-הנחיות',
                 'soldier_want_lesson': 'שיעור תורה-רצון', 'soldier_has_lesson': 'שיעור תורה-קיים',
+                's_torah_id': "מס' צ' ספר תורה", 's_torah_nusach': "נוסח ספר תורה",
                 'free_text': 'הערות'
             }
             
@@ -3811,6 +3815,11 @@ def render_unit_report():
     r_shabbat_device = c2.radio("האם קיימים התקני שבת?", ["כן", "לא", "חלקי"], horizontal=True, key="r5")
         
     st.markdown("### 🕍 בית כנסת")
+    # 🆕 פרטי ספר תורה
+    c_torah1, c_torah2 = st.columns(2)
+    s_torah_id = c_torah1.text_input("מס' צ' של ספר התורה", placeholder="לדוגמה: 12345", help="הזן את המספר הצה''לי של הספר")
+    s_torah_nusach = c_torah2.selectbox("נוסח ספר התורה", ["ספרדי", "אשכנז", "תימן", "אחר", "לא ידוע"])
+    
     c1, c2 = st.columns(2)
     s_board = radio_with_explanation("האם לוח רבנות מעודכן?", "s1", col=c1)
     s_clean = radio_with_explanation("האם בית הכנסת נקי?", "s7", col=c2)
@@ -4080,6 +4089,8 @@ def render_unit_report():
                 "r_sg": r_sg, "r_hamal": r_hamal, "r_sign": r_sign, "r_netilot": r_netilot,
                 "r_shabbat_device": r_shabbat_device, "s_board": s_board, "s_books": str(s_books),
                 "s_havdala": s_havdala, "s_gemach": s_gemach, "s_smartbis": s_smartbis, "s_geniza": s_geniza,
+                # 🆕
+                "s_torah_id": s_torah_id, "s_torah_nusach": s_torah_nusach,
                 "e_check": e_check, "e_doc": e_doc, "e_photo": e_photo,
                 "k_separation": k_separation, "k_briefing": k_briefing, "k_products": k_products,
                 "k_leafs": k_leafs, "k_holes": k_holes, "k_bishul": k_bishul,
