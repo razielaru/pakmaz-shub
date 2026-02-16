@@ -3439,6 +3439,48 @@ def render_unit_report():
                         st.warning(f"📖 **ספרי תורה חסרים:** {torah_missing}")
                     else:
                         st.success("✅ **ספרי תורה:** תקין")
+
+                # 🆕 ניהול וסגירת חוסרים (עבור רב חטמ"ר)
+                st.markdown("---")
+                st.markdown("#### 🔴 ניהול וסגירת חוסרים")
+                
+                # שליפת רשימת החוסרים הפתוחים רק ליחידה של רב החטמ"ר
+                current_unit = st.session_state.selected_unit
+                unit_deficits = get_open_deficits([current_unit])
+                
+                if not unit_deficits.empty:
+                    # לוגיקת הצגת כפתורי ה-"סגור" (העתקה מה-Command Dashboard)
+                    for base in sorted(unit_deficits['base'].unique()):
+                        st.markdown(f"**📍 {base}:**")
+                        base_deficits = unit_deficits[unit_deficits['base'] == base]
+                        
+                        for _, deficit in base_deficits.iterrows():
+                            # תרגום סוג החוסר
+                            deficit_names = {
+                                'mezuzot': 'מזוזות חסרות',
+                                'eruv_kelim': 'ערבוב כלים',
+                                'kashrut_cert': 'תעודת כשרות חסרה',
+                                'eruv_status': 'עירוב פסול',
+                                'shabbat_supervisor': 'נאמן כשרות חסר'
+                            }
+                            deficit_type_he = deficit_names.get(deficit['deficit_type'], deficit['deficit_type'])
+                            
+                            col1, col2 = st.columns([3, 1])
+                            with col1:
+                                st.markdown(f"""
+                                    <div style="padding: 10px; border-right: 4px solid #ef4444; background-color: #f8fafc; border-radius: 5px; margin-bottom: 10px;">
+                                        <div style="font-weight: 700;">• {deficit_type_he}</div>
+                                        <div style="color: #64748b; font-size: 0.9rem;">כמות: {deficit['deficit_count']}</div>
+                                    </div>
+                                """, unsafe_allow_html=True)
+                            with col2:
+                                if st.button("✅ סגור", key=f"cmd_close_{deficit['id']}"):
+                                    if update_deficit_status(deficit['id'], 'closed', notes="נסגר על ידי רב החטמ״ר"):
+                                        st.success("החוסר נסגר")
+                                        time.sleep(0.5)
+                                        st.rerun()
+                else:
+                    st.success("אין חוסרים פתוחים ליחידה זו")
                 
                 with col2:
                     tzitzit_missing = int(latest_report.get('r_tzitzit_missing', 0)) if latest_report is not None else 0
@@ -3629,6 +3671,8 @@ def render_unit_report():
         other_columns = []
         if 'r_mezuzot_missing' in unit_df.columns:
             other_columns.append('r_mezuzot_missing')
+        if 'r_torah_missing' in unit_df.columns:
+            other_columns.append('r_torah_missing')
         if 'missing_items' in unit_df.columns:
             other_columns.append('missing_items')
         if 'free_text' in unit_df.columns:
@@ -3686,6 +3730,7 @@ def render_unit_report():
                 
                 # חוסרים ונוספים
                 'r_mezuzot_missing': '📜 מזוזות חסרות',
+                'r_torah_missing': '📖 ספרי תורה חסרים',
                 'missing_items': '⚠️ חוסרים כלליים',
                 'free_text': '📝 הערות נוספות'
             }
