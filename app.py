@@ -3876,7 +3876,6 @@ def render_unit_report():
     c_torah1, c_torah2, c_torah3 = st.columns(3)
     s_torah_id = c_torah1.text_input("מס' צ' של ספר התורה", placeholder="לדוגמה: 12345", help="הזן את המספר הצה''לי של הספר")
     s_torah_nusach = c_torah2.selectbox("נוסח ספר התורה", ["ספרדי", "אשכנז", "תימן", "אחר", "לא ידוע"])
-    r_torah_missing = c_torah3.number_input("ספרי תורה חסרים", min_value=0, max_value=10, value=0, help="כמה ספרי תורה חסרים ביחידה?")
     
     c1, c2 = st.columns(2)
     s_board = radio_with_explanation("האם לוח רבנות מעודכן?", "s1", col=c1)
