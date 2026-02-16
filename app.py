@@ -2897,6 +2897,26 @@ def create_enhanced_excel_report(df, unit_name=""):
         st.error(f"שגיאה ביצירת אקסל: {e}")
         return None
 
+def radio_with_explanation(label, key, horizontal=True):
+    """
+    Helper function to create a radio button with an optional explanation field
+    for "Don't Know" answers.
+    """
+    options = ["כן", "לא", "לא יודע / לא בדקתי"]
+    # Use a unique key for the radio based on the provided key
+    selected = st.radio(label, options, horizontal=horizontal, key=f"radio_{key}")
+    
+    final_answer = selected
+    if selected == "לא יודע / לא בדקתי":
+        # Show text input if "Don't Know" is selected
+        reason = st.text_input(f"פרט מדוע ({label})", key=f"reason_{key}")
+        if reason:
+            final_answer = f"לא יודע ({reason})"
+        else:
+            final_answer = "לא יודע"
+            
+    return final_answer
+
 def render_unit_report():
     """הטופס המלא"""
     unit = st.session_state.selected_unit
@@ -3188,6 +3208,17 @@ def render_unit_report():
         if 'soldier_yeshiva' in unit_df.columns:
             torah_columns.append('soldier_yeshiva')
         
+        # 🆕 עמודות טרקלין וויקוק
+        lounge_vikok_columns = []
+        # Lounge
+        if 't_private' in unit_df.columns: lounge_vikok_columns.append('t_private')
+        if 't_kitchen_tools' in unit_df.columns: lounge_vikok_columns.append('t_kitchen_tools')
+        if 't_procedure' in unit_df.columns: lounge_vikok_columns.append('t_procedure')
+        if 't_friday' in unit_df.columns: lounge_vikok_columns.append('t_friday')
+        # Vikok
+        if 'w_location' in unit_df.columns: lounge_vikok_columns.append('w_location')
+        if 'w_private' in unit_df.columns: lounge_vikok_columns.append('w_private')
+
         # 🆕 עמודות חוסרים ונוספות
         other_columns = []
         if 'r_mezuzot_missing' in unit_df.columns:
@@ -3198,7 +3229,7 @@ def render_unit_report():
             other_columns.append('free_text')
         
         # איחוד כל העמודות
-        all_columns = base_columns + status_columns + kashrut_issues_columns + torah_columns + other_columns
+        all_columns = base_columns + status_columns + kashrut_issues_columns + torah_columns + lounge_vikok_columns + other_columns
         
         # סינון רק עמודות קיימות
         available_columns = [col for col in all_columns if col in unit_df.columns]
@@ -3226,6 +3257,16 @@ def render_unit_report():
                 'k_products': 'רכש חוץ לא מאושר',
                 'k_bishul': 'בישול ישראל',
                 
+                # טרקלין
+                't_private': '☕ טרקלין - כלים פרטיים',
+                't_kitchen_tools': '🥣 טרקלין - כלי מטבח',
+                't_procedure': '🔒 טרקלין - נוהל סגירה',
+                't_friday': '🛑 טרקלין - סגור בשבת',
+                
+                # ויקוק
+                'w_location': '📍 ויקוק - מיקום',
+                'w_private': '🥤 ויקוק - כלים פרטיים',
+
                 # שיעורי תורה
                 'soldier_want_lesson': '💡 רצון לשיעור תורה',
                 'soldier_has_lesson': '📚 יש שיעור במוצב?',
@@ -3337,54 +3378,54 @@ def render_unit_report():
         
         st.markdown("### 🏠 פילבוקס / הגנ״ש")
         c1, c2 = st.columns(2)
-        p_pakal = c1.radio("האם יש פק״ל רבנות?", ["כן", "לא"], horizontal=True, key="p1")
-        p_marked = c2.radio("האם הכלים מסומנים?", ["כן", "לא"], horizontal=True, key="p2")
+        p_pakal = radio_with_explanation("האם יש פק״ל רבנות?", "p1")
+        p_marked = radio_with_explanation("האם הכלים מסומנים?", "p2")
         c1, c2 = st.columns(2)
-        p_mix = c1.radio("האם זוהה ערבוב כלים?", ["כן", "לא"], horizontal=True, key="p3")
-        p_kasher = c2.radio("האם נדרשת הכשרה כלים?", ["כן", "לא"], horizontal=True, key="p4")
+        p_mix = radio_with_explanation("האם זוהה ערבוב כלים?", "p3")
+        p_kasher = radio_with_explanation("האם נדרשת הכשרה כלים?", "p4")
         
         st.markdown("### 📜 נהלים")
         c1, c2 = st.columns(2)
-        r_sg = c1.radio("האם יש הוראות רבנות בש.ג?", ["כן", "לא"], horizontal=True, key="r1")
-        r_hamal = c2.radio("האם יש הוראות רבנות בחמ״ל?", ["כן", "לא"], horizontal=True, key="r2")
+        r_sg = radio_with_explanation("האם יש הוראות רבנות בש.ג?", "r1")
+        r_hamal = radio_with_explanation("האם יש הוראות רבנות בחמ״ל?", "r2")
         c1, c2 = st.columns(2)
-        r_sign = c1.radio("האם יש שילוט על מתקנים שיש בהם חילול שבת (כגון תמי 4)?", ["כן", "לא"], horizontal=True, key="r3")
-        r_netilot = c2.radio("האם קיימות נטלות?", ["כן", "לא"], horizontal=True, key="r4")
+        r_sign = radio_with_explanation("האם יש שילוט על מתקנים שיש בהם חילול שבת (כגון תמי 4)?", "r3")
+        r_netilot = radio_with_explanation("האם קיימות נטלות?", "r4")
         c1, c2 = st.columns(2)
         r_mezuzot_missing = c1.number_input("כמה מזוזות חסרות?", 0)
-        r_shabbat_device = c2.radio("האם קיימים התקני שבת?", ["כן", "לא", "חלקי"], horizontal=True, key="r5")
+        r_shabbat_device = st.radio("האם קיימים התקני שבת?", ["כן", "לא", "חלקי"], horizontal=True, key="r5")
         
         st.markdown("### 🕍 בית כנסת")
         c1, c2 = st.columns(2)
-        s_board = c1.radio("האם לוח רבנות מעודכן?", ["כן", "לא"], horizontal=True, key="s1")
-        s_clean = c2.radio("האם בית הכנסת נקי?", ["כן", "לא"], horizontal=True, key="s7")
+        s_board = radio_with_explanation("האם לוח רבנות מעודכן?", "s1")
+        s_clean = radio_with_explanation("האם בית הכנסת נקי?", "s7")
         s_books = st.multiselect("ספרי יסוד קיימים:", ["תורת המחנה", "לוח דינים", "הלכה כסדרה", "שו״ת משיב מלחמה"])
         c1, c2 = st.columns(2)
-        s_havdala = c1.radio("האם יש ערכת הבדלה והדלקת נרות שבת?", ["כן", "לא"], horizontal=True, key="s3")
-        s_gemach = c2.radio("האם יש גמ״ח טלית ותפילין?", ["כן", "לא"], horizontal=True, key="s4")
+        s_havdala = radio_with_explanation("האם יש ערכת הבדלה והדלקת נרות שבת?", "s3")
+        s_gemach = radio_with_explanation("האם יש גמ״ח טלית ותפילין?", "s4")
         c1, c2 = st.columns(2)
-        s_smartbis = c1.radio("האם יש תקלת בינוי (אם כן עדכנת בסמארט-ביס)?", ["כן", "לא"], horizontal=True, key="s5")
-        s_geniza = c2.radio("האם יש פח גניזה?", ["כן", "לא"], horizontal=True, key="s6")
+        s_smartbis = radio_with_explanation("האם יש תקלת בינוי (אם כן עדכנת בסמארט-ביס)?", "s5")
+        s_geniza = radio_with_explanation("האם יש פח גניזה?", "s6")
         
         st.markdown("### 🚧 עירוב")
         c1, c2 = st.columns(2)
         e_status = c1.selectbox("סטטוס עירוב", ["תקין", "פסול", "בטיפול"])
-        e_check = c2.radio("האם בוצעה בדיקה?", ["כן", "לא"], horizontal=True, key="e1")
+        e_check = radio_with_explanation("האם בוצעה בדיקה?", "e1")
         c1, c2 = st.columns(2)
-        e_doc = c1.radio("האם בוצע תיעוד?", ["כן", "לא"], horizontal=True, key="e2")
-        e_photo = c2.radio("האם קיימת תצ״א?", ["כן", "לא"], horizontal=True, key="e3")
+        e_doc = radio_with_explanation("האם בוצע תיעוד?", "e2")
+        e_photo = radio_with_explanation("האם קיימת תצ״א?", "e3")
         
         st.markdown("### 🍽️ מטבח")
         k_cook_type = st.selectbox("סוג מטבח", ["מבשל", "מחמם"])
         c1, c2 = st.columns(2)
-        k_cert = c1.radio("תעודת כשרות מתוקפת?", ["כן", "לא"], horizontal=True, key="k7")
-        k_bishul = c2.radio("האם יש בישול ישראל?", ["כן", "לא"], horizontal=True, key="k8")
+        k_cert = radio_with_explanation("תעודת כשרות מתוקפת?", "k7")
+        k_bishul = radio_with_explanation("האם יש בישול ישראל?", "k8")
         
         # שאלות חדשות עם תמונות
         st.markdown("#### 📸 תקלות ונאמן כשרות")
         c1, c2 = st.columns(2)
-        k_issues = c1.radio("יש תקלות כשרות?", ["כן", "לא"], horizontal=True, key="k_issues")
-        k_shabbat_supervisor = c2.radio("יש נאמן כשרות בשבת?", ["כן", "לא"], horizontal=True, key="k_shabbat_sup")
+        k_issues = radio_with_explanation("יש תקלות כשרות?", "k_issues")
+        k_shabbat_supervisor = radio_with_explanation("יש נאמן כשרות בשבת?", "k_shabbat_sup")
         
         # 🆕 פירוט תקלות (אם יש)
         k_issues_description = ""
@@ -3412,58 +3453,61 @@ def render_unit_report():
             k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן כשרות (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo")
         
         c1, c2 = st.columns(2)
-        k_separation = c1.radio("האם יש הפרדה?", ["כן", "לא"], horizontal=True, key="k1")
-        k_briefing = c2.radio("האם בוצע תדריך טבחים?", ["כן", "לא"], horizontal=True, key="k2")
+        k_separation = radio_with_explanation("האם יש הפרדה?", "k1")
+        k_briefing = radio_with_explanation("האם בוצע תדריך טבחים?", "k2")
         c1, c2 = st.columns(2)
-        k_products = c1.radio("האם רכש חוץ מתנהל לפי פקודה?", ["כן", "לא"], horizontal=True, key="k3")
-        k_dates = c2.radio("האם יש דף תאריכים לתבלינים?", ["כן", "לא"], horizontal=True, key="k4")
+        k_products = radio_with_explanation("האם רכש חוץ מתנהל לפי פקודה?", "k3")
+        k_dates = radio_with_explanation("האם יש דף תאריכים לתבלינים?", "k4")
         c1, c2 = st.columns(2)
-        k_leafs = c1.radio("האם יש שטיפת ירק?", ["כן", "לא"], horizontal=True, key="k5")
-        k_holes = c2.radio("בוצע חירור גסטרונומים?", ["כן", "לא"], horizontal=True, key="k6")
+        k_leafs = radio_with_explanation("האם יש שטיפת ירק?", "k5")
+        k_holes = radio_with_explanation("בוצע חירור גסטרונומים?", "k6")
         c1, c2 = st.columns(2)
-        k_eggs = c1.radio("האם מבוצעת בדיקת ביצים?", ["כן", "לא"], horizontal=True, key="k9")
-        k_machshir = c2.radio("האם יש חדר מכ״ש במפג״ד?", ["כן", "לא"], horizontal=True, key="k10")
+        k_eggs = radio_with_explanation("האם מבוצעת בדיקת ביצים?", "k9")
+        k_machshir = radio_with_explanation("האם יש חדר מכ״ש במפג״ד?", "k10")
         c1, c2 = st.columns(2)
-        k_heater = c1.radio("האם יש חימום נפרד בין בשר ודגים?", ["כן", "לא"], horizontal=True, key="k11")
-        k_app = c2.radio("האם מולאה אפליקציה?", ["כן", "לא"], horizontal=True, key="k12")
+        k_heater = radio_with_explanation("האם יש חימום נפרד בין בשר ודגים?", "k11")
+        k_app = radio_with_explanation("האם מולאה אפליקציה?", "k12")
         
         st.markdown("### ☕ טרקלין")
         c1, c2 = st.columns(2)
-        t_private = c1.radio("האם יש כלים פרטיים?", ["כן", "לא"], horizontal=True, key="t1")
-        t_kitchen_tools = c2.radio("האם יש כלי מטבח?", ["כן", "לא"], horizontal=True, key="t2")
+        t_private = radio_with_explanation("האם יש כלים פרטיים?", "t1")
+        t_kitchen_tools = radio_with_explanation("האם יש כלי מטבח?", "t2")
         c1, c2 = st.columns(2)
-        t_procedure = c1.radio("האם נשמר נוהל סגירה?", ["כן", "לא"], horizontal=True, key="t3")
-        t_friday = c2.radio("האם הכלים החשמליים סגורים בשבת?", ["כן", "לא"], horizontal=True, key="t4")
-        t_app = st.radio("האם מולאה אפליקציה לטרקלין?", ["כן", "לא"], horizontal=True, key="t5")
+        t_procedure = radio_with_explanation("האם נשמר נוהל סגירה?", "t3")
+        t_friday = radio_with_explanation("האם הכלים החשמליים סגורים בשבת?", "t4")
+        t_app = radio_with_explanation("האם מולאה אפליקציה לטרקלין?", "t5")
         
         st.markdown("### 🍳 WeCook ויקווק")
         w_location = st.text_input("מיקום הוויקוק")
         c1, c2 = st.columns(2)
-        w_private = c1.radio("האם יש כלים פרטיים בוויקוק?", ["כן", "לא"], horizontal=True, key="w1")
-        w_kitchen_tools = c2.radio("האם יש כלי מטבח בוויקוק?", ["כן", "לא"], horizontal=True, key="w2")
+        w_private = radio_with_explanation("האם יש כלים פרטיים בוויקוק?", "w1")
+        w_kitchen_tools = radio_with_explanation("האם יש כלי מטבח בוויקוק?", "w2")
         c1, c2 = st.columns(2)
-        w_procedure = c1.radio("האם עובד לפי פקודה?", ["כן", "לא"], horizontal=True, key="w3")
-        w_guidelines = c2.radio("האם יש הנחיות?", ["כן", "לא"], horizontal=True, key="w4")
+        w_procedure = radio_with_explanation("האם עובד לפי פקודה?", "w3")
+        w_guidelines = radio_with_explanation("האם יש הנחיות?", "w4")
         
         st.markdown("### ⚠️ חוסרים")
         missing = st.text_area("פירוט חוסרים")
         
-        st.markdown("### 💬 שיחת חתך")
+        st.markdown("### 💬 עם חייל/ת במוצב שיחת חתך")
         
         c1, c2 = st.columns(2)
-        soldier_yeshiva = c1.radio("האם יש ימי ישיבה?", ["כן", "לא"], horizontal=True, key="so1")
+        soldier_yeshiva = radio_with_explanation("האם יש ימי ישיבה?", "so1")
         
         # 🆕 שאלה חדשה - רצון לשיעור תורה
-        soldier_want_lesson = c2.radio("האם יש רצון לשיעור תורה?", ["כן", "לא"], horizontal=True, key="so_want_lesson")
+        soldier_want_lesson = radio_with_explanation("האם יש רצון לשיעור תורה?", "so_want_lesson")
         
         # 🆕 שאלה חדשה - שיעור תורה קיים
         c1, c2 = st.columns(2)
-        soldier_has_lesson = c1.radio("יש שיעור תורה במוצב?", ["כן", "לא"], horizontal=True, key="so_has_lesson")
+        soldier_has_lesson = radio_with_explanation("יש שיעור תורה במוצב?", "so_has_lesson")
         
         # 🆕 אם יש שיעור - שדות נוספים
         soldier_lesson_teacher = ""
         soldier_lesson_phone = ""
         
+        # Note: We check if strict "כן" or if string contains "כן" or handle "לא יודע"
+        # The logic below relies on strict "כן". If user selects "Don't know", the extra fields won't show.
+        # This is acceptable behavior.
         if soldier_has_lesson == "כן":
             col_teacher, col_phone = st.columns(2)
             with col_teacher:
@@ -3475,14 +3519,14 @@ def render_unit_report():
         
         # שאלות קיימות
         c1, c2 = st.columns(2)
-        soldier_food = c1.radio("האם המענה הכשרותי מספק?", ["כן", "לא"], horizontal=True, key="so2")
-        soldier_shabbat_training = c2.radio("האם יש אימונים בשבת?", ["כן", "לא"], horizontal=True, key="so3")
+        soldier_food = radio_with_explanation("האם המענה הכשרותי מספק?", "so2")
+        soldier_shabbat_training = radio_with_explanation("האם יש אימונים בשבת?", "so3")
         
         c1, c2 = st.columns(2)
-        soldier_knows_rabbi = c1.radio("האם מכיר את הרב?", ["כן", "לא"], horizontal=True, key="so4")
-        soldier_prayers = c2.radio("האם יש זמני תפילות?", ["כן", "לא"], horizontal=True, key="so5")
+        soldier_knows_rabbi = radio_with_explanation("האם מכיר את הרב?", "so4")
+        soldier_prayers = radio_with_explanation("האם יש זמני תפילות?", "so5")
         
-        soldier_talk_cmd = st.radio("האם יש שיח מפקדים?", ["כן", "לא"], horizontal=True, key="so6")
+        soldier_talk_cmd = radio_with_explanation("האם יש שיח מפקדים?", "so6")
         
         st.markdown("---")
         free_text = st.text_area("הערות נוספות")
