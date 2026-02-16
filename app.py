@@ -1233,6 +1233,22 @@ def create_full_report_excel(df):
             'p_mix': '🔴 ערבוב כלים',
             'k_products': 'רכש חוץ לא מאושר',
             'k_bishul': 'בישול ישראל',
+            
+            # טרקלין
+            't_private': '☕ טרקלין - כלים פרטיים',
+            't_kitchen_tools': '🥣 טרקלין - כלי מטבח',
+            't_procedure': '🔒 טרקלין - נוהל סגירה',
+            't_friday': '🛑 טרקלין - סגור בשבת',
+            't_app': '📱 טרקלין - אפליקציה',
+            
+            # ויקוק
+            'w_location': '📍 ויקוק - מיקום',
+            'w_private': '🥤 ויקוק - כלים פרטיים',
+            'w_kitchen_tools': '🍴 ויקוק - כלי מטבח',
+            'w_procedure': '📜 ויקוק - עובד לפי פקודה',
+            'w_guidelines': '📋 ויקוק - הנחיות',
+
+            # שיעורי תורה
             'soldier_want_lesson': '💡 רצון לשיעור תורה',
             'soldier_has_lesson': '📚 יש שיעור במוצב?',
             'soldier_lesson_teacher': '👨‍🏫 שם מעביר השיעור',
@@ -2319,6 +2335,22 @@ def render_command_dashboard():
         if 'soldier_yeshiva' in unit_df.columns:
             torah_columns.append('soldier_yeshiva')
         
+        # 🆕 עמודות טרקלין וויקוק
+        lounge_vikok_columns = []
+        # Lounge
+        if 't_private' in unit_df.columns: lounge_vikok_columns.append('t_private')
+        if 't_kitchen_tools' in unit_df.columns: lounge_vikok_columns.append('t_kitchen_tools')
+        if 't_procedure' in unit_df.columns: lounge_vikok_columns.append('t_procedure')
+        if 't_friday' in unit_df.columns: lounge_vikok_columns.append('t_friday')
+        if 't_app' in unit_df.columns: lounge_vikok_columns.append('t_app')
+        
+        # Vikok
+        if 'w_location' in unit_df.columns: lounge_vikok_columns.append('w_location')
+        if 'w_private' in unit_df.columns: lounge_vikok_columns.append('w_private')
+        if 'w_kitchen_tools' in unit_df.columns: lounge_vikok_columns.append('w_kitchen_tools')
+        if 'w_procedure' in unit_df.columns: lounge_vikok_columns.append('w_procedure')
+        if 'w_guidelines' in unit_df.columns: lounge_vikok_columns.append('w_guidelines')
+
         # 🆕 עמודות חוסרים ונוספות
         other_columns = []
         if 'r_mezuzot_missing' in unit_df.columns:
@@ -2329,7 +2361,7 @@ def render_command_dashboard():
             other_columns.append('free_text')
         
         # איחוד כל העמודות
-        all_columns = base_columns + status_columns + kashrut_issues_columns + torah_columns + other_columns
+        all_columns = base_columns + status_columns + kashrut_issues_columns + torah_columns + lounge_vikok_columns + other_columns
         
         # סינון רק עמודות קיימות
         available_columns = [col for col in all_columns if col in unit_df.columns]
@@ -2357,6 +2389,20 @@ def render_command_dashboard():
                 'k_products': 'רכש חוץ לא מאושר',
                 'k_bishul': 'בישול ישראל',
                 
+                # טרקלין
+                't_private': '☕ טרקלין - כלים פרטיים',
+                't_kitchen_tools': '🥣 טרקלין - כלי מטבח',
+                't_procedure': '🔒 טרקלין - נוהל סגירה',
+                't_friday': '🛑 טרקלין - סגור בשבת',
+                't_app': '📱 טרקלין - אפליקציה',
+                
+                # ויקוק
+                'w_location': '📍 ויקוק - מיקום',
+                'w_private': '🥤 ויקוק - כלים פרטיים',
+                'w_kitchen_tools': '🍴 ויקוק - כלי מטבח',
+                'w_procedure': '📜 ויקוק - עובד לפי פקודה',
+                'w_guidelines': '📋 ויקוק - הנחיות',
+                
                 # שיעורי תורה
                 'soldier_want_lesson': '💡 רצון לשיעור תורה',
                 'soldier_has_lesson': '📚 יש שיעור במוצב?',
@@ -2371,7 +2417,9 @@ def render_command_dashboard():
             }
             
             # החלפת שמות העמודות
-            display_df.columns = [column_mapping.get(col, col) for col in display_df.columns]
+            # display_df.columns = [column_mapping.get(col, col) for col in display_df.columns]
+            # Use rename instead to handle duplicates better if any, though map is safer
+            display_df.rename(columns=column_mapping, inplace=True)
             
             # הצגת הטבלה
             st.dataframe(
@@ -2881,6 +2929,12 @@ def create_enhanced_excel_report(df, unit_name=""):
             column_mapping = {
                 'date': 'תאריך', 'base': 'מוצב', 'inspector': 'מבקר',
                 'e_status': 'סטטוס עירוב', 'k_cert': 'תעודת כשרות', 
+                'k_issues': 'תקלות כשרות', 'k_issues_description': 'פירוט תקלות',
+                't_private': 'טרקלין-פרטי', 't_kitchen_tools': 'טרקלין-מטבח', 
+                't_procedure': 'טרקלין-נוהל', 't_friday': 'טרקלין-שבת', 't_app': 'טרקלין-אפליקציה',
+                'w_location': 'ויקוק-מיקום', 'w_private': 'ויקוק-פרטי', 
+                'w_kitchen_tools': 'ויקוק-מטבח', 'w_procedure': 'ויקוק-פקודה', 'w_guidelines': 'ויקוק-הנחיות',
+                'soldier_want_lesson': 'שיעור תורה-רצון', 'soldier_has_lesson': 'שיעור תורה-קיים',
                 'free_text': 'הערות'
             }
             
@@ -3219,9 +3273,14 @@ def render_unit_report():
         if 't_kitchen_tools' in unit_df.columns: lounge_vikok_columns.append('t_kitchen_tools')
         if 't_procedure' in unit_df.columns: lounge_vikok_columns.append('t_procedure')
         if 't_friday' in unit_df.columns: lounge_vikok_columns.append('t_friday')
+        if 't_app' in unit_df.columns: lounge_vikok_columns.append('t_app')
+        
         # Vikok
         if 'w_location' in unit_df.columns: lounge_vikok_columns.append('w_location')
         if 'w_private' in unit_df.columns: lounge_vikok_columns.append('w_private')
+        if 'w_kitchen_tools' in unit_df.columns: lounge_vikok_columns.append('w_kitchen_tools')
+        if 'w_procedure' in unit_df.columns: lounge_vikok_columns.append('w_procedure')
+        if 'w_guidelines' in unit_df.columns: lounge_vikok_columns.append('w_guidelines')
 
         # 🆕 עמודות חוסרים ונוספות
         other_columns = []
@@ -3266,10 +3325,14 @@ def render_unit_report():
                 't_kitchen_tools': '🥣 טרקלין - כלי מטבח',
                 't_procedure': '🔒 טרקלין - נוהל סגירה',
                 't_friday': '🛑 טרקלין - סגור בשבת',
+                't_app': '📱 טרקלין - אפליקציה',
                 
                 # ויקוק
                 'w_location': '📍 ויקוק - מיקום',
                 'w_private': '🥤 ויקוק - כלים פרטיים',
+                'w_kitchen_tools': '🍴 ויקוק - כלי מטבח',
+                'w_procedure': '📜 ויקוק - עובד לפי פקודה',
+                'w_guidelines': '📋 ויקוק - הנחיות',
 
                 # שיעורי תורה
                 'soldier_want_lesson': '💡 רצון לשיעור תורה',
