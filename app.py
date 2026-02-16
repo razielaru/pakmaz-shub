@@ -526,10 +526,25 @@ def init_hierarchy_table():
             }).execute()
         except:
             pass
+            
+def init_strategic_tables():
+    """יצירת טבלאות אסטרטגיות אם לא קיימות (Maintenance & Alerts)"""
+    # בדיקת טבלת כרטיסי עבודה
+    try:
+        supabase.table("maintenance_tickets").select("id").limit(1).execute()
+    except:
+        pass # הטבלה תיווצר ידנית או ע"י סקריפט SQL חיצוני
+
+    # בדיקת טבלת התראות מפקד
+    try:
+        supabase.table("command_alerts").select("id").limit(1).execute()
+    except:
+        pass
 
 if "db_checked" not in st.session_state:
     init_db()
     init_hierarchy_table()
+    init_strategic_tables()
     st.session_state.db_checked = True
 
 def hash_password(password):
@@ -1014,6 +1029,309 @@ def get_unit_badge(score):
     elif score >= 70: return "✓ טוב", "#f59e0b"
     elif score >= 60: return "⚠️ בינוני", "#f97316"
     else: return "❌ דורש שיפור", "#ef4444"
+
+# ==========================================
+# 🆕 תכונות אסטרטגיות (Strategic Features)
+# ==========================================
+
+# --- 1️⃣ Offline-First Drafts ---
+def save_draft_locally(data, draft_key):
+    """שמירת טיוטת דוח מקומית ב-Session State"""
+    if 'drafts' not in st.session_state:
+        st.session_state.drafts = {}
+    st.session_state.drafts[draft_key] = {
+        'data': data,
+        'timestamp': datetime.datetime.now().isoformat(),
+        'status': 'draft'
+    }
+    st.success(f"✅ הדוח שמור כטיוטה ב-{draft_key}")
+
+def load_draft(draft_key):
+    """טעינת טיוטה"""
+    if 'drafts' in st.session_state and draft_key in st.session_state.drafts:
+        return st.session_state.drafts[draft_key]['data']
+    return None
+
+# --- 2️⃣ Closed-Loop Ticketing ---
+def create_maintenance_ticket(report_data, report_id):
+    """יצירת כרטיס תיקון אוטומטי מדיווח שלילי"""
+    try:
+        # בדוק אם יש בעיות קריטיות
+        critical_issues = []
+        
+        if report_data.get('e_status') == 'פסול':
+            critical_issues.append('עירוב פסול')
+        if report_data.get('k_cert') == 'לא':
+            critical_issues.append('כשרות לא תקינה')
+        try:
+            mezuzot_missing = int(report_data.get('r_mezuzot_missing', 0))
+            if mezuzot_missing > 5:
+                critical_issues.append(f"חוסר קריטי: {mezuzot_missing} מזוזות")
+        except: pass
+        
+        if critical_issues:
+            # יצור כרטיס עבודה
+            ticket = {
+                'report_id': report_id,
+                'unit': report_data.get('unit'),
+                'base': report_data.get('base'),
+                'status': 'open',
+                'priority': 'high' if len(critical_issues) > 1 else 'medium',
+                'issues': ', '.join(critical_issues),
+                'created_at': datetime.datetime.now().isoformat(),
+                'assigned_to': 'תחזוקה - להקצאה',
+                'deadline': (datetime.datetime.now() + datetime.timedelta(days=3)).isoformat()
+            }
+            
+            # בדיקה אם הטבלה קיימת, אם לא - ניסיון ליצור או דילוג
+            try:
+                supabase.table("maintenance_tickets").insert(ticket).execute()
+                
+                # שלח התראה למטה
+                send_alert_to_command(
+                    f"🚨 כרטיס עבודה חדש - {report_data.get('base')}",
+                    f"בעיות: {', '.join(critical_issues)}",
+                    'high'
+                )
+                return True
+            except Exception as e:
+                print(f"⚠️ טבלת maintenance_tickets לא קיימת או שגיאה אחרת: {e}")
+                
+    except Exception as e:
+        print(f"❌ שגיאה ביצירת כרטיס: {e}")
+    return None
+
+def send_alert_to_command(title, message, priority):
+    """שליחת התראה למפקדים"""
+    try:
+        # יצור ערך התראה
+        alert = {
+            'title': title,
+            'message': message,
+            'priority': priority,
+            'created_at': datetime.datetime.now().isoformat(),
+            'read': False
+        }
+        supabase.table("command_alerts").insert(alert).execute()
+    except Exception as e:
+        print(f"❌ שגיאה בשליחת התראה: {e}")
+
+# --- 3️⃣ OCR for Kashrut Certificates ---
+def extract_kashrut_cert_data(image_bytes):
+    """חילוץ נתונים מתעודת כשרות באמצעות OCR"""
+    try:
+        import cv2
+        import pytesseract
+        import numpy as np
+        
+        # המר לתמונה
+        image = Image.open(io.BytesIO(image_bytes))
+        
+        # עיבוד מקדים
+        img_np = np.array(image)
+        if len(img_np.shape) == 3:
+            img_cv = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+        else:
+            img_cv = img_np
+            
+        # שיפור ניגודיות
+        img_cv = cv2.adaptiveThreshold(img_cv, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                       cv2.THRESH_BINARY, 11, 2)
+        
+        # זיהוי טקסט
+        # הערה: זה דורש התקנת Tesseract על המכונה
+        try:
+            text = pytesseract.image_to_string(img_cv, lang='heb+eng')
+        except Exception as e:
+            return {'error': 'Tesseract not installed or not found'}
+
+        # חלץ נתונים (סימולציה בסיסית אם ה-OCR לא מושלם)
+        extracted = {
+            'raw_text': text,
+            'supplier_name': extract_supplier_name(text),
+            'expiry_date': extract_date(text),
+            'certificate_number': extract_cert_number(text)
+        }
+        
+        return extracted
+    except Exception as e:
+        st.error(f"❌ שגיאה ב-OCR: {e}")
+        return None
+
+def extract_date(text):
+    """חילוץ תאריך תפוגה"""
+    import re
+    # חפש תבניות תאריך
+    pattern = r'(\d{1,2}[./\\-]\d{1,2}[./\\-]\d{2,4})'
+    matches = re.findall(pattern, text)
+    return matches[0] if matches else None
+
+def extract_supplier_name(text):
+    """ניסיון לחלץ שם ספק"""
+    lines = text.split('\n')
+    for line in lines[:5]:  # בדרך כלל בהתחלה
+        if len(line.strip()) > 3:
+            return line.strip()
+    return "לא זוהה"
+
+def extract_cert_number(text):
+    import re
+    matches = re.findall(r'(\d{5,10})', text)
+    return matches[0] if matches else "לא זוהה"
+
+def validate_cert_status(expiry_date_str):
+    """בדוק אם התעודה תקפה"""
+    try:
+        if not expiry_date_str: return '❓ לא נמצא תאריך', 'unknown'
+        expiry_date = pd.to_datetime(expiry_date_str, dayfirst=True)
+        today = pd.Timestamp.now()
+        
+        if expiry_date < today:
+            return '❌ פגה', 'expired'
+        elif expiry_date < today + pd.Timedelta(days=30):
+            return '⚠️ עומדת לפוג', 'expiring_soon'
+        else:
+            return '✅ תקפה', 'valid'
+    except:
+        return '❓ לא בטוח', 'unknown'
+
+# --- 4️⃣ Real-time Heatmap ---
+def render_realtime_heatmap(df, accessible_units):
+    """מפת חום בזמן אמת של מצב היחידות"""
+    st.markdown("### 🌡️ מפת חום - סטטוס בזמן אמת")
+    
+    if df.empty:
+        st.info("אין נתונים להצגה")
+        return
+
+    # עיבוד נתונים
+    unit_status = []
+    
+    # סינון רק ליחידות נגישות
+    relevant_df = df[df['unit'].isin(accessible_units)] if accessible_units else df
+    
+    for unit in accessible_units:
+        unit_df = relevant_df[relevant_df['unit'] == unit]
+        if not unit_df.empty:
+            last_report = pd.to_datetime(unit_df['date']).max()
+            hours_ago = (pd.Timestamp.now() - last_report).total_seconds() / 3600
+            
+            # קבע צבע לפי זמן ההמתנה
+            if hours_ago < 24:
+                color = '#10b981'  # ירוק - פעיל ביממה האחרונה
+                status = '🟢 פעיל'
+                readiness = 95
+            elif hours_ago < 72:
+                color = '#f59e0b'  # כתום - פעיל ב-3 ימים אחרונים
+                status = '🟡 בטיפול'
+                readiness = 70
+            else:
+                color = '#ef4444'  # אדום - לא פעיל
+                status = '🔴 שקט'
+                readiness = 40
+            
+            # חשב ציון כשרות
+            kashrut_score = (len(unit_df[unit_df['k_cert'] == 'כן']) / len(unit_df) * 100) if len(unit_df) > 0 else 0
+            
+            unit_status.append({
+                'unit': unit,
+                'color': color,
+                'status': status,
+                'hours_ago': hours_ago,
+                'readiness': readiness,
+                'kashrut_score': kashrut_score,
+                'reports': len(unit_df)
+            })
+    
+    if not unit_status:
+        st.info("אין מספיק נתונים ליצירת מפת חום")
+        return
+
+    status_df = pd.DataFrame(unit_status)
+    
+    # גרף חום
+    try:
+        fig = go.Figure(data=go.Heatmap(
+            z=[status_df['readiness'].values],
+            x=status_df['unit'].values,
+            y=['כשירות'],
+            colorscale='RdYlGn',
+            text=[status_df['status'].values],
+            texttemplate="%{text}",
+            textfont={"size": 10},
+            showscale=False
+        ))
+        
+        fig.update_layout(
+            height=150, 
+            margin=dict(l=0, r=0, b=0, t=10),
+            xaxis_title=None,
+            yaxis_title=None
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"שגיאה בהצגת גרף: {e}")
+    
+    # טבלה מפורטת (אופציונלי, כרגע נציג רק את הגרף)
+
+# --- 5️⃣ Anomaly Detection ---
+def detect_anomalies(df, unit_name):
+    """זיהוי דפוסים חריגים בדוחות יחידה"""
+    if df.empty: return []
+    
+    unit_df = df[df['unit'] == unit_name].sort_values('date').tail(10)  # 10 דוחות אחרונים
+    
+    if len(unit_df) < 3:
+        return []
+    
+    anomalies = []
+    
+    # 1. כשרות 100% תמיד = חשוד (אם יש מספיק דוחות)
+    # 1. כשרות 100% תמיד = חשוד (אם יש מספיק דוחות)
+    is_suspicious_perfect = False
+    
+    if len(unit_df) >= 5:
+        k_cert_series = unit_df.get('k_cert')
+        e_status_series = unit_df.get('e_status')
+        
+        # בדיקה בטוחה שיש לנו Series ושכל הערכים תקינים
+        if k_cert_series is not None and e_status_series is not None:
+             try:
+                 if (k_cert_series == 'כן').all() and (e_status_series == 'תקין').all():
+                     is_suspicious_perfect = True
+             except: pass
+
+    if is_suspicious_perfect:
+        anomalies.append({
+            'type': 'suspicious_perfect',
+            'severity': 'medium',
+            'message': '⚠️ תקינות מלאה רצופה - שקול ביקורת עמוקה לבדיקת אמינות'
+        })
+    
+    # 2. שינוי פתאומי בציון
+    if len(unit_df) >= 6:
+        recent_score = calculate_unit_score(unit_df.tail(3))
+        old_score = calculate_unit_score(unit_df.head(3))
+        
+        if abs(recent_score - old_score) > 30:
+            direction = '📈 שיפור' if recent_score > old_score else '📉 ירידה'
+            anomalies.append({
+                'type': 'score_jump',
+                'severity': 'high',
+                'message': f'🚨 שינוי דרמטי בציון: {direction} של {abs(recent_score - old_score):.0f} נקודות'
+            })
+    
+    # 3. ערבוב בין דיווחים עם מבקרים שונים
+    if 'inspector' in unit_df.columns:
+        inspector_changes = unit_df['inspector'].nunique()
+        if inspector_changes >= 3:
+            anomalies.append({
+                'type': 'multiple_inspectors',
+                'severity': 'low',
+                'message': f'📌 {inspector_changes} מבקרים שונים לאחרונה - שקול סדרת בדיקות אחידה'
+            })
+    
+    return anomalies
 
 def generate_ai_summary(df):
     """יצירת סיכום AI של המצב הכללי"""
@@ -1848,6 +2166,11 @@ def render_command_dashboard():
                          delta_color="normal" if trend >= 0 else "inverse")
         
         st.markdown("---")
+        
+        # 🆕 מפת חום זמן אמת (Real-Time Heatmap)
+        render_realtime_heatmap(df, accessible_units)
+        
+        st.markdown("---")
 
         
         # גרפים
@@ -2039,6 +2362,16 @@ def render_command_dashboard():
             # ציון ותג
             score = calculate_unit_score(unit_df)
             badge, color = get_unit_badge(score)
+            
+            # 🆕 זיהוי חריגות ודפוסים חשודים (Anomaly Detection)
+            anomalies = detect_anomalies(df, selected_unit)
+            if anomalies:
+                st.warning(f"⚠️ זוהו {len(anomalies)} דפוסים חריגים ביחידה זו")
+                with st.expander("🚨 פירוט חריגות ודפוסים חשודים", expanded=True):
+                    for anomaly in anomalies:
+                        severity_map = {'high': '🔴', 'medium': '🟠', 'low': '🔵'}
+                        icon = severity_map.get(anomaly['severity'], '⚪')
+                        st.markdown(f"**{icon} {anomaly['message']}**")
             
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -3406,6 +3739,20 @@ def render_unit_report():
     
     # Removed st.form to allow dynamic UI updates
     # with st.form("report"):
+    
+    # 🆕 כפתור טעינת טיוטה (Drafts)
+    if st.button("📂 טען טיוטה אחרונה", key="load_last_draft", help="טען את הנתונים מהטיוטה האחרונה שנשמרה"):
+        draft_key = f"{unit}_last_draft"
+        draft_data = load_draft(draft_key)
+        if draft_data:
+            # עדכון Session State כדי שהטופס יתמלא
+            # הערה: זה דורש מיפוי חכם של מפתחות, כרגע נציג הודעה
+            st.success(f"✅ טיוטה נטענה מ-{draft_data.get('timestamp', 'לא ידוע')}")
+            st.json(draft_data) # זמני - להצגת הנתונים
+            st.info("מנגנון מילוי אוטומטי מלא בבנייה...")
+        else:
+            st.warning("⚠️ לא נמצאה טיוטה שמורה")
+
     st.markdown("### 📍 מיקום ותאריך")
     loc = streamlit_geolocation()
     gps_lat, gps_lon = (loc['latitude'], loc['longitude']) if loc and loc.get('latitude') else (None, None)
@@ -3488,6 +3835,26 @@ def render_unit_report():
     c1, c2 = st.columns(2)
     k_cert = radio_with_explanation("תעודת כשרות מתוקפת?", "k7", col=c1)
     k_bishul = radio_with_explanation("האם יש בישול ישראל?", "k8", col=c2)
+        
+    # 🆕 OCR לתעודות כשרות
+    st.markdown("#### 📄 סריקת תעודת כשרות (OCR)")
+    cert_photo_ocr = st.file_uploader("העלה תמונה לחילוץ נתונים אוטומטי", type=['jpg', 'png', 'jpeg'], key="cert_ocr")
+    if cert_photo_ocr:
+        with st.spinner("מפענח תעודה..."):
+            extracted = extract_kashrut_cert_data(cert_photo_ocr.getvalue())
+            if extracted and 'error' not in extracted:
+                st.success("✅ נתונים חולצו בהצלחה!")
+                col_ocr1, col_ocr2 = st.columns(2)
+                with col_ocr1:
+                    st.info(f"📌 ספק: {extracted.get('supplier_name')}")
+                    st.info(f"🔢 מספר: {extracted.get('certificate_number')}")
+                with col_ocr2:
+                    st.info(f"📅 תוקף: {extracted.get('expiry_date')}")
+                    status, status_type = validate_cert_status(extracted.get('expiry_date'))
+                    st.write(f"**סטטוס:** {status}")
+            elif extracted and 'error' in extracted:
+                st.warning(f"⚠️ {extracted['error']}")
+                st.caption("יש לוודא ש-Tesseract מותקן על השרת")
         
     # שאלות חדשות עם תמונות
     st.markdown("#### 📸 תקלות ונאמן כשרות")
@@ -3602,7 +3969,23 @@ def render_unit_report():
         
         # שליחת הדוח
     # שליחת הדוח
-    if st.button("🚀 שגר דיווח", type="primary", use_container_width=True, key="submit_new_report"):
+    col_submit, col_draft = st.columns([3, 1])
+    
+    # 🆕 שמירת טיוטה
+    with col_draft:
+        if st.button("💾 שמור טיוטה", key="save_draft_btn"):
+            # איסוף נתונים חלקי לשמירה
+            draft_data = {
+                "unit": unit, "base": base, "inspector": inspector,
+                "date": str(date), "time": str(time_v),
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+            save_draft_locally(draft_data, f"{unit}_last_draft")
+
+    with col_submit:
+        submitted = st.button("🚀 שגר דיווח", type="primary", use_container_width=True, key="submit_new_report")
+        
+    if submitted:
         # בדיקת יום בשבוע - חמישי (3) ושישי (4) ב-Python weekday
         current_weekday = datetime.datetime.now().weekday()
         is_thursday_or_friday = current_weekday in [3, 4]
@@ -3755,6 +4138,9 @@ def render_unit_report():
                     report_id = result.data[0].get('id')
                     if report_id:
                         detect_and_track_deficits(data, report_id, unit)
+                        
+                        # 🆕 יצירת כרטיס תקלה אוטומטי (Closed-Loop Ticketing)
+                        create_maintenance_ticket(data, report_id)
                 
                 st.success("✅ הדוח נשלח בהצלחה ונקלט בחמ״ל!")
                 clear_cache()
