@@ -2913,7 +2913,8 @@ def radio_with_explanation(label, key, horizontal=True):
         if reason:
             final_answer = f"לא יודע ({reason})"
         else:
-            final_answer = "לא יודע"
+            # Return sentinel value for validation
+            final_answer = f"__MISSING_EXPLANATION__:{label}"
             
     return final_answer
 
@@ -3537,9 +3538,58 @@ def render_unit_report():
             # בדיקת יום בשבוע - חמישי (3) ושישי (4) ב-Python weekday
             current_weekday = datetime.datetime.now().weekday()
             is_thursday_or_friday = current_weekday in [3, 4]
+
+            # 🆕 בדיקת הסברים חסרים עבור "לא יודע / לא בדקתי"
+            missing_explanations = []
+            # We iterate over session state keys that start with "radio_" to identify questions
+            # But the values are already in local variables. 
+            # Ideally we check the compiled 'data' dict, but that is created *after* this check.
+            # So we will reconstruct the list of values to check or just check the data dict after creation?
+            # Better to create 'data' first, THEN validate, THEN upload/save.
+            
+            # Let's create a temporary dictionary for validation similar to 'data' 
+            # or just check the variables directly. Checking variables directly is verbose.
+            # Let's verify the 'data' construction approach.
+            
+            # We will move the data dictionary creation UP, before the validation check.
+            # Wait, moving it up might be complex because of photo uploads.
+            
+            # Simpler approach: Check the local variables that we assigned from radio_with_explanation.
+            # We have many variables.
+            # Let's assume we check the 'data' dict *before* uploading photos? 
+            # No, 'data' contains photo URLs which come from upload_report_photo.
+            
+            # Okay, let's create a list of all potential 'Don't Know' answers to check.
+            # This list must match the variables used above.
+            answers_to_check = {
+                "פק״ל רבנות": p_pakal, "כלים מסומנים": p_marked, "ערבוב כלים": p_mix, "הכשרת כלים": p_kasher,
+                "הוראות בש.ג": r_sg, "הוראות בחמ״ל": r_hamal, "שילוט שבת": r_sign, "נטלות": r_netilot,
+                "לוח רבנות": s_board, "ניקיון בית כנסת": s_clean, "ערכת הבדלה": s_havdala, "גמ״ח טלית ותפילין": s_gemach,
+                "תקלת בינוי": s_smartbis, "פח גניזה": s_geniza,
+                "בדיקת עירוב": e_check, "תיעוד עירוב": e_doc, "תצ״א עירוב": e_photo,
+                "תעודת כשרות": k_cert, "בישול ישראל": k_bishul, "תקלות כשרות": k_issues, "נאמן שבת": k_shabbat_supervisor,
+                "הפרדה במטבח": k_separation, "תדריך טבחים": k_briefing, "רכש חוץ": k_products, "דף תאריכים": k_dates,
+                "שטיפת ירק": k_leafs, "חירור גסטרונומים": k_holes, "בדיקת ביצים": k_eggs, "חדר מכ״ש": k_machshir,
+                "חימום נפרד": k_heater, "אפליקציה במטבח": k_app,
+                "כלים פרטיים טרקלין": t_private, "כלי מטבח טרקלין": t_kitchen_tools, "נוהל סגירה טרקלין": t_procedure,
+                "סגור בשבת טרקלין": t_friday, "אפליקציה טרקלין": t_app,
+                "כלים פרטיים ויקוק": w_private, "כלי מטבח ויקוק": w_kitchen_tools, "נהלים ויקוק": w_procedure, "הנחיות ויקוק": w_guidelines,
+                "ימי ישיבה": soldier_yeshiva, "רצון לשיעור": soldier_want_lesson, "שיעור קיים": soldier_has_lesson,
+                "מענה כשרותי": soldier_food, "אימונים בשבת": soldier_shabbat_training, "מכיר את הרב": soldier_knows_rabbi,
+                "זמני תפילות": soldier_prayers, "שיח מפקדים": soldier_talk_cmd
+            }
+            
+            for label, value in answers_to_check.items():
+                if isinstance(value, str) and value.startswith("__MISSING_EXPLANATION__"):
+                    missing_explanations.append(label)
+            
+            if missing_explanations:
+                st.error("❌ לא ניתן לשלוח את הדוח! חסר פירוט עבור התשובות 'לא יודע / לא בדקתי':")
+                for item in missing_explanations:
+                    st.warning(f"⚠️ {item} - חובה לפרט סיבה בתיבת הטקסט")
             
             # בדיקת חובת תמונת נאמן כשרות בחמישי-שישי
-            if is_thursday_or_friday and k_shabbat_supervisor == "כן" and not k_shabbat_photo:
+            elif is_thursday_or_friday and k_shabbat_supervisor == "כן" and not k_shabbat_photo:
                 st.error("⚠️ **חובה להעלות תמונת נאמן כשרות בימי חמישי ושישי!**")
                 st.warning("💡 נא להעלות תמונה של נאמן הכשרות בשדה המתאים למעלה")
             elif base and inspector and photo:
