@@ -4147,7 +4147,7 @@ def render_unit_report():
                 "r_shabbat_device": r_shabbat_device, "s_board": s_board, "s_books": str(s_books),
                 "s_havdala": s_havdala, "s_gemach": s_gemach, "s_smartbis": s_smartbis, "s_geniza": s_geniza,
                 # 🆕
-                "s_torah_id": s_torah_id, "s_torah_nusach": s_torah_nusach, "r_torah_missing": r_torah_missing,
+                "s_torah_id": s_torah_id, "s_torah_nusach": s_torah_nusach,
                 "e_check": e_check, "e_doc": e_doc, "e_photo": e_photo,
                 "k_separation": k_separation, "k_briefing": k_briefing, "k_products": k_products,
                 "k_leafs": k_leafs, "k_holes": k_holes, "k_bishul": k_bishul,
