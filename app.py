@@ -4109,6 +4109,12 @@ def render_unit_report():
         elif is_thursday_or_friday and k_shabbat_supervisor == "כן" and not k_shabbat_photo:
             st.error("⚠️ **חובה להעלות תמונת נאמן כשרות בימי חמישי ושישי!**")
             st.warning("💡 נא להעלות תמונה של נאמן הכשרות בשדה המתאים למעלה")
+            
+        # 🆕 בדיקת מיקום חובה (נוסף לבקשת המשתמש)
+        elif not (gps_lat and gps_lon):
+             st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח!")
+             st.warning("💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום")
+             
         elif base and inspector and photo:
             photo_url = upload_report_photo(photo.getvalue(), unit, base)
             
