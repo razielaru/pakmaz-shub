@@ -4174,10 +4174,10 @@ def render_unit_report():
             if gps_lat and gps_lon:
                 # ✅ בדיקה נוספת שהמיקום תקין
                 if 29.5 <= gps_lat <= 33.5 and 34.2 <= gps_lon <= 35.9:
-                    # הוספת רעש למיקום GPS לצורכי אבטחה (~300 מטר)
+                    # הוספת רעש למיקום GPS לצורכי אבטחה (~500 מטר)
                     # ✅ שימוש ב-secure_location_offset עם ID יציב
                     unique_id_for_offset = f"{unit}_{base}"
-                    lat_with_offset, lon_with_offset = secure_location_offset(gps_lat, gps_lon, unique_id_for_offset, offset_meters=300)
+                    lat_with_offset, lon_with_offset = secure_location_offset(gps_lat, gps_lon, unique_id_for_offset, offset_meters=500)
                     data["latitude"] = lat_with_offset
                     data["longitude"] = lon_with_offset
                     
