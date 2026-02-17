@@ -1,4 +1,4 @@
-import streamlit as st
+3import streamlit as st
 from supabase import create_client, Client
 import pandas as pd
 import plotly.express as px
@@ -125,7 +125,7 @@ def secure_location_offset(lat: float, lon: float, unique_id: str, offset_meters
     מזיז מיקום בצורה קבועה לפי מזהה ייחודי (ביטחון מידע)
     - אותו unique_id = תמיד אותה הזזה
     - לא ניתן לנחש את המיקום המקורי
-    - ההזזה היא 300 מטר בכיוון אקראי (אבל קבוע)
+    - ההזזה היא 500 מטר בכיוון אקראי (אבל קבוע)
     """
     # ✅ תיקון: השתמש רק ב-unit+base ללא תאריך (כדי שהמיקום יישאר קבוע)
     try:
@@ -192,7 +192,7 @@ def create_street_level_map(center=(31.9, 35.2), zoom_start=12):
 
 def add_unit_marker_to_folium(m, row, unit_colors):
     """מוסיף סימון ליחידה עם offset ביטחוני"""
-    # הזזה ביטחונית קבועה (300 מטר)
+    # הזזה ביטחונית קבועה (500 מטר)
     lat, lon = secure_location_offset(
         row.get("latitude", 31.9),
         row.get("longitude", 35.2),
@@ -226,7 +226,7 @@ def add_unit_marker_to_folium(m, row, unit_colors):
         fillColor=color,
         fillOpacity=0.7,
         weight=2,
-        popup=folium.Popup(popup_html, max_width=300),
+        popup=folium.Popup(popup_html, max_width=500),
         tooltip=f"📍 {row.get('base', 'מוצב')}"
     ).add_to(m)
 
@@ -746,12 +746,12 @@ def update_unit_password(unit_name, new_password):
 def add_gps_privacy_offset(lat: float, lon: float, offset_meters: int = 300) -> Tuple[float, float]:
     """
     מוסיף רעש אקראי למיקום GPS לצורכי אבטחה
-    מזיז את המיקום ב-~300 מטר כדי שלא לחשוף את המיקום המדויק של המוצב
+    מזיז את המיקום ב-~500 מטר כדי שלא לחשוף את המיקום המדויק של המוצב
     
     Args:
         lat: קו רוחב
         lon: קו אורך  
-        offset_meters: מרחק מקסימלי במטרים (ברירת מחדל: 300)
+        offset_meters: מרחק מקסימלי במטרים (ברירת מחדל: 500)
     
     Returns:
         tuple: (lat_with_offset, lon_with_offset)
@@ -3092,7 +3092,7 @@ def render_command_dashboard():
     # ===== טאב 6: מפה ארצית =====
     with tabs[5]:
         st.markdown("### 🛰️ תמונת מצב ארצית - כלל המגזרים")
-        st.info("🔐 **ביטחון מידע:** המיקומים מוזזים 300 מטר מהמיקום המדויק לצורכי אבטחת מידע")
+        st.info("🔐 **ביטחון מידע:** המיקומים מוזזים 500 מטר מהמיקום המדויק לצורכי אבטחת מידע")
         
         # שליפת כל הנתונים ללא סינון (None)
         map_raw = load_reports_cached(None)
@@ -4334,7 +4334,7 @@ def render_unit_report():
 
             with stats_tabs[1]:
                 st.markdown("### 📍 מפת מיקומים")
-                st.info("🔐 **ביטחון מידע:** המיקומים מוזזים 300 מטר מהמיקום המדויק לצורכי אבטחת מידע")
+                st.info("🔐 **ביטחון מידע:** המיקומים מוזזים 500 מטר מהמיקום המדויק לצורכי אבטחת מידע")
                 
                 # בדיקה אם יש עמודות מיקום
                 has_location_columns = not unit_df.empty and 'latitude' in unit_df.columns and 'longitude' in unit_df.columns
