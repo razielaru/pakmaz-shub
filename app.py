@@ -1,3 +1,4 @@
+
 import streamlit as st
 from supabase import create_client, Client
 import pandas as pd
@@ -4818,7 +4819,7 @@ def render_unit_report():
 
 def render_executive_summary_dashboard():
     """
-    \ud83c\udf96\ufe0f \u05d3\u05e9\u05d1\u05d5\u05e8\u05d3 \u05d4\u05e4\u05d9\u05e7\u05d5\u05d3 \u2013 \u05ea\u05de\u05d5\u05e0\u05d4 \u05e9\u05dc\u05de\u05d4 \u05d1\u05d3\u05e7\u05d4 \u05d0\u05d7\u05ea
+    🎖\ufe0f \u05d3\u05e9\u05d1\u05d5\u05e8\u05d3 \u05d4\u05e4\u05d9\u05e7\u05d5\u05d3 \u2013 \u05ea\u05de\u05d5\u05e0\u05d4 \u05e9\u05dc\u05de\u05d4 \u05d1\u05d3\u05e7\u05d4 \u05d0\u05d7\u05ea
     \u05e2\u05d9\u05e6\u05d5\u05d1: Dark Mode, \u05d2\u05e8\u05e4\u05d9\u05dd \u05d9\u05e4\u05d9\u05dd, \u05de\u05d3\u05d3\u05d9\u05dd \u05d1\u05d5\u05dc\u05d8\u05d9\u05dd
     """
     st.markdown("""
@@ -4834,7 +4835,7 @@ def render_executive_summary_dashboard():
 
     st.markdown("""
     <div class="header-container">
-        <h1 style='color: white; margin: 0;'>\ud83c\udf96\ufe0f Executive Summary \u2013 Pikud</h1>
+        <h1 style='color: white; margin: 0;'>🎖\ufe0f Executive Summary \u2013 Pikud</h1>
         <p style='color: rgba(255,255,255,0.9); margin: 8px 0 0 0;'>
             Real-time operational intelligence \u00b7 Last updated: """ +
             datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S') + """
@@ -4843,7 +4844,7 @@ def render_executive_summary_dashboard():
     """, unsafe_allow_html=True)
 
     # ===== KPI Cards =====
-    st.markdown("### \ud83d\udcca Key Performance Indicators")
+    st.markdown("### 📊 Key Performance Indicators")
     kpi_cols = st.columns(5)
 
     all_reports = load_reports_cached(None)
@@ -4860,18 +4861,18 @@ def render_executive_summary_dashboard():
         sum(calculate_operational_risk_index(u, df)['risk_score'] for u in units_list) / len(units_list)
         if units_list else 0
     )
-    risk_status = "\ud83d\udd34 CRITICAL" if avg_risk >= 50 else "\ud83d\udfe1 HIGH" if avg_risk >= 25 else "\ud83d\udfe2 NORMAL"
+    risk_status = "🔴 CRITICAL" if avg_risk >= 50 else "🟡 HIGH" if avg_risk >= 25 else "🟢 NORMAL"
 
     with kpi_cols[0]:
-        st.metric("\ud83d\udea7 Eruv Invalid", critical_bases,
+        st.metric("🚧 Eruv Invalid", critical_bases,
                   delta=f"\u2191 {critical_bases}" if critical_bases > 0 else "\u2705 \u05ea\u05e7\u05d9\u05df",
                   delta_color="inverse" if critical_bases > 0 else "off")
     with kpi_cols[1]:
-        st.metric("\ud83c\udf7d\ufe0f No Kashrut", no_kashrut,
+        st.metric("🍽\ufe0f No Kashrut", no_kashrut,
                   delta="\u05d3\u05d5\u05e8\u05e9 \u05d8\u05d9\u05e4\u05d5\u05dc" if no_kashrut > 0 else "\u05ea\u05e7\u05d9\u05df",
                   delta_color="inverse" if no_kashrut > 0 else "off")
     with kpi_cols[2]:
-        st.metric("\ud83d\udccb Open Deficits", open_deficits,
+        st.metric("📋 Open Deficits", open_deficits,
                   delta=f"SLA: {count_overdue_deficits(accessible_units)}" if open_deficits > 0 else "\u05d1\u05e9\u05dc\u05d9\u05d8\u05d4",
                   delta_color="inverse")
     with kpi_cols[3]:
@@ -4879,7 +4880,7 @@ def render_executive_summary_dashboard():
                   delta="\u05dc\u05d0 \u05d3\u05d9\u05d5\u05d5\u05d7\u05d5" if silent_units > 0 else "\u05db\u05d5\u05dc\u05dd \u05d1\u05e7\u05e9\u05e8",
                   delta_color="inverse" if silent_units > 0 else "off")
     with kpi_cols[4]:
-        st.metric("\ud83d\udcca Risk Index", f"{avg_risk:.0f}/100", delta=risk_status)
+        st.metric("📊 Risk Index", f"{avg_risk:.0f}/100", delta=risk_status)
 
     st.markdown("---")
 
@@ -4887,7 +4888,7 @@ def render_executive_summary_dashboard():
     col_gauge, col_issues = st.columns([1, 2])
 
     with col_gauge:
-        st.markdown("### \ud83c\udfaf Overall Risk Status")
+        st.markdown("### 🎯 Overall Risk Status")
         fig_gauge = go.Figure(data=[go.Indicator(
             mode="gauge+number+delta",
             value=avg_risk,
@@ -4910,22 +4911,22 @@ def render_executive_summary_dashboard():
         st.plotly_chart(fig_gauge, use_container_width=True)
 
     with col_issues:
-        st.markdown("### \ud83d\udea8 Critical Issues (Top Priority)")
+        st.markdown("### 🚨 Critical Issues (Top Priority)")
         critical_issues = []
 
         if not df.empty and 'e_status' in df.columns and 'base' in df.columns:
             for base in df[df['e_status'] == '\u05e4\u05e1\u05d5\u05dc']['base'].unique()[:3]:
-                critical_issues.append({"icon": "\ud83d\udea7", "title": f"Eruv Invalid \u2013 {base}", "color": "#dc2626"})
+                critical_issues.append({"icon": "🚧", "title": f"Eruv Invalid \u2013 {base}", "color": "#dc2626"})
 
         if not df.empty and 'k_cert' in df.columns and 'base' in df.columns:
             for base in df[df['k_cert'] == '\u05dc\u05d0']['base'].unique()[:2]:
-                critical_issues.append({"icon": "\ud83c\udf7d\ufe0f", "title": f"No Kashrut \u2013 {base}", "color": "#f59e0b"})
+                critical_issues.append({"icon": "🍽\ufe0f", "title": f"No Kashrut \u2013 {base}", "color": "#f59e0b"})
 
         overdue_count = count_overdue_deficits(accessible_units)
         if overdue_count > 0:
             critical_issues.append({"icon": "\u23f0", "title": f"{overdue_count} Deficits Over SLA", "color": "#f59e0b"})
         if silent_units > 0:
-            critical_issues.append({"icon": "\ud83d\udce1", "title": f"{silent_units} Units Not Reporting", "color": "#3b82f6"})
+            critical_issues.append({"icon": "📡", "title": f"{silent_units} Units Not Reporting", "color": "#3b82f6"})
 
         if critical_issues:
             for issue in critical_issues[:5]:
@@ -4943,7 +4944,7 @@ def render_executive_summary_dashboard():
     col_risk, col_trend = st.columns([1.2, 1])
 
     with col_risk:
-        st.markdown("### \ud83c\udf21\ufe0f Unit Risk Matrix")
+        st.markdown("### 🌡\ufe0f Unit Risk Matrix")
         if units_list:
             risk_rows = [{"unit": u,
                           "risk": calculate_operational_risk_index(u, df)['risk_score']}
@@ -4958,7 +4959,7 @@ def render_executive_summary_dashboard():
             st.plotly_chart(fig_risk, use_container_width=True)
 
     with col_trend:
-        st.markdown("### \ud83d\udcc8 30-Day Trend")
+        st.markdown("### 📈 30-Day Trend")
         if not df.empty and 'date' in df.columns:
             try:
                 df_sorted = df.copy()
@@ -4985,7 +4986,7 @@ def render_executive_summary_dashboard():
     st.markdown("---")
 
     # ===== Row 3: Detailed deficit table =====
-    st.markdown("### \ud83d\udccb Detailed Deficit Breakdown")
+    st.markdown("### 📋 Detailed Deficit Breakdown")
     all_open_deficits = get_open_deficits(accessible_units)
     if not all_open_deficits.empty and 'detected_date' in all_open_deficits.columns:
         all_open_deficits = all_open_deficits.copy()
@@ -5008,7 +5009,7 @@ def render_executive_summary_dashboard():
         for _, deficit in all_open_deficits.head(10).iterrows():
             days = int(deficit.get('days_open', 0))
             priority = 1 if days > 14 else 2 if days > 7 else 3
-            priority_icon = "\ud83d\udd34" if priority == 1 else "\ud83d\udfe1" if priority == 2 else "\ud83d\udfe2"
+            priority_icon = "🔴" if priority == 1 else "🟡" if priority == 2 else "🟢"
             row_bg = "#fee2e2" if priority == 1 else "#fef3c7" if priority == 2 else "#f0fdf4"
             status = "\u26a0\ufe0f OVERDUE" if days > 14 else "\u23f0 URGENT" if days > 7 else "\u2705 NEW"
             table_html += f"""
@@ -5028,19 +5029,19 @@ def render_executive_summary_dashboard():
 
     st.markdown("---")
     c1, c2, c3 = st.columns(3)
-    with c1: st.metric("\ud83d\udcca Total Reports", len(df) if not df.empty else 0)
-    with c2: st.metric("\ud83c\udfaf Active Units", df['unit'].nunique() if not df.empty else 0)
-    with c3: st.metric("\ud83d\udd04 Last Refresh", datetime.datetime.now().strftime('%H:%M:%S'))
+    with c1: st.metric("📊 Total Reports", len(df) if not df.empty else 0)
+    with c2: st.metric("🎯 Active Units", df['unit'].nunique() if not df.empty else 0)
+    with c3: st.metric("🔄 Last Refresh", datetime.datetime.now().strftime('%H:%M:%S'))
 
 
 def render_ogda_summary_dashboard():
     """
-    \ud83c\udfaf \u05d3\u05e9\u05d1\u05d5\u05e8\u05d3 \u05d0\u05d5\u05d2\u05d3\u05d4 \u2013 \u05e1\u05e7\u05d9\u05e8\u05d4 \u05e9\u05dc \u05db\u05dc \u05d4\u05d7\u05d8\u05de\u05e8\u05d9\u05dd \u05d1\u05ea\u05d7\u05ea\u05d5\u05e0\u05d9\u05d5\u05ea
+    🎯 \u05d3\u05e9\u05d1\u05d5\u05e8\u05d3 \u05d0\u05d5\u05d2\u05d3\u05d4 \u2013 \u05e1\u05e7\u05d9\u05e8\u05d4 \u05e9\u05dc \u05db\u05dc \u05d4\u05d7\u05d8\u05de\u05e8\u05d9\u05dd \u05d1\u05ea\u05d7\u05ea\u05d5\u05e0\u05d9\u05d5\u05ea
     """
     st.markdown("""
     <div style='background:linear-gradient(90deg,#059669 0%,#10b981 100%);
                 padding:30px;border-radius:12px;margin-bottom:30px;'>
-        <h1 style='color:white;margin:0;'>\ud83c\udfaf Ogda Dashboard \u2013 Summary</h1>
+        <h1 style='color:white;margin:0;'>🎯 Ogda Dashboard \u2013 Summary</h1>
         <p style='color:rgba(255,255,255,0.9);margin:8px 0 0 0;'>Subordinate Units Status \u00b7 """ +
     datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S') + """</p>
     </div>""", unsafe_allow_html=True)
@@ -5054,25 +5055,25 @@ def render_ogda_summary_dashboard():
     kpi_cols = st.columns(4)
     with kpi_cols[0]:
         subordinate_count = max(0, len(accessible_units) - 1)
-        st.metric("\ud83c\udfd7\ufe0f Subordinate Units", subordinate_count)
+        st.metric("🏗\ufe0f Subordinate Units", subordinate_count)
     with kpi_cols[1]:
-        st.metric("\ud83d\udccb Total Reports", len(df))
+        st.metric("📋 Total Reports", len(df))
     with kpi_cols[2]:
         issues_count = 0
         if not df.empty:
             if 'e_status' in df.columns: issues_count += int((df['e_status'] == '\u05e4\u05e1\u05d5\u05dc').sum())
             if 'k_cert' in df.columns: issues_count += int((df['k_cert'] == '\u05dc\u05d0').sum())
-        st.metric("\ud83d\udd34 Open Issues", issues_count, delta_color="inverse")
+        st.metric("🔴 Open Issues", issues_count, delta_color="inverse")
     with kpi_cols[3]:
         active_units = [u for u in accessible_units if u != unit and not df[df['unit'] == u].empty] if not df.empty else []
         avg_score = (
             sum(calculate_unit_score(df[df['unit'] == u]) for u in active_units) / len(active_units)
             if active_units else 0
         )
-        st.metric("\ud83d\udcca Avg Score", f"{avg_score:.0f}/100")
+        st.metric("📊 Avg Score", f"{avg_score:.0f}/100")
 
     st.markdown("---")
-    st.markdown("### \ud83d\udcca Units Comparison Matrix")
+    st.markdown("### 📊 Units Comparison Matrix")
 
     comparison_data = []
     for unit_name in accessible_units:
@@ -5095,7 +5096,7 @@ def render_ogda_summary_dashboard():
                                 paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_comp, use_container_width=True)
 
-        st.markdown("### \ud83d\udccb Detailed Unit Metrics")
+        st.markdown("### 📋 Detailed Unit Metrics")
         table_html = """
         <table style='width:100%;border-collapse:collapse;'>
         <thead><tr style='background:#059669;color:white;'>
@@ -5107,7 +5108,7 @@ def render_ogda_summary_dashboard():
         </tr></thead><tbody>"""
         for _, row in comp_df.iterrows():
             sc = row['Score']
-            badge = "\u2705 Excellent" if sc >= 80 else "\ud83d\udc4d Good" if sc >= 60 else "\u26a0\ufe0f Needs Work"
+            badge = "\u2705 Excellent" if sc >= 80 else "👍 Good" if sc >= 60 else "\u26a0\ufe0f Needs Work"
             bg = "#f0fdf4" if sc >= 80 else "#fefce8" if sc >= 60 else "#fef2f2"
             table_html += f"""
             <tr style='background:{bg};'>
@@ -5125,12 +5126,12 @@ def render_ogda_summary_dashboard():
 
 def render_hatmar_summary_dashboard():
     """
-    \ud83d\udcca \u05d3\u05e9\u05d1\u05d5\u05e8\u05d3 \u05e8\u05d1 \u05d7\u05d8\u05de\u05e8 \u2013 \u05e1\u05e7\u05d9\u05e8\u05d4 \u05de\u05d7\u05d8\u05de\u05e8 \u05e9\u05dc\u05d5
+    📊 \u05d3\u05e9\u05d1\u05d5\u05e8\u05d3 \u05e8\u05d1 \u05d7\u05d8\u05de\u05e8 \u2013 \u05e1\u05e7\u05d9\u05e8\u05d4 \u05de\u05d7\u05d8\u05de\u05e8 \u05e9\u05dc\u05d5
     """
     st.markdown("""
     <div style='background:linear-gradient(90deg,#7c3aed 0%,#a855f7 100%);
                 padding:30px;border-radius:12px;margin-bottom:30px;'>
-        <h1 style='color:white;margin:0;'>\ud83d\udcca My Unit Dashboard</h1>
+        <h1 style='color:white;margin:0;'>📊 My Unit Dashboard</h1>
         <p style='color:rgba(255,255,255,0.9);margin:8px 0 0 0;'>Comprehensive operational overview \u00b7 """ +
     datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S') + """</p>
     </div>""", unsafe_allow_html=True)
@@ -5142,24 +5143,24 @@ def render_hatmar_summary_dashboard():
 
     kpi_cols = st.columns(5)
     with kpi_cols[0]:
-        st.metric("\ud83d\udccb Total Reports", len(unit_df))
+        st.metric("📋 Total Reports", len(unit_df))
     with kpi_cols[1]:
         score = calculate_unit_score(unit_df) if not unit_df.empty else 0
-        st.metric("\ud83c\udfaf Overall Score", f"{score:.0f}/100",
+        st.metric("🎯 Overall Score", f"{score:.0f}/100",
                  delta="Excellent" if score >= 80 else "Good" if score >= 60 else "Needs Work")
     with kpi_cols[2]:
         open_defs = len(get_open_deficits([unit]))
-        st.metric("\ud83d\udccb Open Deficits", open_defs, delta_color="inverse" if open_defs > 0 else "off")
+        st.metric("📋 Open Deficits", open_defs, delta_color="inverse" if open_defs > 0 else "off")
     with kpi_cols[3]:
         if not unit_df.empty and 'date' in unit_df.columns:
             last_report = pd.to_datetime(unit_df['date'], errors='coerce').max()
             days_ago = int((pd.Timestamp.now() - last_report).days) if pd.notna(last_report) else 999
-            st.metric("\ud83d\udcc5 Last Report", f"{days_ago} days ago")
+            st.metric("📅 Last Report", f"{days_ago} days ago")
         else:
-            st.metric("\ud83d\udcc5 Last Report", "Never")
+            st.metric("📅 Last Report", "Never")
     with kpi_cols[4]:
         unique_bases = unit_df['base'].nunique() if not unit_df.empty and 'base' in unit_df.columns else 0
-        st.metric("\ud83d\udccd Bases Covered", unique_bases)
+        st.metric("📍 Bases Covered", unique_bases)
 
     st.markdown("---")
 
@@ -5191,13 +5192,13 @@ def render_hatmar_summary_dashboard():
         issues_list = []
         if not unit_df.empty:
             if 'k_cert' in unit_df.columns and (unit_df['k_cert'] == '\u05dc\u05d0').any():
-                issues_list.append(("\ud83c\udf7d\ufe0f", "Missing Kashrut", "#f59e0b"))
+                issues_list.append(("🍽\ufe0f", "Missing Kashrut", "#f59e0b"))
             if 'e_status' in unit_df.columns and (unit_df['e_status'] == '\u05e4\u05e1\u05d5\u05dc').any():
-                issues_list.append(("\ud83d\udea7", "Invalid Eruv", "#ef4444"))
+                issues_list.append(("🚧", "Invalid Eruv", "#ef4444"))
             if 'r_mezuzot_missing' in unit_df.columns:
                 total_mez = int(pd.to_numeric(unit_df['r_mezuzot_missing'], errors='coerce').fillna(0).sum())
                 if total_mez > 0:
-                    issues_list.append(("\ud83d\udcdc", f"{total_mez} Missing Mezuzot", "#3b82f6"))
+                    issues_list.append(("📜", f"{total_mez} Missing Mezuzot", "#3b82f6"))
         if issues_list:
             for icon, title, color in issues_list:
                 st.markdown(f"""
@@ -5209,7 +5210,7 @@ def render_hatmar_summary_dashboard():
             st.success("\u2705 No active issues")
 
     st.markdown("---")
-    st.markdown("### \ud83d\udccd Bases Overview")
+    st.markdown("### 📍 Bases Overview")
     if not unit_df.empty and 'base' in unit_df.columns:
         bases_data = []
         for base in unit_df['base'].unique():
