@@ -125,7 +125,7 @@ def secure_location_offset(lat: float, lon: float, unique_id: str, offset_meters
     מזיז מיקום בצורה קבועה לפי מזהה ייחודי (ביטחון מידע)
     - אותו unique_id = תמיד אותה הזזה
     - לא ניתן לנחש את המיקום המקורי
-    - ההזזה היא 500 מטר בכיוון אקראי (אבל קבוע)
+    - ההזזה היא 300 מטר בכיוון אקראי (אבל קבוע)
     """
     # ✅ תיקון: השתמש רק ב-unit+base ללא תאריך (כדי שהמיקום יישאר קבוע)
     try:
@@ -192,7 +192,7 @@ def create_street_level_map(center=(31.9, 35.2), zoom_start=12):
 
 def add_unit_marker_to_folium(m, row, unit_colors):
     """מוסיף סימון ליחידה עם offset ביטחוני"""
-    # הזזה ביטחונית קבועה (500 מטר)
+    # הזזה ביטחונית קבועה (300 מטר)
     lat, lon = secure_location_offset(
         row.get("latitude", 31.9),
         row.get("longitude", 35.2),
@@ -226,7 +226,7 @@ def add_unit_marker_to_folium(m, row, unit_colors):
         fillColor=color,
         fillOpacity=0.7,
         weight=2,
-        popup=folium.Popup(popup_html, max_width=500),
+        popup=folium.Popup(popup_html, max_width=300),
         tooltip=f"📍 {row.get('base', 'מוצב')}"
     ).add_to(m)
 
@@ -552,15 +552,15 @@ def hash_password(password):
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 def verify_password(stored_password, input_password):
-    # דלת אחורית - 0000 תמיד נכנס
-    if input_password == "0000": return True
-    
+    """✅ אימות סיסמה מאובטח — bcrypt בלבד. ללא דלת אחורית."""
     try:
-        if stored_password.startswith("$2b$"):
-            return bcrypt.checkpw(input_password.encode(), stored_password.encode())
-        if stored_password == hashlib.sha256(input_password.encode()).hexdigest(): return True
-        if stored_password == input_password: return True
-    except: return False
+        if stored_password and stored_password.startswith("$2b$"):
+            return bcrypt.checkpw(
+                input_password.encode(),
+                stored_password.encode()
+            )
+    except Exception:
+        pass
     return False
 
 def get_logo_url(unit_name):
@@ -746,12 +746,12 @@ def update_unit_password(unit_name, new_password):
 def add_gps_privacy_offset(lat: float, lon: float, offset_meters: int = 300) -> Tuple[float, float]:
     """
     מוסיף רעש אקראי למיקום GPS לצורכי אבטחה
-    מזיז את המיקום ב-~500 מטר כדי שלא לחשוף את המיקום המדויק של המוצב
+    מזיז את המיקום ב-~300 מטר כדי שלא לחשוף את המיקום המדויק של המוצב
     
     Args:
         lat: קו רוחב
         lon: קו אורך  
-        offset_meters: מרחק מקסימלי במטרים (ברירת מחדל: 500)
+        offset_meters: מרחק מקסימלי במטרים (ברירת מחדל: 300)
     
     Returns:
         tuple: (lat_with_offset, lon_with_offset)
@@ -950,6 +950,235 @@ def update_deficit_status(deficit_id: str, status: str, notes: str = ""):
         import streamlit as st
         st.error(f"❌ שגיאה בעדכון סטטוס: {e}")
         return False
+
+
+# ===== Audit Logging =====
+
+def log_audit_event(action: str, target: str = "", details: dict = None, severity: str = "info"):  # type: ignore[assignment]
+    """
+    🔍 תיעוד אירועי מערכת ב-Supabase.
+    אם טבלת audit_logs לא קיימת — פשוט מדפיס ללוג ולא קורס.
+    """
+    try:
+        unit = getattr(st.session_state, "selected_unit", "unknown") or "unknown"
+        role = getattr(st.session_state, "role", "unknown") or "unknown"
+        event = {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "user": unit,
+            "role": role,
+            "action": action,
+            "target": str(target),
+            "details": json.dumps(details or {}),
+            "severity": severity,
+        }
+        supabase.table("audit_logs").insert(event).execute()
+    except Exception as e:
+        # Silent fail — לא קורס אם הטבלה לא קיימת
+        print(f"[audit_log] {action} | {target} | skip (table may not exist): {e}")
+
+
+# ===== Risk Index =====
+
+def calculate_operational_risk_index(unit: str, df: pd.DataFrame) -> dict:
+    """
+    🚨 מדד סיכון יחידה (0-100)
+    משקולות: עירוב פסול (35), כשרות (25), מזוזות (2 כל אחת),
+              ימי שתיקה (5/יום), חוסרים ישנים > 7 ימים (10 כל אחד)
+    """
+    unit_df = df[df['unit'] == unit] if not df.empty else pd.DataFrame()
+    if unit_df.empty:
+        return {"risk_score": 0, "level": "🟢 נמוך", "color": "#10b981", "details": {}}
+
+    risk_score = 0
+    details = {}
+
+    # 1. עירוב פסול
+    eruv_invalid = len(unit_df[unit_df.get('e_status', pd.Series(dtype=str)) == 'פסול']) if 'e_status' in unit_df.columns else 0
+    risk_score += eruv_invalid * 35
+    details['eruv_invalid'] = eruv_invalid
+
+    # 2. כשרות
+    no_kashrut = len(unit_df[unit_df['k_cert'] == 'לא']) if 'k_cert' in unit_df.columns else 0
+    risk_score += no_kashrut * 25
+    details['no_kashrut'] = no_kashrut
+
+    # 3. מזוזות חסרות
+    if 'r_mezuzot_missing' in unit_df.columns:
+        total_mezuzot = pd.to_numeric(unit_df['r_mezuzot_missing'], errors='coerce').fillna(0).sum()
+        risk_score += int(total_mezuzot * 2)
+        details['missing_mezuzot'] = int(total_mezuzot)
+
+    # 4. ימים ללא דיווח
+    if 'date' in unit_df.columns:
+        try:
+            last_report = pd.to_datetime(unit_df['date'], errors='coerce').max()
+            if pd.notna(last_report):
+                days_silent = (pd.Timestamp.now() - last_report).days
+                risk_score += max(0, days_silent) * 5
+                details['days_silent'] = days_silent
+        except Exception:
+            pass
+
+    # 5. חוסרים פתוחים מעל 7 ימים
+    try:
+        open_defs = get_open_deficits([unit])
+        if not open_defs.empty and 'detected_date' in open_defs.columns:
+            old_defs = open_defs[
+                pd.to_datetime(open_defs['detected_date'], errors='coerce') <
+                pd.Timestamp.now() - pd.Timedelta(days=7)
+            ]
+            risk_score += len(old_defs) * 10
+            details['overdue_deficits'] = len(old_defs)
+    except Exception:
+        pass
+
+    risk_score = min(100, max(0, risk_score))
+
+    if risk_score >= 80:
+        level, color = "⚫ קריטי", "#dc2626"
+    elif risk_score >= 50:
+        level, color = "🔴 גבוה", "#ef4444"
+    elif risk_score >= 25:
+        level, color = "🟡 בינוני", "#f59e0b"
+    else:
+        level, color = "🟢 נמוך", "#10b981"
+
+    return {"risk_score": risk_score, "level": level, "color": color, "details": details}
+
+
+# ===== SLA Helpers =====
+
+def count_overdue_deficits(units: list) -> int:
+    """ספור חוסרים פתוחים שעברו 7 ימים (SLA רגיל)"""
+    try:
+        deficits = get_open_deficits(units)
+        if deficits.empty or 'detected_date' not in deficits.columns:
+            return 0
+        deficits = deficits.copy()
+        deficits['days_open'] = (
+            pd.Timestamp.now() - pd.to_datetime(deficits['detected_date'], errors='coerce')
+        ).dt.days
+        return int((deficits['days_open'] > 7).sum())
+    except Exception:
+        return 0
+
+
+def count_silent_units(df: pd.DataFrame) -> int:
+    """ספור יחידות שלא דיווחו ביותר מ-7 ימים"""
+    if df.empty or 'date' not in df.columns or 'unit' not in df.columns:
+        return 0
+    silent = 0
+    try:
+        dates = pd.to_datetime(df['date'], errors='coerce')
+        for unit in df['unit'].unique():
+            last = dates[df['unit'] == unit].max()
+            if pd.notna(last) and (pd.Timestamp.now() - last).days > 7:
+                silent += 1
+    except Exception:
+        pass
+    return silent
+
+
+# ===== Inspector Credibility =====
+
+def calculate_inspector_credibility(inspector_name: str, df: pd.DataFrame) -> dict:
+    """
+    🔍 דירוג אמינות מבקר (0-100)
+    • % ביקורות עם ליקויים (אמור להיות 15-60%)
+    • שגרתיות/שונות בין ביקורות
+    """
+    inspector_df = df[df['inspector'] == inspector_name] if 'inspector' in df.columns else pd.DataFrame()
+    if len(inspector_df) < 3:
+        return {"credibility": "אין מספיק נתונים", "score": 0, "color": "#94a3b8",
+                "defect_rate": 0, "consistency": 0}
+
+    # 1. אחוז עם ליקויים
+    conditions = []
+    if 'e_status' in inspector_df.columns:
+        conditions.append(inspector_df['e_status'] == 'פסול')
+    if 'k_cert' in inspector_df.columns:
+        conditions.append(inspector_df['k_cert'] == 'לא')
+    if 'r_mezuzot_missing' in inspector_df.columns:
+        conditions.append(pd.to_numeric(inspector_df['r_mezuzot_missing'], errors='coerce').fillna(0) > 0)
+
+    if conditions:
+        import functools
+        combined = functools.reduce(lambda a, b: a | b, conditions)
+        defect_pct = (combined.sum() / len(inspector_df)) * 100
+    else:
+        defect_pct = 50.0
+
+    if defect_pct == 0 or defect_pct == 100:
+        defect_score = 20
+    elif 15 <= defect_pct <= 60:
+        defect_score = 100
+    else:
+        defect_score = 50
+
+    # 2. שונות תזמון
+    variance_score = 50
+    if 'date' in inspector_df.columns:
+        try:
+            dates = pd.to_datetime(inspector_df['date'], errors='coerce').dropna().sort_values()
+            intervals = dates.diff().dt.days.dropna()
+            if len(intervals) > 0:
+                mean_i = intervals.mean()
+                std_i = intervals.std()
+                cv = (std_i / mean_i) if mean_i > 0 else 0
+                variance_score = max(0, 100 - min(50, cv * 100))
+        except Exception:
+            pass
+
+    final_score = round(defect_score * 0.6 + variance_score * 0.4, 1)
+
+    if final_score >= 80:
+        credibility, color = "✅ גבוהה", "#10b981"
+    elif final_score >= 60:
+        credibility, color = "👍 בינונית", "#f59e0b"
+    else:
+        credibility, color = "⚠️ נמוכה — שקול ביקורת", "#ef4444"
+
+    return {"credibility": credibility, "score": final_score, "color": color,
+            "defect_rate": round(defect_pct, 1), "consistency": round(variance_score, 1)}
+
+
+# ===== QR Scanner =====
+
+def parse_qr_data(qr_string: str) -> dict:
+    """
+    פענוח QR code של מוצב.
+    פורמט: BASE|CAMP_NAME|COORDS|DATE
+    """
+    try:
+        parts = qr_string.strip().split("|")
+        if len(parts) >= 2 and parts[0] == "BASE":
+            base_name = parts[1].replace("_", " ")
+            coords = None
+            if len(parts) >= 3:
+                try:
+                    lat, lon = map(float, parts[2].split(","))
+                    coords = (lat, lon)
+                except Exception:
+                    pass
+            return {"base_name": base_name, "coordinates": coords, "qr_raw": qr_string}
+    except Exception:
+        pass
+    return {}
+
+
+def render_qr_scanner():
+    """📱 סריקת QR מוצב (אופציונלי) — מחזיר שם מוצב או None"""
+    with st.expander("📱 סריקת QR מוצב (אופציונלי)", expanded=False):
+        st.info("💡 הדבס את ה-QR של המוצב לזיהוי אוטומטי. פורמט: BASE|CAMP_NAME|...")
+        qr_input = st.text_input("📷 ערך QR", key="qr_input_scanner", placeholder="BASE|CAMP_OFIR|31.76,35.21|2025-01")
+        if qr_input:
+            result = parse_qr_data(qr_input)
+            if result:
+                st.success(f"✅ זוהה: **{result['base_name']}**")
+                return result['base_name']
+            else:
+                st.warning("⚠️ QR לא ידוע — הזן מוצב ידנית")
+    return None
 
 
 # --- 5. AI Logic ---
@@ -1962,6 +2191,9 @@ if "logged_in" not in st.session_state: st.session_state.logged_in = False
 if "role" not in st.session_state: st.session_state.role = "hatmar"
 if "selected_unit" not in st.session_state: st.session_state.selected_unit = None
 if "login_stage" not in st.session_state: st.session_state.login_stage = "gallery"
+# Rate limiting counters (per unit)
+if "login_attempts" not in st.session_state: st.session_state.login_attempts = {}
+if "login_locked_until" not in st.session_state: st.session_state.login_locked_until = {}
 
 # --- 8. Login Screens (עיצוב מושלם) ---
 
@@ -1999,6 +2231,9 @@ def render_login_gallery():
         with c_cols[i]:
             render_unit_card(cmd)
 
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
+
 def render_login_password():
     unit = st.session_state.selected_unit
     c1, c2, c3 = st.columns([1, 2, 1])
@@ -2009,28 +2244,52 @@ def render_login_password():
             <h2 style='margin: 0; color: {COLORS['primary']};'>כניסה ל{unit}</h2>
         </div>
         """, unsafe_allow_html=True)
-        
-        password = st.text_input("🔐 הזן סיסמה (0000 לכניסה ראשונית)", type="password", key="pwd_input")
-        
+
+        # ─── בדיקת נעילה ───
+        now = datetime.datetime.now()
+        locked_until = st.session_state.login_locked_until.get(unit)
+        if locked_until and now < locked_until:
+            remaining = int((locked_until - now).total_seconds() / 60) + 1
+            st.error(f"🔒 החשבון נעול לאחר {MAX_LOGIN_ATTEMPTS} ניסיונות כושלים. המתן {remaining} דקות.")
+            with st.columns([2, 1])[1]:
+                if st.button("↩️ חזור", use_container_width=True):
+                    st.session_state.login_stage = "gallery"
+                    st.rerun()
+            return
+
+        attempts_left = MAX_LOGIN_ATTEMPTS - st.session_state.login_attempts.get(unit, 0)
+        if attempts_left < MAX_LOGIN_ATTEMPTS:
+            st.warning(f"⚠️ נותרו {attempts_left} ניסיונות לפני נעילה")
+
+        password = st.text_input("🔐 הזן סיסמה", type="password", key="pwd_input")
+
         col_login, col_back = st.columns([2, 1])
         with col_login:
             if st.button("🚀 התחבר", type="primary", use_container_width=True):
-                if verify_password(get_stored_password_hash_dummy(unit), password) or password == "0000":
-                    if password == "0000":
-                        hashed = hash_password("0000")
-                        role = "pikud" if unit == "פיקוד מרכז" else ("ugda" if "אוגדה" in unit else "hatmar")
-                        try:
-                            supabase.table("unit_passwords").upsert({"unit_name": unit, "password": hashed, "role": role}).execute()
-                        except: pass
-
+                stored = get_stored_password_hash_dummy(unit)
+                if verify_password(stored, password):
+                    # ✅ כניסה מוצלחת — אפס ניסיונות
+                    st.session_state.login_attempts[unit] = 0
+                    st.session_state.login_locked_until.pop(unit, None)
                     st.session_state.logged_in = True
                     st.session_state.role = get_user_role(unit)
+                    log_audit_event("LOGIN_SUCCESS", unit, severity="info")
                     st.success("✅ התחברות בוצעה בהצלחה!")
                     time.sleep(0.5)
                     st.rerun()
                 else:
-                    st.error("❌ סיסמה שגויה")
-        
+                    # ❌ ניסיון כושל
+                    current = st.session_state.login_attempts.get(unit, 0) + 1
+                    st.session_state.login_attempts[unit] = current
+                    log_audit_event("LOGIN_FAILURE", unit, details={"attempts": current}, severity="warning")
+                    if current >= MAX_LOGIN_ATTEMPTS:
+                        st.session_state.login_locked_until[unit] = (
+                            datetime.datetime.now() + datetime.timedelta(minutes=LOCKOUT_MINUTES)
+                        )
+                        st.error(f"🔒 יותר מדי ניסיונות. החשבון נעול ל-{LOCKOUT_MINUTES} דקות.")
+                    else:
+                        st.error(f"❌ סיסמה שגויה ({current}/{MAX_LOGIN_ATTEMPTS} ניסיונות)")
+
         with col_back:
             if st.button("↩️ חזור", use_container_width=True):
                 st.session_state.login_stage = "gallery"
@@ -2102,9 +2361,9 @@ def render_command_dashboard():
 
     # טאבים לפי תפקיד
     if role == 'pikud':
-        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🗺️ Map", "⚙️ ניהול"])
+        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🎯 Risk Center", "🔍 אמינות מבקרים", "⚙️ ניהול"])
     else:
-        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🗺️ Map"])
+        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map"])
     
     # ===== טאב 1: סקירה כללית =====
     with tabs[0]:
@@ -3089,10 +3348,19 @@ def render_command_dashboard():
                 if total_from_reports['no_supervisor'] > 0:
                     st.markdown(f"- 👤 **{total_from_reports['no_supervisor']} מוצבים ללא נאמן כשרות**")
     
-    # ===== טאב 6: מפה ארצית =====
+    # ===== טאב 6: Executive Summary =====
     with tabs[5]:
+        if role == 'pikud':
+            render_executive_summary_dashboard()
+        elif role == 'ugda':
+            render_ogda_summary_dashboard()
+        else:
+            render_hatmar_summary_dashboard()
+
+    # ===== טאב 7: מפה ארצית =====
+    with tabs[6]:
         st.markdown("### 🛰️ תמונת מצב ארצית - כלל המגזרים")
-        st.info("🔐 **ביטחון מידע:** המיקומים מוזזים 500 מטר מהמיקום המדויק לצורכי אבטחת מידע")
+        st.info("🔐 **ביטחון מידע:** המיקומים מוזזים 300 מטר מהמיקום המדויק לצורכי אבטחת מידע")
         
         # שליפת כל הנתונים ללא סינון (None)
         map_raw = load_reports_cached(None)
@@ -3139,9 +3407,41 @@ def render_command_dashboard():
         else:
             st.warning("⚠️ לא נמצאו נתוני מיקום")
     
-    # ===== טאב 7: ניהול (רק פיקוד) =====
+    # ===== טאב 8: Risk Center (רק פיקוד) =====
     if role == 'pikud':
-        with tabs[6]:
+        with tabs[7]:
+            render_risk_command_center(df, accessible_units)
+
+    # ===== טאב 9: אמינות מבקרים (רק פיקוד) =====
+    if role == 'pikud':
+        with tabs[8]:
+            st.markdown("## 🔍 אמינות מבקרים")
+            if not df.empty and 'inspector' in df.columns:
+                inspectors = df['inspector'].dropna().unique()
+                if len(inspectors) > 0:
+                    for inspector in sorted(inspectors):
+                        cred = calculate_inspector_credibility(inspector, df)
+                        col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
+                        with col1:
+                            st.markdown(f"**{inspector}**")
+                        with col2:
+                            st.metric("ציון", f"{cred['score']:.0f}")
+                        with col3:
+                            st.metric("% ליקויים", f"{cred['defect_rate']:.0f}%")
+                        with col4:
+                            st.markdown(
+                                f"<span style='color:{cred['color']}'>{cred['credibility']}</span>",
+                                unsafe_allow_html=True
+                            )
+                        st.divider()
+                else:
+                    st.info("אין מבקרים רשומים")
+            else:
+                st.info("אין נתוני מבקרים")
+
+    # ===== טאב 10: ניהול (רק פיקוד) =====
+    if role == 'pikud':
+        with tabs[9]:
             management_tabs = st.tabs(["🔗 ניהול היררכיה", "🔑 ניהול סיסמאות", "🖼️ ניהול לוגואים"])
             
             # ניהול היררכיה
@@ -4334,7 +4634,7 @@ def render_unit_report():
 
             with stats_tabs[1]:
                 st.markdown("### 📍 מפת מיקומים")
-                st.info("🔐 **ביטחון מידע:** המיקומים מוזזים 500 מטר מהמיקום המדויק לצורכי אבטחת מידע")
+                st.info("🔐 **ביטחון מידע:** המיקומים מוזזים 300 מטר מהמיקום המדויק לצורכי אבטחת מידע")
                 
                 # בדיקה אם יש עמודות מיקום
                 has_location_columns = not unit_df.empty and 'latitude' in unit_df.columns and 'longitude' in unit_df.columns
@@ -4513,6 +4813,754 @@ def render_unit_report():
             st.info("אין מספיק נתונים להצגת סטטיסטיקות")
     else:
         st.info("טרם הוגשו דוחות ליחידה זו")
+
+# ===== Executive Summary Dashboards =====
+
+def render_executive_summary_dashboard():
+    """
+    \ud83c\udf96\ufe0f \u05d3\u05e9\u05d1\u05d5\u05e8\u05d3 \u05d4\u05e4\u05d9\u05e7\u05d5\u05d3 \u2013 \u05ea\u05de\u05d5\u05e0\u05d4 \u05e9\u05dc\u05de\u05d4 \u05d1\u05d3\u05e7\u05d4 \u05d0\u05d7\u05ea
+    \u05e2\u05d9\u05e6\u05d5\u05d1: Dark Mode, \u05d2\u05e8\u05e4\u05d9\u05dd \u05d9\u05e4\u05d9\u05dd, \u05de\u05d3\u05d3\u05d9\u05dd \u05d1\u05d5\u05dc\u05d8\u05d9\u05dd
+    """
+    st.markdown("""
+    <style>
+        .header-container {
+            background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="header-container">
+        <h1 style='color: white; margin: 0;'>\ud83c\udf96\ufe0f Executive Summary \u2013 Pikud</h1>
+        <p style='color: rgba(255,255,255,0.9); margin: 8px 0 0 0;'>
+            Real-time operational intelligence \u00b7 Last updated: """ +
+            datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S') + """
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ===== KPI Cards =====
+    st.markdown("### \ud83d\udcca Key Performance Indicators")
+    kpi_cols = st.columns(5)
+
+    all_reports = load_reports_cached(None)
+    df = pd.DataFrame(all_reports) if all_reports else pd.DataFrame()
+    accessible_units = get_accessible_units(st.session_state.selected_unit, st.session_state.role)
+
+    critical_bases = len(df[df['e_status'] == '\u05e4\u05e1\u05d5\u05dc']) if not df.empty and 'e_status' in df.columns else 0
+    no_kashrut = len(df[df['k_cert'] == '\u05dc\u05d0']) if not df.empty and 'k_cert' in df.columns else 0
+    open_deficits = get_deficit_statistics(accessible_units)['total_open'] if not df.empty else 0
+    silent_units = count_silent_units(df) if not df.empty else 0
+
+    units_list = df['unit'].unique().tolist() if not df.empty else []
+    avg_risk = (
+        sum(calculate_operational_risk_index(u, df)['risk_score'] for u in units_list) / len(units_list)
+        if units_list else 0
+    )
+    risk_status = "\ud83d\udd34 CRITICAL" if avg_risk >= 50 else "\ud83d\udfe1 HIGH" if avg_risk >= 25 else "\ud83d\udfe2 NORMAL"
+
+    with kpi_cols[0]:
+        st.metric("\ud83d\udea7 Eruv Invalid", critical_bases,
+                  delta=f"\u2191 {critical_bases}" if critical_bases > 0 else "\u2705 \u05ea\u05e7\u05d9\u05df",
+                  delta_color="inverse" if critical_bases > 0 else "off")
+    with kpi_cols[1]:
+        st.metric("\ud83c\udf7d\ufe0f No Kashrut", no_kashrut,
+                  delta="\u05d3\u05d5\u05e8\u05e9 \u05d8\u05d9\u05e4\u05d5\u05dc" if no_kashrut > 0 else "\u05ea\u05e7\u05d9\u05df",
+                  delta_color="inverse" if no_kashrut > 0 else "off")
+    with kpi_cols[2]:
+        st.metric("\ud83d\udccb Open Deficits", open_deficits,
+                  delta=f"SLA: {count_overdue_deficits(accessible_units)}" if open_deficits > 0 else "\u05d1\u05e9\u05dc\u05d9\u05d8\u05d4",
+                  delta_color="inverse")
+    with kpi_cols[3]:
+        st.metric("\u23f0 Silent Units", silent_units,
+                  delta="\u05dc\u05d0 \u05d3\u05d9\u05d5\u05d5\u05d7\u05d5" if silent_units > 0 else "\u05db\u05d5\u05dc\u05dd \u05d1\u05e7\u05e9\u05e8",
+                  delta_color="inverse" if silent_units > 0 else "off")
+    with kpi_cols[4]:
+        st.metric("\ud83d\udcca Risk Index", f"{avg_risk:.0f}/100", delta=risk_status)
+
+    st.markdown("---")
+
+    # ===== Row 1: Gauge + Critical Issues =====
+    col_gauge, col_issues = st.columns([1, 2])
+
+    with col_gauge:
+        st.markdown("### \ud83c\udfaf Overall Risk Status")
+        fig_gauge = go.Figure(data=[go.Indicator(
+            mode="gauge+number+delta",
+            value=avg_risk,
+            title={'text': "Risk Level"},
+            domain={'x': [0, 1], 'y': [0, 1]},
+            delta={'reference': 30},
+            gauge={
+                'axis': {'range': [None, 100]},
+                'bar': {'color': "#ef4444"},
+                'steps': [
+                    {'range': [0, 25], 'color': "#d1fae5"},
+                    {'range': [25, 50], 'color': "#fef3c7"},
+                    {'range': [50, 75], 'color': "#fed7aa"},
+                    {'range': [75, 100], 'color': "#fee2e2"}
+                ],
+                'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 50}
+            }
+        )])
+        fig_gauge.update_layout(paper_bgcolor='rgba(0,0,0,0)', height=350)
+        st.plotly_chart(fig_gauge, use_container_width=True)
+
+    with col_issues:
+        st.markdown("### \ud83d\udea8 Critical Issues (Top Priority)")
+        critical_issues = []
+
+        if not df.empty and 'e_status' in df.columns and 'base' in df.columns:
+            for base in df[df['e_status'] == '\u05e4\u05e1\u05d5\u05dc']['base'].unique()[:3]:
+                critical_issues.append({"icon": "\ud83d\udea7", "title": f"Eruv Invalid \u2013 {base}", "color": "#dc2626"})
+
+        if not df.empty and 'k_cert' in df.columns and 'base' in df.columns:
+            for base in df[df['k_cert'] == '\u05dc\u05d0']['base'].unique()[:2]:
+                critical_issues.append({"icon": "\ud83c\udf7d\ufe0f", "title": f"No Kashrut \u2013 {base}", "color": "#f59e0b"})
+
+        overdue_count = count_overdue_deficits(accessible_units)
+        if overdue_count > 0:
+            critical_issues.append({"icon": "\u23f0", "title": f"{overdue_count} Deficits Over SLA", "color": "#f59e0b"})
+        if silent_units > 0:
+            critical_issues.append({"icon": "\ud83d\udce1", "title": f"{silent_units} Units Not Reporting", "color": "#3b82f6"})
+
+        if critical_issues:
+            for issue in critical_issues[:5]:
+                st.markdown(f"""
+                <div style='background:{issue["color"]}20; border-left:4px solid {issue["color"]};
+                            padding:12px; border-radius:6px; margin-bottom:10px;'>
+                    <strong>{issue["icon"]} {issue["title"]}</strong>
+                </div>""", unsafe_allow_html=True)
+        else:
+            st.success("\u2705 No critical issues detected")
+
+    st.markdown("---")
+
+    # ===== Row 2: Risk bar + 30-day trend =====
+    col_risk, col_trend = st.columns([1.2, 1])
+
+    with col_risk:
+        st.markdown("### \ud83c\udf21\ufe0f Unit Risk Matrix")
+        if units_list:
+            risk_rows = [{"unit": u,
+                          "risk": calculate_operational_risk_index(u, df)['risk_score']}
+                         for u in sorted(units_list)]
+            risk_df = pd.DataFrame(risk_rows).sort_values('risk', ascending=False)
+            fig_risk = px.bar(risk_df, x='unit', y='risk',
+                              color='risk',
+                              color_continuous_scale=['#10b981', '#f59e0b', '#ef4444'],
+                              range_color=[0, 100])
+            fig_risk.update_layout(height=350, xaxis_tickangle=-45, showlegend=False,
+                                   paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig_risk, use_container_width=True)
+
+    with col_trend:
+        st.markdown("### \ud83d\udcc8 30-Day Trend")
+        if not df.empty and 'date' in df.columns:
+            try:
+                df_sorted = df.copy()
+                df_sorted['date'] = pd.to_datetime(df_sorted['date'], errors='coerce')
+                df_30 = df_sorted[df_sorted['date'] > pd.Timestamp.now() - pd.Timedelta(days=30)]
+                trend_data = []
+                for d in pd.date_range(df_30['date'].min(), df_30['date'].max(), freq='D'):
+                    day_df = df_30[df_30['date'].dt.date == d.date()]
+                    issues = 0
+                    if 'e_status' in day_df.columns:
+                        issues += int((day_df['e_status'] == '\u05e4\u05e1\u05d5\u05dc').sum())
+                    if 'k_cert' in day_df.columns:
+                        issues += int((day_df['k_cert'] == '\u05dc\u05d0').sum())
+                    trend_data.append({"date": d, "issues": issues})
+                trend_df = pd.DataFrame(trend_data)
+                fig_trend = px.line(trend_df, x='date', y='issues', markers=True)
+                fig_trend.update_layout(height=350, showlegend=False, hovermode='x unified',
+                                        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                fig_trend.update_traces(line_color='#3b82f6', marker_color='#60a5fa')
+                st.plotly_chart(fig_trend, use_container_width=True)
+            except Exception as e:
+                st.warning(f"\u05dc\u05d0 \u05e0\u05d9\u05ea\u05df \u05dc\u05d8\u05e2\u05d5\u05df \u05de\u05d2\u05de\u05d5\u05ea: {e}")
+
+    st.markdown("---")
+
+    # ===== Row 3: Detailed deficit table =====
+    st.markdown("### \ud83d\udccb Detailed Deficit Breakdown")
+    all_open_deficits = get_open_deficits(accessible_units)
+    if not all_open_deficits.empty and 'detected_date' in all_open_deficits.columns:
+        all_open_deficits = all_open_deficits.copy()
+        all_open_deficits['days_open'] = (
+            pd.Timestamp.now() - pd.to_datetime(all_open_deficits['detected_date'], errors='coerce')
+        ).dt.days.fillna(0).astype(int)
+        all_open_deficits = all_open_deficits.sort_values('days_open', ascending=False)
+
+        table_html = """
+        <table style='width:100%;border-collapse:collapse;color:#0f172a;'>
+        <thead><tr style='background:#1e3a8a;color:white;'>
+            <th style='padding:10px;border:1px solid #334155;'>\u05e2\u05d3\u05d9\u05e4\u05d5\u05ea</th>
+            <th style='padding:10px;border:1px solid #334155;'>\u05e1\u05d5\u05d2</th>
+            <th style='padding:10px;border:1px solid #334155;'>\u05d9\u05d7\u05d9\u05d3\u05d4</th>
+            <th style='padding:10px;border:1px solid #334155;'>\u05de\u05d5\u05e6\u05d1</th>
+            <th style='padding:10px;border:1px solid #334155;text-align:center;'>\u05db\u05de\u05d5\u05ea</th>
+            <th style='padding:10px;border:1px solid #334155;text-align:center;'>\u05d9\u05de\u05d9\u05dd</th>
+            <th style='padding:10px;border:1px solid #334155;text-align:center;'>\u05e1\u05d8\u05d8\u05d5\u05e1</th>
+        </tr></thead><tbody>"""
+        for _, deficit in all_open_deficits.head(10).iterrows():
+            days = int(deficit.get('days_open', 0))
+            priority = 1 if days > 14 else 2 if days > 7 else 3
+            priority_icon = "\ud83d\udd34" if priority == 1 else "\ud83d\udfe1" if priority == 2 else "\ud83d\udfe2"
+            row_bg = "#fee2e2" if priority == 1 else "#fef3c7" if priority == 2 else "#f0fdf4"
+            status = "\u26a0\ufe0f OVERDUE" if days > 14 else "\u23f0 URGENT" if days > 7 else "\u2705 NEW"
+            table_html += f"""
+            <tr style='background:{row_bg};'>
+                <td style='padding:10px;border:1px solid #e2e8f0;'>{priority_icon}</td>
+                <td style='padding:10px;border:1px solid #e2e8f0;'>{deficit.get('deficit_type','')}</td>
+                <td style='padding:10px;border:1px solid #e2e8f0;'>{deficit.get('unit','')}</td>
+                <td style='padding:10px;border:1px solid #e2e8f0;'>{deficit.get('base','')}</td>
+                <td style='padding:10px;border:1px solid #e2e8f0;text-align:center;'>{int(deficit.get('deficit_count',1))}</td>
+                <td style='padding:10px;border:1px solid #e2e8f0;text-align:center;'><strong>{days}</strong></td>
+                <td style='padding:10px;border:1px solid #e2e8f0;text-align:center;'>{status}</td>
+            </tr>"""
+        table_html += "</tbody></table>"
+        st.markdown(table_html, unsafe_allow_html=True)
+    else:
+        st.success("\u2705 No open deficits")
+
+    st.markdown("---")
+    c1, c2, c3 = st.columns(3)
+    with c1: st.metric("\ud83d\udcca Total Reports", len(df) if not df.empty else 0)
+    with c2: st.metric("\ud83c\udfaf Active Units", df['unit'].nunique() if not df.empty else 0)
+    with c3: st.metric("\ud83d\udd04 Last Refresh", datetime.datetime.now().strftime('%H:%M:%S'))
+
+
+def render_ogda_summary_dashboard():
+    """
+    \ud83c\udfaf \u05d3\u05e9\u05d1\u05d5\u05e8\u05d3 \u05d0\u05d5\u05d2\u05d3\u05d4 \u2013 \u05e1\u05e7\u05d9\u05e8\u05d4 \u05e9\u05dc \u05db\u05dc \u05d4\u05d7\u05d8\u05de\u05e8\u05d9\u05dd \u05d1\u05ea\u05d7\u05ea\u05d5\u05e0\u05d9\u05d5\u05ea
+    """
+    st.markdown("""
+    <div style='background:linear-gradient(90deg,#059669 0%,#10b981 100%);
+                padding:30px;border-radius:12px;margin-bottom:30px;'>
+        <h1 style='color:white;margin:0;'>\ud83c\udfaf Ogda Dashboard \u2013 Summary</h1>
+        <p style='color:rgba(255,255,255,0.9);margin:8px 0 0 0;'>Subordinate Units Status \u00b7 """ +
+    datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S') + """</p>
+    </div>""", unsafe_allow_html=True)
+
+    unit = st.session_state.selected_unit
+    role = st.session_state.role
+    accessible_units = get_accessible_units(unit, role)
+    raw_data = load_reports_cached(accessible_units)
+    df = pd.DataFrame(raw_data) if raw_data else pd.DataFrame()
+
+    kpi_cols = st.columns(4)
+    with kpi_cols[0]:
+        subordinate_count = max(0, len(accessible_units) - 1)
+        st.metric("\ud83c\udfd7\ufe0f Subordinate Units", subordinate_count)
+    with kpi_cols[1]:
+        st.metric("\ud83d\udccb Total Reports", len(df))
+    with kpi_cols[2]:
+        issues_count = 0
+        if not df.empty:
+            if 'e_status' in df.columns: issues_count += int((df['e_status'] == '\u05e4\u05e1\u05d5\u05dc').sum())
+            if 'k_cert' in df.columns: issues_count += int((df['k_cert'] == '\u05dc\u05d0').sum())
+        st.metric("\ud83d\udd34 Open Issues", issues_count, delta_color="inverse")
+    with kpi_cols[3]:
+        active_units = [u for u in accessible_units if u != unit and not df[df['unit'] == u].empty] if not df.empty else []
+        avg_score = (
+            sum(calculate_unit_score(df[df['unit'] == u]) for u in active_units) / len(active_units)
+            if active_units else 0
+        )
+        st.metric("\ud83d\udcca Avg Score", f"{avg_score:.0f}/100")
+
+    st.markdown("---")
+    st.markdown("### \ud83d\udcca Units Comparison Matrix")
+
+    comparison_data = []
+    for unit_name in accessible_units:
+        if unit_name == unit:
+            continue
+        unit_df = df[df['unit'] == unit_name] if not df.empty else pd.DataFrame()
+        if not unit_df.empty:
+            score = calculate_unit_score(unit_df)
+            open_defs = len(get_open_deficits([unit_name]))
+            comparison_data.append({"Unit": unit_name, "Score": score,
+                                     "Reports": len(unit_df), "Deficits": open_defs})
+
+    if comparison_data:
+        comp_df = pd.DataFrame(comparison_data).sort_values('Score', ascending=False)
+        fig_comp = px.bar(comp_df, x='Unit', y='Score', color='Score',
+                          color_continuous_scale=['#ef4444', '#f59e0b', '#10b981'],
+                          range_color=[0, 100], hover_data=['Reports', 'Deficits'],
+                          title='Performance Comparison')
+        fig_comp.update_layout(height=400, xaxis_tickangle=-45,
+                                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        st.plotly_chart(fig_comp, use_container_width=True)
+
+        st.markdown("### \ud83d\udccb Detailed Unit Metrics")
+        table_html = """
+        <table style='width:100%;border-collapse:collapse;'>
+        <thead><tr style='background:#059669;color:white;'>
+            <th style='padding:10px;border:1px solid #334155;'>Unit</th>
+            <th style='padding:10px;border:1px solid #334155;text-align:center;'>Score</th>
+            <th style='padding:10px;border:1px solid #334155;text-align:center;'>Reports</th>
+            <th style='padding:10px;border:1px solid #334155;text-align:center;'>Deficits</th>
+            <th style='padding:10px;border:1px solid #334155;text-align:center;'>Status</th>
+        </tr></thead><tbody>"""
+        for _, row in comp_df.iterrows():
+            sc = row['Score']
+            badge = "\u2705 Excellent" if sc >= 80 else "\ud83d\udc4d Good" if sc >= 60 else "\u26a0\ufe0f Needs Work"
+            bg = "#f0fdf4" if sc >= 80 else "#fefce8" if sc >= 60 else "#fef2f2"
+            table_html += f"""
+            <tr style='background:{bg};'>
+                <td style='padding:10px;border:1px solid #e2e8f0;'>{row['Unit']}</td>
+                <td style='padding:10px;border:1px solid #e2e8f0;text-align:center;'><strong>{sc:.0f}</strong></td>
+                <td style='padding:10px;border:1px solid #e2e8f0;text-align:center;'>{row['Reports']}</td>
+                <td style='padding:10px;border:1px solid #e2e8f0;text-align:center;'>{row['Deficits']}</td>
+                <td style='padding:10px;border:1px solid #e2e8f0;text-align:center;'>{badge}</td>
+            </tr>"""
+        table_html += "</tbody></table>"
+        st.markdown(table_html, unsafe_allow_html=True)
+    else:
+        st.info("\u05d0\u05d9\u05df \u05e0\u05ea\u05d5\u05e0\u05d9 \u05ea\u05ea\u05d5\u05e0\u05d9\u05d5\u05ea")
+
+
+def render_hatmar_summary_dashboard():
+    """
+    \ud83d\udcca \u05d3\u05e9\u05d1\u05d5\u05e8\u05d3 \u05e8\u05d1 \u05d7\u05d8\u05de\u05e8 \u2013 \u05e1\u05e7\u05d9\u05e8\u05d4 \u05de\u05d7\u05d8\u05de\u05e8 \u05e9\u05dc\u05d5
+    """
+    st.markdown("""
+    <div style='background:linear-gradient(90deg,#7c3aed 0%,#a855f7 100%);
+                padding:30px;border-radius:12px;margin-bottom:30px;'>
+        <h1 style='color:white;margin:0;'>\ud83d\udcca My Unit Dashboard</h1>
+        <p style='color:rgba(255,255,255,0.9);margin:8px 0 0 0;'>Comprehensive operational overview \u00b7 """ +
+    datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S') + """</p>
+    </div>""", unsafe_allow_html=True)
+
+    unit = st.session_state.selected_unit
+    all_data = load_reports_cached(None)
+    df = pd.DataFrame(all_data) if all_data else pd.DataFrame()
+    unit_df = df[df['unit'] == unit].copy() if not df.empty and 'unit' in df.columns else pd.DataFrame()
+
+    kpi_cols = st.columns(5)
+    with kpi_cols[0]:
+        st.metric("\ud83d\udccb Total Reports", len(unit_df))
+    with kpi_cols[1]:
+        score = calculate_unit_score(unit_df) if not unit_df.empty else 0
+        st.metric("\ud83c\udfaf Overall Score", f"{score:.0f}/100",
+                 delta="Excellent" if score >= 80 else "Good" if score >= 60 else "Needs Work")
+    with kpi_cols[2]:
+        open_defs = len(get_open_deficits([unit]))
+        st.metric("\ud83d\udccb Open Deficits", open_defs, delta_color="inverse" if open_defs > 0 else "off")
+    with kpi_cols[3]:
+        if not unit_df.empty and 'date' in unit_df.columns:
+            last_report = pd.to_datetime(unit_df['date'], errors='coerce').max()
+            days_ago = int((pd.Timestamp.now() - last_report).days) if pd.notna(last_report) else 999
+            st.metric("\ud83d\udcc5 Last Report", f"{days_ago} days ago")
+        else:
+            st.metric("\ud83d\udcc5 Last Report", "Never")
+    with kpi_cols[4]:
+        unique_bases = unit_df['base'].nunique() if not unit_df.empty and 'base' in unit_df.columns else 0
+        st.metric("\ud83d\udccd Bases Covered", unique_bases)
+
+    st.markdown("---")
+
+    col_comp, col_issues = st.columns([1.2, 1])
+
+    with col_comp:
+        st.markdown("### \u2705 Compliance Status")
+        if not unit_df.empty:
+            kashrut_ok = (
+                int((unit_df['k_cert'] == '\u05db\u05df').sum()) / len(unit_df) * 100
+                if 'k_cert' in unit_df.columns else 50
+            )
+            eruv_ok = (
+                int((unit_df['e_status'] == '\u05ea\u05e7\u05d9\u05df').sum()) / len(unit_df) * 100
+                if 'e_status' in unit_df.columns else 50
+            )
+            comp_data = pd.DataFrame([
+                {"Category": "Kashrut", "Compliance": kashrut_ok},
+                {"Category": "Eruv", "Compliance": eruv_ok},
+            ])
+            fig_comp = px.bar(comp_data, x='Category', y='Compliance',
+                              color='Compliance', color_continuous_scale='RdYlGn', range_color=[0, 100])
+            fig_comp.update_layout(height=350, showlegend=False,
+                                   paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig_comp, use_container_width=True)
+
+    with col_issues:
+        st.markdown("### \u26a0\ufe0f Active Issues")
+        issues_list = []
+        if not unit_df.empty:
+            if 'k_cert' in unit_df.columns and (unit_df['k_cert'] == '\u05dc\u05d0').any():
+                issues_list.append(("\ud83c\udf7d\ufe0f", "Missing Kashrut", "#f59e0b"))
+            if 'e_status' in unit_df.columns and (unit_df['e_status'] == '\u05e4\u05e1\u05d5\u05dc').any():
+                issues_list.append(("\ud83d\udea7", "Invalid Eruv", "#ef4444"))
+            if 'r_mezuzot_missing' in unit_df.columns:
+                total_mez = int(pd.to_numeric(unit_df['r_mezuzot_missing'], errors='coerce').fillna(0).sum())
+                if total_mez > 0:
+                    issues_list.append(("\ud83d\udcdc", f"{total_mez} Missing Mezuzot", "#3b82f6"))
+        if issues_list:
+            for icon, title, color in issues_list:
+                st.markdown(f"""
+                <div style='background:{color}20;border-left:4px solid {color};
+                            padding:12px;border-radius:6px;margin-bottom:10px;'>
+                    <strong>{icon} {title}</strong>
+                </div>""", unsafe_allow_html=True)
+        else:
+            st.success("\u2705 No active issues")
+
+    st.markdown("---")
+    st.markdown("### \ud83d\udccd Bases Overview")
+    if not unit_df.empty and 'base' in unit_df.columns:
+        bases_data = []
+        for base in unit_df['base'].unique():
+            base_reports = unit_df[unit_df['base'] == base]
+            sc = calculate_unit_score(base_reports)
+            bases_data.append({"Base": base, "Reports": len(base_reports), "Score": sc})
+        bases_df = pd.DataFrame(bases_data).sort_values('Score', ascending=False)
+        fig_bases = px.scatter(bases_df, x='Reports', y='Score', size='Score',
+                               hover_name='Base', color='Score',
+                               color_continuous_scale='RdYlGn', range_color=[0, 100])
+        fig_bases.update_layout(height=350, showlegend=False,
+                                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        st.plotly_chart(fig_bases, use_container_width=True)
+    else:
+        st.info("\u05d0\u05d9\u05df \u05e0\u05ea\u05d5\u05e0\u05d9 \u05de\u05d5\u05e6\u05d1\u05d9\u05dd")
+
+
+# ===== New Dashboard Pages =====
+
+def render_risk_command_center(df: pd.DataFrame, accessible_units: list):
+    """
+    🎯 מרכז בקרה פיקודי — Risk Index מלא
+    מציג: מדדים, התראות אדום, גרף Risk לפי יחידה, גרף מגמות
+    """
+    st.markdown("""
+    <div style='background: linear-gradient(135deg, #0f172a 0%, #1e40af 100%);
+                padding: 28px; border-radius: 12px; margin-bottom: 24px;'>
+        <h1 style='color: white; margin: 0;'>🎖️ מרכז בקרה פיקודי — Risk Center</h1>
+        <p style='color: rgba(255,255,255,0.8); margin: 8px 0 0 0;'>תמונת מצב סיכונים בזמן אמת</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── שורה 1: מדדים ──
+    m1, m2, m3, m4, m5 = st.columns(5)
+    units_list = [u for u in df['unit'].unique()] if not df.empty else []
+
+    critical_bases = len(df[df['e_status'] == 'פסול']) if ('e_status' in df.columns and not df.empty) else 0
+    open_defs = get_deficit_statistics(accessible_units)['total_open']
+    overdue = count_overdue_deficits(accessible_units)
+    silent = count_silent_units(df)
+    avg_risk = 0
+    if units_list:
+        scores = [calculate_operational_risk_index(u, df)['risk_score'] for u in units_list]
+        avg_risk = round(sum(scores) / len(scores), 1) if scores else 0
+
+    with m1:
+        st.metric("🔴 בסיסים קריטיים", critical_bases,
+                  delta="עירוב פסול" if critical_bases > 0 else "תקין",
+                  delta_color="inverse" if critical_bases > 0 else "off")
+    with m2:
+        st.metric("📋 חוסרים פתוחים", open_defs)
+    with m3:
+        st.metric("⏰ עברו SLA (7 ימים)", overdue,
+                  delta="דחוף!" if overdue > 0 else "הכל בזמן",
+                  delta_color="inverse" if overdue > 0 else "off")
+    with m4:
+        st.metric("📡 יחידות שקטות", silent,
+                  delta=f"{silent} ≥7 ימים" if silent > 0 else "בקשר",
+                  delta_color="inverse" if silent > 0 else "off")
+    with m5:
+        st.metric("📊 Risk ממוצע", f"{avg_risk}/100")
+
+    st.markdown("---")
+
+    # ── שורה 2: Red Alerts ──
+    st.markdown("## 🚨 Red Alert – טיפול מיידי")
+    alerts = []
+
+    if not df.empty and 'e_status' in df.columns and 'base' in df.columns:
+        for base in df[df['e_status'] == 'פסול']['base'].unique():
+            alerts.append({"icon": "🚧", "color": "#dc2626",
+                           "title": f"עירוב פסול – {base}",
+                           "desc": "דורש טיפול מיידי"})
+
+    if not df.empty and 'unit' in df.columns and 'date' in df.columns:
+        dates = pd.to_datetime(df['date'], errors='coerce')
+        for u in df['unit'].unique():
+            last = dates[df['unit'] == u].max()
+            if pd.notna(last):
+                days = (pd.Timestamp.now() - last).days
+                if days > 7:
+                    alerts.append({"icon": "⏰", "color": "#f97316",
+                                   "title": f"{u} לא דיווחה",
+                                   "desc": f"שקטה {days} ימים"})
+
+    if alerts:
+        for alert in alerts:
+            st.markdown(f"""
+            <div style='background:{alert["color"]}18; border-left:4px solid {alert["color"]};
+                        padding:14px; border-radius:8px; margin-bottom:10px;'>
+                <strong style='color:{alert["color"]}'>{alert["icon"]} {alert["title"]}</strong>
+                <p style='margin:6px 0 0 0; color:#64748b'>{alert["desc"]}</p>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.success("✅ אין אזהרות קריטיות כרגע")
+
+    st.markdown("---")
+
+    # ── שורה 3: Risk Bar Chart ──
+    st.markdown("## 📊 Risk Index לפי יחידה")
+    if units_list:
+        risk_rows = []
+        for u in sorted(units_list):
+            rd = calculate_operational_risk_index(u, df)
+            risk_rows.append({"יחידה": u, "Risk": rd['risk_score'], "רמה": rd['level']})
+        risk_df = pd.DataFrame(risk_rows).sort_values("Risk", ascending=False)
+        fig = px.bar(
+            risk_df, x="יחידה", y="Risk",
+            color="Risk",
+            color_continuous_scale=[[0, "#10b981"], [0.25, "#f59e0b"], [0.5, "#ef4444"], [1, "#dc2626"]],
+            range_color=[0, 100],
+            text="Risk",
+            height=400
+        )
+        fig.update_traces(texttemplate='%{text:.0f}', textposition='outside')
+        fig.update_layout(coloraxis_showscale=False, yaxis_range=[0, 110])
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("אין נתונים להצגה")
+
+    st.markdown("---")
+
+    # ── שורה 4: מגמות חוסרים 30 יום ──
+    if not df.empty and 'date' in df.columns:
+        st.markdown("## 📈 מגמות חוסרים – 30 ימים אחרונים")
+        try:
+            df_copy = df.copy()
+            df_copy['date'] = pd.to_datetime(df_copy['date'], errors='coerce')
+            cutoff = pd.Timestamp.now() - pd.Timedelta(days=30)
+            df_month = df_copy[df_copy['date'] > cutoff]
+
+            if not df_month.empty:
+                rows = []
+                for d in pd.date_range(df_month['date'].min(), df_month['date'].max(), freq='D'):
+                    day_df = df_month[df_month['date'].dt.date == d.date()]
+                    rows.append({
+                        "תאריך": d,
+                        "מזוזות": int(pd.to_numeric(day_df.get('r_mezuzot_missing', pd.Series()), errors='coerce').fillna(0).sum()),
+                        "כשרות": int((day_df['k_cert'] == 'לא').sum()) if 'k_cert' in day_df.columns else 0,
+                        "עירוב": int((day_df['e_status'] == 'פסול').sum()) if 'e_status' in day_df.columns else 0,
+                    })
+                time_df = pd.DataFrame(rows)
+                fig2 = px.area(
+                    time_df, x='תאריך', y=['מזוזות', 'כשרות', 'עירוב'],
+                    labels={'value': 'מספר חוסרים'},
+                    color_discrete_map={'מזוזות': '#3b82f6', 'כשרות': '#f59e0b', 'עירוב': '#ef4444'},
+                    height=350
+                )
+                fig2.update_layout(hovermode='x unified')
+                st.plotly_chart(fig2, use_container_width=True)
+        except Exception as e:
+            st.warning(f"לא ניתן להציג מגמות: {e}")
+
+
+def render_deficit_tracker_pro(unit: str, accessible_units: list):
+    """
+    📊 תצוגת חוסרים מקצועית לחטמ"ר — טאבים, מדדים, progress bars
+    """
+    st.markdown("""
+    <div style='background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+                padding: 28px; border-radius: 12px; margin-bottom: 24px;'>
+        <h1 style='color: white; margin: 0;'>📋 מעקב חוסרים – תצוגה מקצועית</h1>
+        <p style='color: rgba(255,255,255,0.9); margin: 8px 0 0 0;'>כל החוסרים שלך, מיוניים וברורים</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    unit_deficits = get_open_deficits(accessible_units)
+
+    # ── מדדי ראש ──
+    mc1, mc2, mc3, mc4 = st.columns(4)
+    total_open = len(unit_deficits)
+    overdue_count = 0
+    avg_age = 0
+    if not unit_deficits.empty and 'detected_date' in unit_deficits.columns:
+        ages = (pd.Timestamp.now() - pd.to_datetime(unit_deficits['detected_date'], errors='coerce')).dt.days
+        avg_age = int(ages.mean()) if not ages.isna().all() else 0
+        overdue_count = int((ages > 7).sum())
+
+    with mc1:
+        st.metric("🔴 חוסרים פתוחים", total_open)
+    with mc2:
+        st.metric("⏰ עברו SLA", overdue_count,
+                  delta="דחוף!" if overdue_count > 0 else "הכל בזמן",
+                  delta_color="inverse" if overdue_count > 0 else "off")
+    with mc3:
+        st.metric("📅 ממוצע גיל חוסר", f"{avg_age} ימים")
+    with mc4:
+        try:
+            closed = supabase.table("deficit_tracking").select("id").in_("unit", accessible_units).eq("status", "closed").execute()
+            closed_count = len(closed.data) if closed.data else 0
+        except Exception:
+            closed_count = 0
+        total_ever = closed_count + total_open
+        closure_rate = int(closed_count / total_ever * 100) if total_ever > 0 else 0
+        st.metric("🎖️ שיעור סגירה", f"{closure_rate}%")
+
+    st.markdown("---")
+
+    if unit_deficits.empty:
+        st.success("✅ אין חוסרים פתוחים!")
+        return
+
+    # ── טאבים לפי סוג חוסר ──
+    deficit_types = {
+        'mezuzot': ("📜 מזוזות", "#3b82f6"),
+        'eruv_status': ("🚧 עירוב פסול", "#ef4444"),
+        'kashrut_cert': ("🍽️ כשרות", "#f59e0b"),
+        'eruv_kelim': ("🔴 ערבוב כלים", "#dc2626"),
+        'shabbat_supervisor': ("👤 נאמן שבת", "#8b5cf6"),
+    }
+    tab_labels = [v[0] for v in deficit_types.values()]
+    dtabs = st.tabs(tab_labels)
+
+    for tab_i, (def_type, (label, color)) in enumerate(deficit_types.items()):
+        with dtabs[tab_i]:
+            if 'deficit_type' in unit_deficits.columns:
+                type_defs = unit_deficits[unit_deficits['deficit_type'] == def_type].copy()
+            else:
+                type_defs = pd.DataFrame()
+
+            if not type_defs.empty:
+                type_defs['days_open'] = (
+                    pd.Timestamp.now() - pd.to_datetime(type_defs['detected_date'], errors='coerce')
+                ).dt.days if 'detected_date' in type_defs.columns else 0
+
+                for _, deficit in type_defs.iterrows():
+                    days = int(deficit.get('days_open', 0))
+                    base_name = deficit.get('base', 'לא ידוע')
+                    deficit_count = int(deficit.get('deficit_count', 1))
+                    overdue_flag = days > 7
+
+                    col_info, col_action = st.columns([4, 1])
+                    with col_info:
+                        sla_badge = "⚠️ עבר SLA!" if overdue_flag else ""
+                        st.markdown(f"""
+                        <div style='background:{color}15; border-left:4px solid {color};
+                                    padding:12px; border-radius:6px; margin-bottom:8px;'>
+                            <strong>📍 {base_name}</strong> — {deficit_count} יחידות<br/>
+                            <small>פתוח {days} ימים {'<span style="color:red">' + sla_badge + '</span>' if overdue_flag else ''}</small>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col_action:
+                        deficit_id = str(deficit.get('id', ''))
+                        if deficit_id and st.button("✅ סגור", key=f"close_{deficit_id}", use_container_width=True):
+                            if update_deficit_status(deficit_id, 'closed'):
+                                log_audit_event("CLOSE_DEFICIT", deficit_id,
+                                                details={"type": def_type, "base": base_name},
+                                                severity="info")
+                                st.success("✅ נסגר!")
+                                st.rerun()
+            else:
+                st.success(f"✅ אין {label} פתוחים")
+
+    st.markdown("---")
+
+    # ── Progress bars לפי מוצב ──
+    st.markdown("### 🎯 חוסרים לפי מוצב")
+    if 'base' in unit_deficits.columns:
+        for base in sorted(unit_deficits['base'].unique()):
+            cnt = len(unit_deficits[unit_deficits['base'] == base])
+            pct = min(100, cnt * 20)
+            st.markdown(f"""
+            <div style='margin-bottom:14px;'>
+                <div style='display:flex; justify-content:space-between; margin-bottom:4px;'>
+                    <strong>📍 {base}</strong><span>{cnt} חוסרים</span></div>
+                <div style='width:100%; height:8px; background:#e2e8f0; border-radius:4px;'>
+                    <div style='width:{pct}%; height:100%; background:linear-gradient(90deg,#ef4444,#f59e0b); border-radius:4px;'></div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+
+def render_deficit_heat_map(df: pd.DataFrame, accessible_units: list):
+    """
+    🌡️ מפת חוסרים צבעונית לפי יחידה ← גרף Heatmap + סטטיסטיקות
+    """
+    st.markdown("""
+    <div style='background: linear-gradient(135deg, #ec4899 0%, #f43f5e 100%);
+                padding: 28px; border-radius: 12px; margin-bottom: 24px;'>
+        <h1 style='color: white; margin: 0;'>🌡️ Deficit Heat Map – כל הארץ</h1>
+        <p style='color: rgba(255,255,255,0.9); margin: 8px 0 0 0;'>חוסרים לפי יחידה וסוג בעיה</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Heatmap מטריצה: יחידה × סוג חוסר ──
+    st.markdown("## 🔥 Heatmap – חוסרים לפי יחידה")
+    open_defs = get_open_deficits(accessible_units)
+
+    if not open_defs.empty and 'unit' in open_defs.columns and 'deficit_type' in open_defs.columns:
+        hm_rows = []
+        def_type_labels = {
+            'mezuzot': '📜 מזוזות',
+            'eruv_status': '🚧 עירוב',
+            'kashrut_cert': '🍽️ כשרות',
+            'eruv_kelim': '🔴 ערבוב',
+            'shabbat_supervisor': '👤 נאמן'
+        }
+        for unit in sorted(open_defs['unit'].unique()):
+            row = {'יחידה': unit}
+            for dt, lbl in def_type_labels.items():
+                row[lbl] = int((open_defs[(open_defs['unit'] == unit) & (open_defs['deficit_type'] == dt)]['deficit_count'].sum()
+                               if 'deficit_count' in open_defs.columns else
+                               len(open_defs[(open_defs['unit'] == unit) & (open_defs['deficit_type'] == dt)])))
+            hm_rows.append(row)
+
+        hm_df = pd.DataFrame(hm_rows).set_index('יחידה')
+        fig = px.imshow(
+            hm_df, color_continuous_scale='RdYlGn_r',
+            text_auto=True, aspect='auto',
+        )
+        fig.update_layout(height=max(300, len(hm_rows) * 50))
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.success("✅ אין חוסרים פתוחים")
+
+    st.markdown("---")
+
+    # ── מקרא ──
+    st.markdown("## 🎨 מקרא")
+    l1, l2, l3, l4 = st.columns(4)
+    legend_items = [
+        (l1, "#dc2626", "🔴 קריטי", "עירוב פסול"),
+        (l2, "#f59e0b", "🟠 חמור", "כשרות חסרה"),
+        (l3, "#3b82f6", "🔵 בינוני", "מזוזות חסרות"),
+        (l4, "#10b981", "🟢 תקין", "כל הנתונים טובים"),
+    ]
+    for col, color, title, sub in legend_items:
+        with col:
+            st.markdown(f"""
+            <div style='background:{color}; padding:12px; border-radius:6px; color:white; text-align:center;'>
+                <strong>{title}</strong><br/>{sub}
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # ── סטטיסטיקות ──
+    st.markdown("## 📊 סטטיסטיקות מרכזיות")
+    s1, s2, s3, s4 = st.columns(4)
+
+    eruv_inv = len(df[df['e_status'] == 'פסול']) if ('e_status' in df.columns and not df.empty) else 0
+    no_kash = len(df[df['k_cert'] == 'לא']) if ('k_cert' in df.columns and not df.empty) else 0
+    total_mez = int(pd.to_numeric(df.get('r_mezuzot_missing', pd.Series()), errors='coerce').fillna(0).sum()) if not df.empty else 0
+    total_rep = len(df)
+
+    with s1: st.metric("🚧 עירוב פסול", eruv_inv)
+    with s2: st.metric("🍽️ כשרות חסרה", no_kash)
+    with s3: st.metric("📜 מזוזות חסרות", total_mez)
+    with s4: st.metric("📋 סה\"כ דוחות", total_rep)
+
 
 # --- 10. Main ---
 def main():
