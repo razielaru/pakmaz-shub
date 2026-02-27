@@ -4084,6 +4084,9 @@ def render_unit_report():
     """הטופס המלא"""
     unit = st.session_state.selected_unit
     
+    # אתחול משתנה שליחה
+    submitted = False
+    
     # ⏱️ הכנסת CSS קומפקטי
     st.markdown(COMPACT_FORM_CSS, unsafe_allow_html=True)
     
@@ -4831,8 +4834,6 @@ def render_unit_report():
                 k_shabbat_supervisor_name = col_sup_name.text_input("שם נאמן כשרות", key="k_sup_name")
                 k_shabbat_supervisor_phone = col_sup_phone.text_input("טלפון נאמן", key="k_sup_phone")
         # (Photos moved to Tab 5)
-        
-        st.info("🔜 יש לעבור לטאב הבא: 🕍 בית כנסת ועירוב")
 
         # רשימת שאלות כשרות לשאפל
         kashrut_questions = [
@@ -4890,6 +4891,8 @@ def render_unit_report():
             t_private = t_kitchen_tools = t_procedure = t_friday = t_app = "לא רלוונטי"
             w_location = ""
             w_private = w_kitchen_tools = w_procedure = w_guidelines = "לא רלוונטי"
+
+        st.info("🔜 יש לעבור לטאב הבא: 🕍 בית כנסת ועירוב")
 
     # ===========================================
     # TAB 2: בית כנסת ועירוב
@@ -5006,13 +5009,13 @@ def render_unit_report():
         st.info("🔜 יש לעבור לטאב הבא: 📖 שאלון חטיבתי (לחטיבות רלוונטיות) או ⚠️ חוסרים ושליחה")
 
     # ===========================================
-    # TAB 4: שאלון חטיבתי (35/89/900 only)
+    # TAB 4/ שיחת חתך )
     # ===========================================
     with tab4:
         _show_halacha = unit in NO_LOUNGE_WECOOK_UNITS
         hq_vars = {}
         if not _show_halacha:
-            st.info("📌 שאלון חטיבתי רלוונטי לחטיבות 35, 89, 900 בלבד.")
+            st.info("📌  שיחת חתך.")
         else:
             st.markdown("#### 🕍 נספח הלכתי ושבת")
             c1, c2 = st.columns(2)
@@ -5059,7 +5062,6 @@ def render_unit_report():
             hq_vars['hq_chanuka_lighting'] = radio_with_explanation("נערך טקס הדלקת נרות חנוכה ואפשרו לחיילים להשתתף?", "hq26", col=c1)
             hq_vars['hq_purim_megilla'] = radio_with_explanation("אפשרו לחיילים לשמוע קריאת מגילה בפורים?", "hq27", col=c2)
 
-        st.info("🔜 יש לעבור לטאב הבא: ⚠️ חוסרים ושליחה")
         hq_vars['hq_rosh_shofar'] = radio_with_explanation("מאפשרים לכל חייל לשמוע קול שופר בראש השנה?", "hq28", col=c1)
         hq_vars['hq_fast_shoes'] = radio_with_explanation("אפשרו לצמים לנעול נעליים ללא עור ביו\"כ ות\"ב (מלבד פעילות מבצעית)?", "hq29", col=c2)
         c1, c2 = st.columns(2)
@@ -5169,6 +5171,7 @@ def render_unit_report():
         c1, c2 = st.columns(2)
         hq_vars['hq_alt_activity'] = radio_with_explanation("ישנה פעילות אלטרנטיבית לאוכלוסייה הדתית כשלא ניתן להשתתף בפעילות היחידה?", "hq95", col=c1)
         hq_vars['hq_cmd_sensitivity'] = radio_with_explanation("המפקדים רגישים לצרכים הדתיים (תפילות ועוד)?", "hq96", col=c2)
+        st.info("🔜 יש לעבור לטאב הבא: ⚠️ חוסרים ושליחה")
 
     # ===========================================
     # TAB 5: חוסרים ושליחה (Deficits + Submit)
@@ -5212,7 +5215,7 @@ def render_unit_report():
             else:
                 k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo_tab5")
 
-        # חתימה דיגיטלית - הועבר לסוף טאב שליחה
+        # חתימה דיגיטלית - תמיד מוצג, אבל שליחה חסומה אם אין חתימה או שיש אזהרות
         st.markdown("---")
         st.markdown("### ✍️ חתימת המבקר")
         sig_url = render_signature_pad()
@@ -5224,22 +5227,24 @@ def render_unit_report():
         else:
             if not sig_url:
                 st.warning("⚠️ חובה לחתום לפני השליחה")
-            
-            # שליחת הדוח רק בטאב 5
-            st.markdown("---")
-            col_submit, col_draft = st.columns([3, 1])
-            
-            with col_draft:
-                if st.button("💾 שמור טיוטה", key="save_draft_btn"):
-                    draft_data = {
-                        "unit": unit, "base": base, "inspector": inspector,
-                        "date": str(date), "time": str(time_v),
-                        "timestamp": datetime.datetime.now().isoformat()
-                    }
-                    save_draft_locally(draft_data, f"{unit}_last_draft")
         
-            with col_submit:
-                submitted = st.button("🚀 שגר דיווח", type="primary", use_container_width=True, key="submit_new_report", disabled=not sig_url)
+        # כפתורי שליחה וטיוטה - תמיד מוצגים (השליחה תהיה חסומה אם יש בעיה)
+        st.markdown("---")
+        col_submit, col_draft = st.columns([3, 1])
+        
+        with col_draft:
+            if st.button("💾 שמור טיוטה", key="save_draft_btn"):
+                draft_data = {
+                    "unit": unit, "base": base, "inspector": inspector,
+                    "date": str(date), "time": str(time_v),
+                    "timestamp": datetime.datetime.now().isoformat()
+                }
+                save_draft_locally(draft_data, f"{unit}_last_draft")
+    
+        with col_submit:
+            # הלחצן פעיל רק אם יש חתימה ואין אזהרות חובה
+            is_submit_disabled = (not sig_url) or (len(_mandatory_warnings) > 0)
+            submitted = st.button("🚀 שגר דיווח", type="primary", use_container_width=True, key="submit_new_report", disabled=is_submit_disabled)
 
 
         if submitted:
