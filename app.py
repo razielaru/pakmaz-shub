@@ -5015,7 +5015,7 @@ def render_unit_report():
         _show_halacha = unit in NO_LOUNGE_WECOOK_UNITS
         hq_vars = {}
         if not _show_halacha:
-            st.info("📌 שיחת חתך רלוונטית לחטיבות 35, 89, 900 בלבד.")
+            st.info("📌 שיחת חתך   , ,  .")
         else:
             st.markdown("#### 🕍 נספח הלכתי ושבת")
             c1, c2 = st.columns(2)
