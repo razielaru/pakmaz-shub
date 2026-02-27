@@ -54,6 +54,14 @@ COMMANDER_CODES = {
     "חטמ״ר הבקעה": "bika2024"
 }
 
+BASE_BARCODES = {
+    "מחנה עופר": "RB_OFER_99", "בית אל": "RB_BETEL_88", "פסגות": "RB_PSAGOT_77",
+    "מחנה שומרון": "RB_SHOMRON_66", "אריאל": "RB_ARIEL_55", "קדומים": "RB_KEDUMIM_44",
+    "גוש עציון": "RB_ETZION_33", "אפרת": "RB_EFRAT_22", "בית לחם": "RB_BLEHEM_11",
+    "מחנה עציון": "RB_ETZION_BASE", "אלון שבות": "RB_ALON_SHEVUT", "מוצב אפרים": "RB_EFRAIM_POS",
+    "מוצב מנשה": "RB_MENASHE_POS", "מוצב הבקעה": "RB_BIKA_POS",
+}
+
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """חישוב מרחק בין שתי נקודות על פני כדור הארץ (ק\"מ)"""
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
@@ -1152,8 +1160,17 @@ def calculate_inspector_credibility(inspector_name: str, df: pd.DataFrame) -> di
             else:                     # איטי מאוד (אולי פער טכני או מילוי לא רציף)
                 duration_score = 80
 
-    # שקלול סופי: 50% אחוז ליקויים, 30% שונות תזמון, 20% משך הדיווח
-    final_score = round(defect_score * 0.5 + variance_score * 0.3 + duration_score * 0.2, 1)
+    # 4. אימות ברקוד (חדש! - 25% מהציון)
+    barcode_score = 0
+    if 'barcode_verified' in inspector_df.columns:
+        verified_rate = inspector_df['barcode_verified'].astype(bool).mean() * 100
+        barcode_score = verified_rate
+    else:
+        # אם אין נתוני אימות, ניתן ציון ניטרלי כדי לא לפגוע
+        barcode_score = 50
+
+    # שקלול סופי: 40% אחוז ליקויים, 20% שונות תזמון, 15% משך הדיווח, 25% אימות ברקוד
+    final_score = round(defect_score * 0.4 + variance_score * 0.2 + duration_score * 0.15 + barcode_score * 0.25, 1)
 
     if final_score >= 80:
         credibility, color = "✅ גבוהה", "#10b981"
@@ -4563,26 +4580,51 @@ def render_unit_report():
     with st.expander("📷 סריקת ברקוד (רשות)"):
         barcode_tab_cam, barcode_tab_img = st.tabs(["📷 סריקה חיה", "🖼️ העלאת תמונה"])
         with barcode_tab_cam:
-            st.markdown("""
+            # 🆕 הכנת נתוני אימות עבור ה-JS
+            expected_barcode = BASE_BARCODES.get(base, "NONE")
+            
+            # שימוש ב-replace במקום f-string לכל ה-JS כדי למנוע טעויות סוגריים מסולסלים
+            scanner_js = """
             <div id='barcode-scanner-container'>
                 <video id='barcode-video' width='100%' style='max-height:260px;border-radius:8px;background:#000;'></video>
-                <p id='barcode-result' style='font-size:18px;font-weight:bold;color:#1e3a8a;margin-top:8px;'>תוצאה: הפעל מצלמה והכוון לברקוד</p>
+                <div id='barcode-feedback' style='padding:10px; border-radius:8px; margin-top:8px; background:#f1f5f9;'>
+                    <p id='barcode-result' style='font-size:18px;font-weight:bold;color:#1e3a8a;margin:0;'>תוצאה: מחכה לסריקה...</p>
+                    <p id='verification-status' style='font-size:14px;margin:4px 0 0 0;color:#64748b;'>סטטוס אימות: טרם נסרק</p>
+                </div>
             </div>
             <script>
             (function() {
                 const video = document.getElementById('barcode-video');
                 const resultEl = document.getElementById('barcode-result');
+                const statusEl = document.getElementById('verification-status');
+                const feedbackEl = document.getElementById('barcode-feedback');
+                const expected = "{{EXPECTED}}";
+                
                 if (!video) return;
                 if ('BarcodeDetector' in window) {
-                    const barcodeDetector = new BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8'] });
+                    const barcodeDetector = new BarcodeDetector({ formats: ['qr_code', 'data_matrix', 'pdf417', 'code_128', 'code_39', 'ean_13'] });
                     navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(stream => {
                         video.srcObject = stream;
                         video.play();
                         const scan = () => {
                             barcodeDetector.detect(video).then(barcodes => {
                                 if (barcodes.length > 0) {
-                                    resultEl.textContent = '✅ ברקוד נסרק: ' + barcodes[0].rawValue;
-                                    resultEl.style.color = '#10b981';
+                                    const val = barcodes[0].rawValue;
+                                    resultEl.textContent = '✅ נסרק: ' + val;
+                                    
+                                    if (expected !== "NONE") {
+                                        if (val === expected) {
+                                            statusEl.textContent = '🌟 אימות הצליח: ברקוד מיקום תקין!';
+                                            feedbackEl.style.background = '#dcfce7';
+                                            statusEl.style.color = '#166534';
+                                        } else {
+                                            statusEl.textContent = '❌ אימות נכשל: הברקוד אינו תואם למיקום זה';
+                                            feedbackEl.style.background = '#fee2e2';
+                                            statusEl.style.color = '#991b1b';
+                                        }
+                                    } else {
+                                        statusEl.textContent = '⚠️ לא הוגדר ברקוד אימות למיקום זה';
+                                    }
                                     stream.getTracks().forEach(t => t.stop());
                                 } else {
                                     requestAnimationFrame(scan);
@@ -4595,12 +4637,14 @@ def render_unit_report():
                         resultEl.style.color = '#ef4444';
                     });
                 } else {
-                    resultEl.textContent = 'הדפדפן אינו תומך BarcodeDetector. נסה Chrome/Edge עדכני.';
+                    resultEl.textContent = 'הדפדפן אינו תומך בסריקה. נסה Chrome.';
                     resultEl.style.color = '#f59e0b';
                 }
             })();
             </script>
-            """, unsafe_allow_html=True)
+            """.replace("{{EXPECTED}}", expected_barcode)
+            
+            st.markdown(scanner_js, unsafe_allow_html=True)
             barcode_manual = st.text_input("📟 או הזן ברקוד ידנית", placeholder="לדוגמא: ABC-12345", key="barcode_manual_input")
             if barcode_manual:
                 st.success(f"📷 ברקוד: {barcode_manual}")
@@ -4762,7 +4806,8 @@ def render_unit_report():
                 "k_shabbat_supervisor_phone": k_shabbat_supervisor_phone,  # 🆕
                 "k_issues_photo_url": k_issues_photo_url,
                 "k_shabbat_photo_url": k_shabbat_photo_url,
-                "report_duration": report_duration  # ⏱️ חדש!
+                "report_duration": report_duration,  # ⏱️ חדש!
+                "barcode_verified": (barcode_value == BASE_BARCODES.get(base)) if base in BASE_BARCODES else False
             }
             
             # הוספת שאלות הלכה לחטיבות 35/89/900
@@ -4800,7 +4845,7 @@ def render_unit_report():
                             "k_shabbat_supervisor_name", "k_shabbat_supervisor_phone",
                             "k_issues_photo_url", "k_shabbat_photo_url",
                             "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone",
-                            "report_duration"
+                            "report_duration", "barcode_verified"
                         ]
                         for field in new_fields:
                             data.pop(field, None)
