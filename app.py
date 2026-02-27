@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import datetimeכ
+import datetime
 import time
 from PIL import Image
 import io
@@ -14,7 +14,7 @@ import hashlib
 import bcrypt
 import shutil
 import os
-import pydeck as pdkכ
+import pydeck as pdk
 import random
 from streamlit_geolocation import streamlit_geolocation
 import math
@@ -5009,12 +5009,13 @@ def render_unit_report():
         st.info("🔜 יש לעבור לטאב הבא: 📖 שיחת חתך (לחטיבות רלוונטיות) או ⚠️ חוסרים ושליחה")
 
     # ===========================================
+    # TAB 4: שיחת חתך (35/89/900 only)
     # ===========================================
     with tab4:
         _show_halacha = unit in NO_LOUNGE_WECOOK_UNITS
         hq_vars = {}
         if not _show_halacha:
-            st.info("📌  שיחת חתך.")
+            st.info("📌 שיחת חתך רלוונטית לחטיבות 35, 89, 900 בלבד.")
         else:
             st.markdown("#### 🕍 נספח הלכתי ושבת")
             c1, c2 = st.columns(2)
