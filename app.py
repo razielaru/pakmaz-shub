@@ -21,7 +21,23 @@ import math
 from typing import Tuple, Optional, List, Dict
 import folium
 from streamlit_folium import st_folium
+try:
+    from streamlit_drawable_canvas import st_canvas
+except ImportError:
+    st_canvas = None
+
 st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")  # title intentionally unchanged
+
+# WhatsApp phones for Hatmar Rabbis
+HATMAR_PHONES = {
+    "חטמ״ר בנימין":  "whatsapp:+972501234501",
+    "חטמ״ר שומרון":  "whatsapp:+972501234502",
+    "חטמ״ר יהודה":   "whatsapp:+972501234503",
+    "חטמ״ר עציון":   "whatsapp:+972501234504",
+    "חטמ״ר אפרים":   "whatsapp:+972501234505",
+    "חטמ״ר מנשה":   "whatsapp:+972501234506",
+    "חטמ״ר הבקעה":  "whatsapp:+972501234507",
+}
 
 # ===== פונקציות עזר למיקום וחישוב מרחקים =====
 
@@ -81,6 +97,291 @@ def find_nearest_base(lat: float, lon: float) -> Tuple[str, float]:
             min_distance = distance
             nearest_base = base_name
     return nearest_base, min_distance
+
+# ════════════════════════════════════════════════════════════
+# פיצ'ר 4 — WhatsApp / SMS התראות אוטומטיות
+# ════════════════════════════════════════════════════════════
+def send_whatsapp_alert(report_data: dict, unit: str):
+    """
+    שולח WhatsApp לרב החטמ"ר כשיש בעיה קריטית.
+    """
+    try:
+        from twilio.rest import Client as TwilioClient
+    except ImportError:
+        return
+
+    # בדיקת בעיות קריטיות
+    alerts = []
+    if report_data.get("e_status") == "פסול":
+        alerts.append(f"🚧 *עירוב פסול* במוצב {report_data.get('base','?')}")
+    if report_data.get("k_cert") == "לא":
+        alerts.append(f"🍽️ *כשרות חסרה* במוצב {report_data.get('base','?')}")
+    mezuzot = int(report_data.get("r_mezuzot_missing", 0) or 0)
+    if mezuzot >= 5:
+        alerts.append(f"📜 *{mezuzot} מזוזות חסרות* במוצב {report_data.get('base','?')}")
+    if report_data.get("p_mix") == "כן":
+        alerts.append(f"🔴 *ערבוב כלים* במוצב {report_data.get('base','?')}")
+
+    if not alerts:
+        return
+
+    phone = HATMAR_PHONES.get(unit)
+    if not phone:
+        return
+
+    try:
+        account_sid = st.secrets["twilio"]["account_sid"]
+        auth_token  = st.secrets["twilio"]["auth_token"]
+        from_number = st.secrets["twilio"]["from_whatsapp"]
+    except Exception:
+        return
+
+    message_body = (
+        f"🛡️ *התראה — מערכת רבנות פקמ\"ז*\n\n"
+        f"📋 יחידה: *{unit}*\n"
+        f"👤 מבקר: {report_data.get('inspector','?')}\n"
+        f"📅 תאריך: {report_data.get('date','?')[:10]}\n\n"
+        f"⚠️ *בעיות שדווחו:*\n" +
+        "\n".join(f"  • {a}" for a in alerts) +
+        f"\n\n🔗 לפרטים נוספים היכנס למערכת"
+    )
+
+    try:
+        client = TwilioClient(account_sid, auth_token)
+        client.messages.create(body=message_body, from_=from_number, to=phone)
+        st.toast(f"📱 התראה נשלחה לרב {unit}", icon="✅")
+        log_audit_event("WHATSAPP_ALERT", unit,
+                        details={"alerts": alerts, "base": report_data.get("base")},
+                        severity="warning")
+    except Exception as e:
+        pass
+
+
+# ════════════════════════════════════════════════════════════
+# פיצ'ר 5 — History Card לכל מוצב
+# ════════════════════════════════════════════════════════════
+def render_base_history_card(base: str, unit: str):
+    """
+    מציג כרטיס היסטוריה למוצב שנבחר.
+    """
+    if not base or len(base) < 2:
+        return
+
+    try:
+        result = (
+            supabase.table("reports")
+            .select("*")
+            .eq("unit", unit)
+            .ilike("base", f"%{base}%")
+            .order("date", desc=True)
+            .limit(2)
+            .execute()
+        )
+        reports = result.data
+    except Exception:
+        return
+
+    if not reports:
+        st.info(f"📍 **{base}** — אין ביקורים קודמים רשומים")
+        return
+
+    last = reports[0]
+    try:
+        last_date = pd.to_datetime(last["date"])
+        days_ago  = (pd.Timestamp.now() - last_date).days
+    except Exception:
+        days_ago = "?"
+
+    findings = []
+    if last.get("e_status") == "פסול":
+        findings.append(("🚧", "עירוב פסול", "#ef4444"))
+    if last.get("k_cert") == "לא":
+        findings.append(("🍽️", "כשרות חסרה", "#f59e0b"))
+    mezuzot = int(last.get("r_mezuzot_missing") or 0)
+    if mezuzot > 0:
+        findings.append(("📜", f"{mezuzot} מזוזות חסרות", "#3b82f6"))
+    if last.get("p_mix") == "כן":
+        findings.append(("🔴", "ערבוב כלים", "#dc2626"))
+    if last.get("k_issues") == "כן":
+        desc = last.get("k_issues_description", "")
+        findings.append(("⚠️", f"תקלת כשרות: {desc[:40]}..." if len(desc) > 40 else f"תקלת כשרות: {desc}", "#f97316"))
+
+    urgency_color = "#ef4444" if days_ago != "?" and days_ago > 14 else \
+                    "#f59e0b" if days_ago != "?" and days_ago > 7  else "#10b981"
+
+    findings_html = ""
+    if findings:
+        findings_html = "<div style='margin-top:10px;'><strong>ממצאים מהביקור הקודם:</strong><br/>"
+        for icon, text, color in findings:
+            findings_html += f"<span style='background:{color}22;color:{color};padding:3px 8px;border-radius:4px;margin:3px 2px;display:inline-block;font-size:13px;'>{icon} {text}</span>"
+        findings_html += "</div>"
+    else:
+        findings_html = "<div style='margin-top:8px;color:#10b981;font-size:13px;'>✅ לא נמצאו בעיות בביקור הקודם</div>"
+
+    inspector_prev = last.get("inspector", "לא ידוע")
+
+    st.markdown(f"""
+    <div style='background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%); border-right: 5px solid {urgency_color}; border-radius: 12px; padding: 16px 20px; margin: 10px 0 18px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.07);'>
+        <div style='display:flex; justify-content:space-between; align-items:center;'>
+            <div>
+                <span style='font-size:18px; font-weight:700; color:#1e3a8a;'>📍 {base}</span>
+                <span style='margin-right:10px; font-size:13px; color:#64748b;'>ביקור אחרון ע"י {inspector_prev}</span>
+            </div>
+            <div style='background:{urgency_color}; color:white; padding:6px 14px; border-radius:20px; font-weight:700; font-size:14px;'>⏱️ לפני {days_ago} ימים</div>
+        </div>
+        {findings_html}
+    </div>
+    """, unsafe_allow_html=True)
+
+    if len(reports) >= 2:
+        prev = reports[1]
+        changes = []
+        if last.get("e_status") != prev.get("e_status"):
+            arrow = "✅ תוקן" if last.get("e_status") == "תקין" else "⬇️ הורע"
+            changes.append(f"עירוב: {arrow}")
+        if last.get("k_cert") != prev.get("k_cert"):
+            arrow = "✅ תוקן" if last.get("k_cert") == "כן" else "⬇️ הורע"
+            changes.append(f"כשרות: {arrow}")
+        prev_mez = int(prev.get("r_mezuzot_missing") or 0)
+        if mezuzot != prev_mez:
+            diff = prev_mez - mezuzot
+            arrow = f"✅ -{diff} הושלמו" if diff > 0 else f"⬇️ +{abs(diff)} חדשות"
+            changes.append(f"מזוזות: {arrow}")
+        if changes:
+            st.caption("📊 שינויים מהביקור הקודם: " + " | ".join(changes))
+
+
+# ════════════════════════════════════════════════════════════
+# פיצ'ר 8 — חתימה דיגיטלית
+# ════════════════════════════════════════════════════════════
+def render_signature_pad() -> str | None:
+    """
+    מציג לוח חתימה דיגיטלי.
+    """
+    if st_canvas is None:
+        st.warning("⚠️ streamlit-drawable-canvas לא מותקן.")
+        return None
+
+    st.markdown("### ✍️ חתימת המבקר")
+    st.caption("חתום בתיבה למטה עם האצבע / עכבר לאישור הדוח")
+    col_canvas, col_actions = st.columns([3, 1])
+    with col_canvas:
+        canvas_result = st_canvas(
+            fill_color="rgba(0, 0, 0, 0)", stroke_width=3, stroke_color="#1e3a8a",
+            background_color="#f8fafc", height=120, width=400, drawing_mode="freedraw",
+            key="signature_canvas", display_toolbar=False,
+        )
+    with col_actions:
+        st.write("")
+        st.write("")
+        if st.button("🗑️ נקה", key="clear_signature", use_container_width=True):
+            if "signature_url" in st.session_state:
+                del st.session_state["signature_url"]
+            st.rerun()
+
+    if canvas_result.image_data is not None:
+        import numpy as np
+        img_array = canvas_result.image_data
+        alpha_channel = img_array[:, :, 3]
+        if bool(np.any(alpha_channel > 10)):
+            st.success("✅ חתימה נקלטה")
+            canvas_hash = str(hash(img_array.tobytes()))
+            if st.session_state.get("_last_sig_hash") != canvas_hash:
+                st.session_state["_last_sig_hash"] = canvas_hash
+                from PIL import Image as PILImage
+                import io as _io
+                sig_img = PILImage.fromarray(img_array.astype("uint8"), "RGBA")
+                white_bg = PILImage.new("RGB", sig_img.size, (255, 255, 255))
+                white_bg.paste(sig_img, mask=sig_img.split()[3])
+                buffer = _io.BytesIO()
+                white_bg.save(buffer, format="PNG")
+                buffer.seek(0)
+                try:
+                    import uuid as _uuid, time as _time
+                    file_path = f"signatures/sig_{int(_time.time())}_{str(_uuid.uuid4())[:6]}.png"
+                    supabase.storage.from_("report-photos").upload(file_path, buffer.getvalue(), {"content-type": "image/png"})
+                    project_url = st.secrets["supabase"]["url"].rstrip("/")
+                    sig_url = f"{project_url}/storage/v1/object/public/report-photos/{file_path}"
+                    st.session_state["signature_url"] = sig_url
+                    return sig_url
+                except Exception:
+                    import base64 as _b64
+                    buffer.seek(0)
+                    return f"data:image/png;base64,{_b64.b64encode(buffer.read()).decode()}"
+            return st.session_state.get("signature_url")
+        else:
+            st.caption("☝️ טרם נחתם — נא לחתום לפני השליחה")
+    return None
+
+
+# ════════════════════════════════════════════════════════════
+# פיצ'ר 9 — "מה השתנה" — Diff אוטומטי
+# ════════════════════════════════════════════════════════════
+def render_report_diff(new_data: dict, unit: str, base: str):
+    """
+    משווה את הדוח החדש לדוח הקודם.
+    """
+    try:
+        result = (supabase.table("reports").select("*").eq("unit", unit).ilike("base", f"%{base}%").order("date", desc=True).limit(2).execute())
+        prev_reports = result.data
+    except Exception:
+        return
+
+    if len(prev_reports) < 2:
+        st.info("📋 זהו הביקור הראשון במוצב זה — אין השוואה קודמת")
+        return
+
+    prev = prev_reports[1]
+    COMPARE_FIELDS = {
+        "e_status": ("🚧 עירוב", "תקין", "פסול"),
+        "k_cert": ("🍽️ כשרות", "כן", "לא"),
+        "r_mezuzot_missing": ("📜 מזוזות חסרות", 0, None),
+        "p_mix": ("🔴 ערבוב כלים", "לא", "כן"),
+        "k_issues": ("⚠️ תקלות כשרות", "לא", "כן"),
+        "s_clean": ("🧹 ניקיון", "מצוין", None),
+        "k_shabbat_supervisor": ("👤 נאמן שבת", "כן", "לא"),
+    }
+    improved, worsened, unchanged = [], [], []
+    for field, (label, good_val, bad_val) in COMPARE_FIELDS.items():
+        new_val, prev_val = new_data.get(field), prev.get(field)
+        if bad_val is None:
+            try:
+                new_v, prev_v = int(new_val or 0), int(prev_val or 0)
+                if new_v < prev_v: improved.append(f"{label}: ירד מ-{prev_v} ל-{new_v} (−{prev_v-new_v})")
+                elif new_v > prev_v: worsened.append(f"{label}: עלה מ-{prev_v} ל-{new_v} (+{new_v-prev_v})")
+                elif new_v == prev_v and new_v != 0: unchanged.append(f"{label}: {new_v} (ללא שינוי)")
+            except Exception: pass
+        else:
+            if new_val == prev_val:
+                if new_val == good_val: unchanged.append(f"{label}: {new_val} ✅")
+                elif new_val == bad_val: unchanged.append(f"{label}: {new_val} ⚠️")
+            elif new_val == good_val and prev_val == bad_val: improved.append(f"{label}: תוקן! ({prev_val} → {new_val})")
+            elif new_val == bad_val and prev_val == good_val: worsened.append(f"{label}: הורע ({prev_val} → {new_val})")
+
+    try:
+        all_data = load_reports_cached(None) or []
+        df_all = pd.DataFrame(all_data)
+        new_score = calculate_unit_score(df_all[df_all["unit"] == unit]) if not df_all.empty else 0
+    except Exception: new_score = 0
+
+    st.markdown("---")
+    st.markdown("## 📊 מה השתנה מהביקור הקודם?")
+    score_color = "#10b981" if new_score >= 80 else "#f59e0b" if new_score >= 60 else "#ef4444"
+    c1, c2, c3 = st.columns(3)
+    c1.markdown(f"<div style='background:#d1fae5;border-radius:10px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:#065f46;'>{len(improved)}</div><div style='color:#065f46;font-weight:600;'>✅ תוקן / השתפר</div></div>", unsafe_allow_html=True)
+    c2.markdown(f"<div style='background:#fee2e2;border-radius:10px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:#991b1b;'>{len(worsened)}</div><div style='color:#991b1b;font-weight:600;'>🔴 הורע / חדש</div></div>", unsafe_allow_html=True)
+    c3.markdown(f"<div style='background:{score_color}22;border-radius:10px;padding:14px;text-align:center;'><div style='font-size:28px;font-weight:800;color:{score_color};'>{new_score:.0f}</div><div style='color:{score_color};font-weight:600;'>ציון עדכני</div></div>", unsafe_allow_html=True)
+    if improved:
+        with st.expander(f"✅ {len(improved)} נושאים שהשתפרו", expanded=True):
+            for item in improved: st.markdown(f"<div style='background:#d1fae5;border-right:4px solid #10b981;padding:10px 14px;border-radius:6px;margin-bottom:6px;color:#064e3b;'>✅ {item}</div>", unsafe_allow_html=True)
+    if worsened:
+        with st.expander(f"🔴 {len(worsened)} נושאים שהורעו", expanded=True):
+            for item in worsened: st.markdown(f"<div style='background:#fee2e2;border-right:4px solid #ef4444;padding:10px 14px;border-radius:6px;margin-bottom:6px;color:#7f1d1d;'>🔴 {item}</div>", unsafe_allow_html=True)
+    if unchanged:
+        with st.expander(f"➡️ {len(unchanged)} ללא שינוי", expanded=False):
+            for item in unchanged: st.markdown(f"<div style='background:#f1f5f9;border-right:4px solid #94a3b8;padding:8px 14px;border-radius:6px;margin-bottom:4px;color:#475569;font-size:14px;'>➡️ {item}</div>", unsafe_allow_html=True)
+    if not improved and not worsened: st.info("➡️ אין שינויים משמעותיים לעומת הביקור הקודם")
+    st.markdown("---")
 
 def calculate_clusters(df: pd.DataFrame, radius_km: float = 2.0) -> pd.DataFrame:
     """קיבוץ דיווחים קרובים"""
@@ -3660,9 +3961,61 @@ def radio_with_explanation(label, key, horizontal=True, col=None):
             
     return final_answer
 
+
+def get_session_seed() -> int:
+    """🎲 מחזיר seed אקראי קבוע לכל session (למניעת אוטומציה)"""
+    if "form_shuffle_seed" not in st.session_state:
+        import random as _r
+        st.session_state.form_shuffle_seed = _r.randint(1000, 9999)
+    return st.session_state.form_shuffle_seed
+
+
+def get_flip_week() -> int:
+    """🔄 מחזיר 0 או 1 לפי שבוע (סיבוב שאלות קונטרול כל שבוע)"""
+    return datetime.date.today().isocalendar()[1] % 2
+
+
+def flipped_radio(label, key, col=None, flip_week_target: int = 0) -> str:
+    """🔄 כמו radio_with_explanation אך מסמן אם הוא בשבוע הפוך"""
+    flip_week = get_flip_week()
+    if flip_week == flip_week_target:
+        flipped_label = f"{label}  ✅[תשובה צפויה: לא]"
+    else:
+        flipped_label = label
+    return radio_with_explanation(flipped_label, key, col=col)
+
+
+COMPACT_FORM_CSS = """
+<style>
+  /* עיצוב קומפקטי לטפסים */
+  div[data-testid="stRadio"] { margin-bottom: 2px !important; }
+  div[data-testid="stRadio"] > div { gap: 4px !important; }
+  div[data-testid="stRadio"] label p { font-size: 13px !important; line-height: 1.3 !important; }
+  div[data-testid="column"] { padding: 2px 6px !important; }
+  .element-container { margin-bottom: 3px !important; }
+  div[data-testid="stMarkdownContainer"] h3 { 
+    margin-top: 8px !important; margin-bottom: 2px !important; 
+    font-size: 16px !important; padding: 4px 0 !important;
+  }
+  div[data-testid="stMarkdownContainer"] h4 { 
+    margin-top: 6px !important; margin-bottom: 2px !important; 
+    font-size: 14px !important;
+  }
+  div[data-testid="stTabs"] button { font-size: 13px !important; padding: 4px 8px !important; }
+  div[data-testid="stNumberInput"] { margin-bottom: 2px !important; }
+  div[data-testid="stSelectbox"] { margin-bottom: 2px !important; }
+</style>
+"""
+
 def render_unit_report():
     """הטופס המלא"""
     unit = st.session_state.selected_unit
+    
+    # ⏱️ הכנסת CSS קומפקטי
+    st.markdown(COMPACT_FORM_CSS, unsafe_allow_html=True)
+    
+    # ⏱️ אתחול seed לסדר אקראי
+    _seed = get_session_seed()
     
     # ⏱️ אתחול טיימר דיווח (למדידת אמינות)
     if "report_start_time" not in st.session_state:
@@ -3670,7 +4023,6 @@ def render_unit_report():
     
     # ✅ ניקוי cache בכל טעינה כדי למנוע שגיאות schema
     clear_cache()
-    """הטופס המלא"""
     unit = st.session_state.selected_unit
     
     # כפתור קוד גישה לרב חטמ"ר
@@ -4222,359 +4574,457 @@ def render_unit_report():
     time_v = c2.time_input("שעה", datetime.datetime.now().time())
     inspector = c3.text_input("מבקר *")
     base = st.text_input("מוצב / מיקום *", placeholder="לדוגמה: מחנה עופר, בית אל, וכו'")
+    render_base_history_card(base, unit)
         
-    _show_pillbox = unit not in NO_LOUNGE_WECOOK_UNITS
-    if _show_pillbox:
-        st.markdown("### 🏠 פילבוקס / הגנ״ש")
-        c1, c2 = st.columns(2)
-        p_pakal = radio_with_explanation("האם יש פק״ל רבנות?", "p1", col=c1)
-        p_marked = radio_with_explanation("האם הכלים מסומנים?", "p2", col=c2)
-        c1, c2 = st.columns(2)
-        p_mix = radio_with_explanation("האם זוהה ערבוב כלים?", "p3", col=c1)
-        p_kasher = radio_with_explanation("האם נדרשת הכשרה כלים?", "p4", col=c2)
-    else:
-        p_pakal = p_marked = p_mix = p_kasher = "לא רלוונטי"
+    # ========================================
+    # 📁 טאבי הטופס (5 טאבים)
+    # ========================================
+    import random as _rand
+    _rand.seed(get_session_seed())
+    _flip = get_flip_week()
     
-    st.markdown("### 📜 נהלים")
-    c1, c2 = st.columns(2)
-    r_sg = radio_with_explanation("האם יש הוראות רבנות בש.ג?", "r1", col=c1)
-    r_hamal = radio_with_explanation("האם יש הוראות רבנות בחמ״ל?", "r2", col=c2)
-    c1, c2 = st.columns(2)
-    r_sign = radio_with_explanation("האם יש שילוט על מתקנים שיש בהם חילול שבת (כגון תמי 4)?", "r3", col=c1)
-    r_netilot = radio_with_explanation("האם קיימות נטלות?", "r4", col=c2)
-    c1, c2 = st.columns(2)
-    r_mezuzot_missing = c1.number_input("כמה מזוזות חסרות?", 0)
-    r_shabbat_device = c2.radio("האם קיימים התקני שבת?", ["כן", "לא", "חלקי"], horizontal=True, key="r5")
-        
-    st.markdown("### 🕍 בית כנסת")
-    c_torah1, c_torah2, c_torah3 = st.columns(3)
-    s_torah_id = c_torah1.text_input("מס' צ' של ספר התורה", placeholder="לדוגמה: 12345", help="הזן את המספר הצה''לי של הספר")
-    s_torah_nusach = c_torah2.selectbox("נוסח ספר התורה", ["ספרדי", "אשכנז", "תימן", "אחר", "לא ידוע"])
-    
-    c1, c2 = st.columns(2)
-    s_board = radio_with_explanation("האם לוח רבנות מעודכן?", "s1", col=c1)
-    s_clean = radio_with_explanation("האם בית הכנסת נקי?", "s7", col=c2)
-    s_books = st.multiselect("ספרי יסוד קיימים:", ["תורת המחנה", "לוח דינים", "הלכה כסדרה", "שו״ת משיב מלחמה"])
-    c1, c2 = st.columns(2)
-    s_havdala = radio_with_explanation("האם יש ערכת הבדלה והדלקת נרות שבת?", "s3", col=c1)
-    s_gemach = radio_with_explanation("האם יש גמ״ח טלית ותפילין?", "s4", col=c2)
-    c1, c2 = st.columns(2)
-    s_smartbis = radio_with_explanation("האם יש תקלת בינוי (אם כן עדכנת בסמארט-ביס)?", "s5", col=c1)
-    s_geniza = radio_with_explanation("האם יש פח גניזה?", "s6", col=c2)
-    
-    st.markdown("### 🚧 עירוב")
-    c1, c2 = st.columns(2)
-    e_status = c1.selectbox("סטטוס עירוב", ["תקין", "פסול", "בטיפול"])
-    e_check = radio_with_explanation("האם בוצעה בדיקה?", "e1", col=c2)
-    c1, c2 = st.columns(2)
-    e_doc = radio_with_explanation("האם בוצע תיעוד?", "e2", col=c1)
-    e_photo = radio_with_explanation("האם קיימת תצ״א?", "e3", col=c2)
-    
-    st.markdown("### 🍽️ מטבח")
-    k_cook_type = st.selectbox("סוג מטבח", ["מבשל", "מחמם"])
-    c1, c2 = st.columns(2)
-    k_cert = radio_with_explanation("תעודת כשרות מתוקפת?", "k7", col=c1)
-    k_bishul = radio_with_explanation("האם יש בישול ישראל?", "k8", col=c2)
-        
-    # 🆕 OCR לתעודות כשרות
-    st.markdown("#### 📄 סריקת תעודת כשרות (OCR)")
-    cert_photo_ocr = st.file_uploader("העלה תמונה לחילוץ נתונים אוטומטי", type=['jpg', 'png', 'jpeg'], key="cert_ocr")
-    if cert_photo_ocr:
-        with st.spinner("מפענח תעודה..."):
-            extracted = extract_kashrut_cert_data(cert_photo_ocr.getvalue())
-            if extracted and 'error' not in extracted:
-                st.success("✅ נתונים חולצו בהצלחה!")
-                col_ocr1, col_ocr2 = st.columns(2)
-                with col_ocr1:
-                    st.info(f"📌 ספק: {extracted.get('supplier_name')}")
-                    st.info(f"🔢 מספר: {extracted.get('certificate_number')}")
-                with col_ocr2:
-                    st.info(f"📅 תוקף: {extracted.get('expiry_date')}")
-                    status, status_type = validate_cert_status(extracted.get('expiry_date'))
-                    st.write(f"**סטטוס:** {status}")
-            elif extracted and 'error' in extracted:
-                st.warning(f"⚠️ {extracted['error']}")
-                st.caption("יש לוודא ש-Tesseract מותקן על השרת")
-        
-    # שאלות חדשות עם תמונות
-    st.markdown("#### 📸 תקלות ונאמן כשרות")
-    c1, c2 = st.columns(2)
-    k_issues = radio_with_explanation("יש תקלות כשרות?", "k_issues", col=c1)
-    k_shabbat_supervisor = radio_with_explanation("יש נאמן כשרות בשבת?", "k_shabbat_sup", col=c2)
-    
-    # 🆕 פירוט תקלות (אם יש)
-    k_issues_description = ""
-    if k_issues == "כן":
-        k_issues_description = c1.text_area("פרט את תקלות הכשרות שנמצאו", key="k_issues_desc")
-        
-    # 🆕 פרטי נאמן כשרות (אם יש)
-    k_shabbat_supervisor_name = ""
-    k_shabbat_supervisor_phone = ""
-    if k_shabbat_supervisor == "כן":
-        with c2:
-            col_sup_name, col_sup_phone = st.columns(2)
-            k_shabbat_supervisor_name = col_sup_name.text_input("שם נאמן כשרות", key="k_sup_name")
-            k_shabbat_supervisor_phone = col_sup_phone.text_input("טלפון נאמן", key="k_sup_phone")
-    
-    # תמונות לתקלות ונאמן
-    c1, c2 = st.columns(2)
-    k_issues_photo = c1.file_uploader("📷 תמונת תקלה (אם יש)", type=['jpg', 'png', 'jpeg'], key="k_issues_photo")
-    
-    # הודעה דינמית לפי יום בשבוע
-    current_day = datetime.datetime.now().weekday()
-    if current_day in [3, 4]:  # חמישי ושישי
-        k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן כשרות ⚠️ (חובה בחמישי-שישי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo", help="בימי חמישי ושישי חובה להעלות תמונה של נאמן הכשרות")
-    else:
-        k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן כשרות (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo")
-    
-    c1, c2 = st.columns(2)
-    k_separation = radio_with_explanation("האם יש הפרדה?", "k1", col=c1)
-    k_briefing = radio_with_explanation("האם בוצע תדריך טבחים?", "k2", col=c2)
-    c1, c2 = st.columns(2)
-    k_products = radio_with_explanation("האם רכש חוץ מתנהל לפי פקודה?", "k3", col=c1)
-    k_dates = radio_with_explanation("האם יש דף תאריכים לתבלינים?", "k4", col=c2)
-    c1, c2 = st.columns(2)
-    k_leafs = radio_with_explanation("האם יש שטיפת ירק?", "k5", col=c1)
-    k_holes = radio_with_explanation("בוצע חירור גסטרונומים?", "k6", col=c2)
-    c1, c2 = st.columns(2)
-    k_eggs = radio_with_explanation("האם מבוצעת בדיקת ביצים?", "k9", col=c1)
-    k_machshir = radio_with_explanation("האם יש חדר מכ״ש במפג״ד?", "k10", col=c2)
-    c1, c2 = st.columns(2)
-    k_heater = radio_with_explanation("האם יש חימום נפרד בין בשר ודגים?", "k11", col=c1)
-    k_app = radio_with_explanation("האם מולאה אפליקציה?", "k12", col=c2)
-    
-    # טרקלין ויקוק – רק ליחידות שיש להן (לא לחטיבה 35/89/900)
-    _show_lounge_wecook = unit not in NO_LOUNGE_WECOOK_UNITS
-    if _show_lounge_wecook:
-        st.markdown("### ☕ טרקלין")
-        c1, c2 = st.columns(2)
-        t_private = radio_with_explanation("האם יש כלים פרטיים?", "t1", col=c1)
-        t_kitchen_tools = radio_with_explanation("האם יש כלי מטבח?", "t2", col=c2)
-        c1, c2 = st.columns(2)
-        t_procedure = radio_with_explanation("האם נשמר נוהל סגירה?", "t3", col=c1)
-        t_friday = radio_with_explanation("האם הכלים החשמליים סגורים בשבת?", "t4", col=c2)
-        t_app = radio_with_explanation("האם מולאה אפליקציה לטרקלין?", "t5")
+    # Pre-initialize fields that live in Tab 5 (so submit handler always has them)
+    missing = ""
+    free_text = ""
+    _mandatory_warnings = []
 
-        st.markdown("### 🍳 WeCook ויקווק")
-        w_location = st.text_input("מיקום הוויקוק")
-        c1, c2 = st.columns(2)
-        w_private = radio_with_explanation("האם יש כלים פרטיים בוויקוק?", "w1", col=c1)
-        w_kitchen_tools = radio_with_explanation("האם יש כלי מטבח בוויקוק?", "w2", col=c2)
-        c1, c2 = st.columns(2)
-        w_procedure = radio_with_explanation("האם עובד לפי פקודה?", "w3", col=c1)
-        w_guidelines = radio_with_explanation("האם יש הנחיות?", "w4", col=c2)
-    else:
-        # ברירת מחדל ריקה ליחידות ללא טרקלין/ויקוק
-        t_private = t_kitchen_tools = t_procedure = t_friday = t_app = "לא רלוונטי"
-        w_location = ""
-        w_private = w_kitchen_tools = w_procedure = w_guidelines = "לא רלוונטי"
-    
-    st.markdown("### ⚠️ חוסרים")
-    missing = st.text_area("פירוט חוסרים")
-    
-    st.markdown("### 💬 שיחת חתך חיילים")
-    
-    c1, c2 = st.columns(2)
-    soldier_yeshiva = radio_with_explanation("האם יש ימי ישיבה?", "so1", col=c1)
-    
-    # 🆕 שאלה חדשה - רצון לשיעור תורה
-    soldier_want_lesson = radio_with_explanation("האם יש רצון לשיעור תורה?", "so_want_lesson", col=c2)
-    
-    # 🆕 שאלה חדשה - שיעור תורה קיים
-    c1, c2 = st.columns(2)
-    soldier_has_lesson = radio_with_explanation("יש שיעור תורה במוצב?", "so_has_lesson", col=c1)
-    
-    # 🆕 אם יש שיעור - שדות נוספים
-    soldier_lesson_teacher = ""
-    soldier_lesson_phone = ""
-    
-    # Note: We check if strict "כן" or if string contains "כן" or handle "לא יודע"
-    # The logic below relies on strict "כן". If user selects "Don't know", the extra fields won't show.
-    # This is acceptable behavior.
-    if soldier_has_lesson == "כן":
-        col_teacher, col_phone = st.columns(2)
-        with col_teacher:
-            soldier_lesson_teacher = st.text_input("שם מעביר השיעור", key="so_lesson_teacher", 
-                                                   placeholder="לדוגמה: הרב כהן")
-        with col_phone:
-            soldier_lesson_phone = st.text_input("טלפון מעביר השיעור", key="so_lesson_phone",
-                                                 placeholder="לדוגמה: 050-1234567")
-    
-    # שאלות קיימות
-    c1, c2 = st.columns(2)
-    soldier_food = radio_with_explanation("האם המענה הכשרותי מספק?", "so2", col=c1)
-    soldier_shabbat_training = radio_with_explanation("האם יש אימונים בשבת?", "so3", col=c2)
-    
-    c1, c2 = st.columns(2)
-    soldier_knows_rabbi = radio_with_explanation("האם מכיר את הרב?", "so4", col=c1)
-    soldier_prayers = radio_with_explanation("האם יש זמני תפילות?", "so5", col=c2)
-    
-    soldier_talk_cmd = radio_with_explanation("האם יש שיח מפקדים?", "so6")
-    
-    # ===== שאלות הלכה מיוחדות לחטיבות 35, 89, 900 =====
-    _show_halacha = unit in NO_LOUNGE_WECOOK_UNITS
-    hq_vars = {}
-    if _show_halacha:
-        st.markdown("---")
-        st.markdown("### 📖 שאלון הלכה – חטיבתי")
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "🍽️ כשרות",
+        "🕍 ביהכ\"נ ועירוב",
+        "📜 נהלים ורוח",
+        "📖 שאלון חטיבתי",
+        "⚠️ חוסרים ושליחה"
+    ])
 
-        st.markdown("#### 🕍 נספח הלכתי ושבת")
-        c1, c2 = st.columns(2)
-        hq_vars['hq_halachi_annex'] = radio_with_explanation("יש נספח הלכתי מצורף לנספח האבטחה של היחידה (בחמ\"ל)?", "hq1", col=c1)
-        hq_vars['hq_shabbat_pubs'] = radio_with_explanation("פרסום הנחיות שבת בש\"ג, חמ\"ל, נשקייה, מרפאה ובונקר?", "hq2", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_infra_shabbat'] = radio_with_explanation("קיימות מערכות תשתיתיות המחייבות חילול שבת (טרמויאל, עין אלקטרונית וכד')?", "hq3", col=c1)
-        hq_vars['hq_infra_response'] = radio_with_explanation("ניתן מענה/הנחיות לאוכלוסייה הדתית לגבי מערכות אלו?", "hq4", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_shabbat_devices'] = radio_with_explanation("הימצאות התקני שבת (עט, מקלדת, עכבר) בחמ\"ל ובמרפאה / שילוט מותאם?", "hq5", col=c1)
-        hq_vars['hq_mandatory_reg'] = radio_with_explanation("מחייבים רישום/החתמה מסמכים בשבת (נוכחות, ש.ג, מרותקים וכד')?", "hq6", col=c2)
+    # ===========================================
+    # TAB 1: כשרות (Kitchen, Pillbox, WeCook)
+    # ===========================================
+    with tab1:
+        _show_pillbox = unit not in NO_LOUNGE_WECOOK_UNITS
+        if _show_pillbox:
+            st.markdown("#### 🏠 פילבוקס / הגנ״ש")
+            c1, c2 = st.columns(2)
+            p_pakal = radio_with_explanation("האם יש פק״ל רבנות?", "p1", col=c1)
+            p_marked = radio_with_explanation("האם הכלים מסומנים?", "p2", col=c2)
+            c1, c2 = st.columns(2)
+            # שאלת קונטרול – מתחלפת כל 3 שבועות
+            if _flip == 0:
+                p_mix = radio_with_explanation("האם זוהה ערבוב כלים? ✅[תשובה שלילית = תקין]", "p3", col=c1)
+            else:
+                p_mix = radio_with_explanation("האם זוהה ערבוב כלים?", "p3", col=c1)
+            p_kasher = radio_with_explanation("האם נדרשת הכשרה כלים?", "p4", col=c2)
+        else:
+            p_pakal = p_marked = p_mix = p_kasher = "לא רלוונטי"
 
-        st.markdown("#### 🏕️ שבתות שטח")
+        st.markdown("#### 🍽️ מטבח")
+        k_cook_type = st.selectbox("סוג מטבח", ["מבשל", "מחמם"])
         c1, c2 = st.columns(2)
-        hq_vars['hq_field_shabbat_orders'] = radio_with_explanation("שבתות שטח מתקיימות לפי הוראות רבצ\"ר ונכתב נספח רבנות?", "hq7", col=c1)
-        hq_vars['hq_field_jewish_dates'] = radio_with_explanation("התקיימו שבתות שטח במועדי ישראל (ר\"ה, יו\"כ, פסח וכד')?", "hq8", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_field_prep_time'] = radio_with_explanation("ההיערכות לשבת הושלמה לפני כניסת השבת?", "hq9", col=c1)
-        hq_vars['hq_field_wash'] = radio_with_explanation("אפשרו לחיילים להתרחץ / לשטוף ידיים ולהחליף מדים לפני שבת?", "hq10", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_field_shul'] = radio_with_explanation("הוקם ביכ\"נ במתחם (כשיש מניין)?", "hq11", col=c1)
-        hq_vars['hq_field_equipment'] = radio_with_explanation("היה ציוד שבת מלא: יין, חלות, כלים, מנות קרב, מים?", "hq12", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_field_hot_meal'] = radio_with_explanation("הוגשה סעודה מבושלת וחמה סביב כיסאות בליל שבת?", "hq13", col=c1)
-        hq_vars['hq_field_training'] = radio_with_explanation("תרגלו חיילים באימון כלשהו במהלך השבת?", "hq14", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_field_gear'] = radio_with_explanation("חייבו חיילים לנוע עם ציוד לחימה בשבת?", "hq15", col=c1)
-        hq_vars['hq_field_generator'] = radio_with_explanation("טיפלו בגנרטור / הקמת אוהל או ציליה בשבת?", "hq16", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_field_vehicles'] = radio_with_explanation("הייתה תנועת כלי רכב במהלך השבת בשטח הכוח?", "hq17", col=c1)
-        hq_vars['hq_field_prep_motzash'] = radio_with_explanation("במהלך השבת החלו הכנות לפעילות במוצ\"ש / המשך שבוע?", "hq18", col=c2)
-        hq_vars['hq_field_rabbi_rep'] = radio_with_explanation("שהה בשטח נציג הרבנות במהלך השבת?", "hq19")
+        k_cert = radio_with_explanation("תעודת כשרות מתוקפת?", "k7", col=c1)
+        k_bishul = radio_with_explanation("האם יש בישול ישראל?", "k8", col=c2)
 
-        st.markdown("#### 🌿 חגים")
-        c1, c2 = st.columns(2)
-        hq_vars['hq_sukkah_chada'] = radio_with_explanation("הוקמה סוכה ליד חד\"א?", "hq20", col=c1)
-        hq_vars['hq_sukkah_food'] = radio_with_explanation("קיימת סוכה ליד כל עסק למכירת מזון?", "hq21", col=c2)
-        hq_vars['hq_sukkah_option'] = radio_with_explanation("ניתנה אפשרות לחייל לאכול/לישון בסוכה?", "hq22")
-        c1, c2 = st.columns(2)
-        hq_vars['hq_pesach_chametz'] = radio_with_explanation("מיום י\"ג ניסן 09:00 לא היה חמץ בבסיסי צה\"ל?", "hq23", col=c1)
-        hq_vars['hq_pesach_kitchen'] = radio_with_explanation("מטבחים הוכשרו עד י\"ב ניסן 18:00 לפי פקודת פסח?", "hq24", col=c2)
-        hq_vars['hq_pesach_seder'] = radio_with_explanation("בליל פסח התקיים סדר פסח מסורתי לכלל החיילים לפי הוראות רבצ\"ר?", "hq25")
-        c1, c2 = st.columns(2)
-        hq_vars['hq_chanuka_lighting'] = radio_with_explanation("נערך טקס הדלקת נרות חנוכה ואפשרו לחיילים להשתתף?", "hq26", col=c1)
-        hq_vars['hq_purim_megilla'] = radio_with_explanation("אפשרו לחיילים לשמוע קריאת מגילה בפורים?", "hq27", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_rosh_shofar'] = radio_with_explanation("מאפשרים לכל חייל לשמוע קול שופר בראש השנה?", "hq28", col=c1)
-        hq_vars['hq_fast_shoes'] = radio_with_explanation("אפשרו לצמים לנעול נעליים ללא עור ביו\"כ ות\"ב (מלבד פעילות מבצעית)?", "hq29", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_fast_meals'] = radio_with_explanation("לכל צם הוגשה ארוחה חמה לפני ואחרי הצום?", "hq30", col=c1)
-        hq_vars['hq_yom_kippur_closed'] = radio_with_explanation("קנטינות, מזנונים וחד\"א היו סגורים במהלך יום כיפור?", "hq31", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_tisha_bav_events'] = radio_with_explanation("התקיימו בתשעה באב פעילות בידור / הווי / תרבות?", "hq32", col=c1)
-        hq_vars['hq_fast_exempt'] = radio_with_explanation("חיילים צמים שוחררו מפעילות (כולל הוראת קרפ\"ר) לפני ואחרי הצום?", "hq33", col=c2)
+        # OCR
+        with st.expander("📄 סריקת תעודת כשרות (OCR)", expanded=False):
+            cert_photo_ocr = st.file_uploader("העלה תמונה לחילוץ נתונים אוטומטי", type=['jpg', 'png', 'jpeg'], key="cert_ocr")
+            if cert_photo_ocr:
+                with st.spinner("מפענח תעודה..."):
+                    extracted = extract_kashrut_cert_data(cert_photo_ocr.getvalue())
+                    if extracted and 'error' not in extracted:
+                        st.success("✅ נתונים חולצו בהצלחה!")
+                        col_ocr1, col_ocr2 = st.columns(2)
+                        with col_ocr1:
+                            st.info(f"📌 ספק: {extracted.get('supplier_name')}")
+                            st.info(f"🔢 מספר: {extracted.get('certificate_number')}")
+                        with col_ocr2:
+                            st.info(f"📅 תוקף: {extracted.get('expiry_date')}")
+                            status, status_type = validate_cert_status(extracted.get('expiry_date'))
+                            st.write(f"**סטטוס:** {status}")
+                    elif extracted and 'error' in extracted:
+                        st.warning(f"⚠️ {extracted['error']}")
 
-        st.markdown("#### 🕌 בית הכנסת ופרסומים")
+        st.markdown("#### 📸 תקלות ונאמן כשרות")
         c1, c2 = st.columns(2)
-        hq_vars['hq_shul_mitzva_items'] = radio_with_explanation("יש פרסום על מקום תשמישי מצווה / קדושה (4 מינים, הבדלה וכד')?", "hq34", col=c1)
-        hq_vars['hq_shul_annex'] = radio_with_explanation("יש נספח הלכתי יחידתי בכל בית כנסת?", "hq35", col=c2)
-        hq_vars['hq_judaism_board'] = radio_with_explanation("לוח יהדות מתעדכן (זמני שבת, תפילות, שיעורים, דרכי תקשורת)?", "hq36")
-        hq_vars['hq_halacha_books'] = radio_with_explanation("קיימים ספרי תורת המחנה, חוברות הלכה, פרסומי \"והגית בו\" נגישים לחיילים?", "hq37")
+        k_issues = radio_with_explanation("יש תקלות כשרות?", "k_issues", col=c1)
+        k_shabbat_supervisor = radio_with_explanation("יש נאמן כשרות בשבת?", "k_shabbat_sup", col=c2)
+        k_issues_description = ""
+        if k_issues == "כן":
+            k_issues_description = st.text_area("פרט את תקלות הכשרות שנמצאו", key="k_issues_desc")
+        k_shabbat_supervisor_name = ""
+        k_shabbat_supervisor_phone = ""
+        if k_shabbat_supervisor == "כן":
+            with c2:
+                col_sup_name, col_sup_phone = st.columns(2)
+                k_shabbat_supervisor_name = col_sup_name.text_input("שם נאמן כשרות", key="k_sup_name")
+                k_shabbat_supervisor_phone = col_sup_phone.text_input("טלפון נאמן", key="k_sup_phone")
+        c1, c2 = st.columns(2)
+        k_issues_photo = c1.file_uploader("📷 תמונת תקלה (אם יש)", type=['jpg', 'png', 'jpeg'], key="k_issues_photo")
+        current_day = datetime.datetime.now().weekday()
+        if current_day in [3, 4]:
+            k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן ⚠️ (חובה בחמישי-שישי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo")
+        else:
+            k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo")
 
-        st.markdown("#### 🔗 עירוב")
-        c1, c2 = st.columns(2)
-        hq_vars['hq_eruv_doc'] = radio_with_explanation("קיים תיעוד בדיקת עירוב?", "hq38", col=c1)
-        hq_vars['hq_eruv_valid'] = radio_with_explanation("העירוב תקין לכל אורכו ומקיף את כלל מסגרות היחידה?", "hq39", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_eruv_cert'] = radio_with_explanation("קיים בביהכ\"נ אישור תקינות עירוב ובדיקתו?", "hq40", col=c1)
-        hq_vars['hq_eruv_map'] = radio_with_explanation("קיים תצ\"א של העירוב עם פירוט ההסבר במשרד הרב?", "hq41", col=c2)
+        # רשימת שאלות כשרות לשאפל
+        kashrut_questions = [
+            ("האם יש הפרדה?", "k1", "k_separation"),
+            ("האם בוצע תדריך טבחים?", "k2", "k_briefing"),
+            ("האם רכש חוץ מתנהל לפי פקודה?", "k3", "k_products"),
+            ("האם יש דף תאריכים לתבלינים?", "k4", "k_dates"),
+            ("האם יש שטיפת ירק?", "k5", "k_leafs"),
+            ("בוצע חירור גסטרונומים?", "k6", "k_holes"),
+            ("האם מבוצעת בדיקת ביצים?", "k9", "k_eggs"),
+            ("האם יש חדר מכ״ש במפג״ד?", "k10", "k_machshir"),
+            ("האם יש חימום נפרד בין בשר ודגים?", "k11", "k_heater"),
+            ("האם מולאה אפליקציה?", "k12", "k_app"),
+        ]
+        _rand.shuffle(kashrut_questions)
+        kashrut_answers = {}
+        for i in range(0, len(kashrut_questions), 2):
+            c1, c2 = st.columns(2)
+            label, key, var = kashrut_questions[i]
+            kashrut_answers[var] = radio_with_explanation(label, key, col=c1)
+            if i + 1 < len(kashrut_questions):
+                label2, key2, var2 = kashrut_questions[i + 1]
+                kashrut_answers[var2] = radio_with_explanation(label2, key2, col=c2)
+        k_separation = kashrut_answers.get('k_separation', 'לא יודע')
+        k_briefing = kashrut_answers.get('k_briefing', 'לא יודע')
+        k_products = kashrut_answers.get('k_products', 'לא יודע')
+        k_dates = kashrut_answers.get('k_dates', 'לא יודע')
+        k_leafs = kashrut_answers.get('k_leafs', 'לא יודע')
+        k_holes = kashrut_answers.get('k_holes', 'לא יודע')
+        k_eggs = kashrut_answers.get('k_eggs', 'לא יודע')
+        k_machshir = kashrut_answers.get('k_machshir', 'לא יודע')
+        k_heater = kashrut_answers.get('k_heater', 'לא יודע')
+        k_app = kashrut_answers.get('k_app', 'לא יודע')
 
-        st.markdown("#### 🙏 תפילות")
-        c1, c2 = st.columns(2)
-        hq_vars['hq_prayer_times'] = radio_with_explanation("החיילים מקבלים זמני תפילות לפי פקודות?", "hq42", col=c1)
-        hq_vars['hq_pre_prayer_act'] = radio_with_explanation("עושים פעילות לפני זמן תפילת בוקר?", "hq43", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_post_prayer_meal'] = radio_with_explanation("החיילים מקבלים ארוחת בוקר לאחר תפילת הבוקר?", "hq44", col=c1)
-        hq_vars['hq_minyan'] = radio_with_explanation("מאפשרים לחיילים להתפלל במניין (ביחידה בה אפשרי)?", "hq45", col=c2)
+        # טרקלין ויקוק
+        _show_lounge_wecook = unit not in NO_LOUNGE_WECOOK_UNITS
+        if _show_lounge_wecook:
+            st.markdown("#### ☕ טרקלין")
+            c1, c2 = st.columns(2)
+            t_private = radio_with_explanation("האם יש כלים פרטיים?", "t1", col=c1)
+            t_kitchen_tools = radio_with_explanation("האם יש כלי מטבח?", "t2", col=c2)
+            c1, c2 = st.columns(2)
+            t_procedure = radio_with_explanation("האם נשמר נוהל סגירה?", "t3", col=c1)
+            t_friday = radio_with_explanation("האם הכלים החשמליים סגורים בשבת?", "t4", col=c2)
+            t_app = radio_with_explanation("האם מולאה אפליקציה לטרקלין?", "t5")
+            st.markdown("#### 🍳 WeCook / ויקוק")
+            w_location = st.text_input("מיקום הוויקוק")
+            c1, c2 = st.columns(2)
+            w_private = radio_with_explanation("האם יש כלים פרטיים בוויקוק?", "w1", col=c1)
+            w_kitchen_tools = radio_with_explanation("האם יש כלי מטבח בוויקוק?", "w2", col=c2)
+            c1, c2 = st.columns(2)
+            w_procedure = radio_with_explanation("האם עובד לפי פקודה?", "w3", col=c1)
+            w_guidelines = radio_with_explanation("האם יש הנחיות?", "w4", col=c2)
+        else:
+            t_private = t_kitchen_tools = t_procedure = t_friday = t_app = "לא רלוונטי"
+            w_location = ""
+            w_private = w_kitchen_tools = w_procedure = w_guidelines = "לא רלוונטי"
 
-        st.markdown("#### 👮 שאלון חיילים – רבנות היחידה ונושאים נוספים")
+    # ===========================================
+    # TAB 2: בית כנסת ועירוב
+    # ===========================================
+    with tab2:
+        st.markdown("#### 🕍 בית כנסת")
+        c_torah1, c_torah2 = st.columns(2)
+        s_torah_id = c_torah1.text_input("מס' צ' של ספר התורה", placeholder="לדוגמה: 12345", help="הזן את המספר הצה''לי של הספר")
+        s_torah_nusach = c_torah2.selectbox("נוסח ספר התורה", ["ספרדי", "אשכנז", "תימן", "אחר", "לא ידוע"])
         c1, c2 = st.columns(2)
-        hq_vars['hq_know_rabbi'] = radio_with_explanation("מכירים את סגל הדת ביחידה (רב / נגד רבנות)?", "hq46", col=c1)
-        hq_vars['hq_kashrut_gaps'] = radio_with_explanation("ישנם פערי כשרות ביחידה בשגרה?", "hq47", col=c2)
+        s_board = radio_with_explanation("האם לוח רבנות מעודכן?", "s1", col=c1)
+        s_clean = radio_with_explanation("האם בית הכנסת נקי?", "s7", col=c2)
+        s_books = st.multiselect("ספרי יסוד קיימים:", ["תורת המחנה", "לוח דינים", "הלכה כסדרה", "שו״ת משיב מלחמה"])
         c1, c2 = st.columns(2)
-        hq_vars['hq_mehadrin_req'] = radio_with_explanation("ביקשתם מוצרי מהדרין / חלק וקיבלתם?", "hq48", col=c1)
-        hq_vars['hq_six_hours'] = radio_with_explanation("יש הפרדה של 6 שעות בין ארוחה בשרית לחלבית?", "hq49", col=c2)
+        s_havdala = radio_with_explanation("האם יש ערכת הבדלה והדלקת נרות שבת?", "s3", col=c1)
+        s_gemach = radio_with_explanation("האם יש גמ״ח טלית ותפילין?", "s4", col=c2)
         c1, c2 = st.columns(2)
-        hq_vars['hq_tools_marked'] = radio_with_explanation("הכלים מסומנים ויש הפרדה בין בשר לחלב?", "hq50", col=c1)
-        hq_vars['hq_field_cooking'] = radio_with_explanation("מתקיים בישול בשטח / על האש עם פיקוח כשרותי?", "hq51", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_shabbat_comms'] = radio_with_explanation("ישנן פניות ברשת הקשר / טלפוניות לצרכים לא מבצעיים בשבת?", "hq52", col=c1)
-        hq_vars['hq_shabbat_logistics'] = radio_with_explanation("מתקיים ניוד מזון / לוגיסטי בשבת?", "hq53", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_shabbat_movement'] = radio_with_explanation("מתקיים ניוד אנשים לעמדות / שמירות בשבת שלא לצורך מבצעי?", "hq54", col=c1)
-        hq_vars['hq_shabbat_vehicles'] = radio_with_explanation("נסיעות ביחידה בשבת שלא לצרכים מבצעיים?", "hq55", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_shabbat_entry'] = radio_with_explanation("קיימים מנגנוני בקרת כניסה מותאמים לשבת?", "hq56", col=c1)
-        hq_vars['hq_shabbat_pen'] = radio_with_explanation("התאפשר לקבל עט שבת / מקלדת / עכבר שבת?", "hq57", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_shabbat_procedure'] = radio_with_explanation("קיים נוהל שבת – שחרור שעה לפני כניסה, חזרה חצי שעה אחרי?", "hq58", col=c1)
-        hq_vars['hq_shabbat_return'] = radio_with_explanation("בחזרה ממוצ\"ש – לא נדרשו לצאת פחות משעה אחרי השבת?", "hq59", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_shabbat_kiddush'] = radio_with_explanation("התקיים קידוש וסעודת ליל שבת לכל חיילי היחידה?", "hq60", col=c1)
-        hq_vars['hq_shabbat_meal_timing'] = radio_with_explanation("סעודת שבת מתקיימת לאחר סיום התפילה (כשעה ורבע אחרי כניסת שבת)?", "hq61", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_challot'] = radio_with_explanation("קיבלתם חלות / לחמניות שלמות ויין בליל שבת ובשחרית?", "hq62", col=c1)
-        hq_vars['hq_candles'] = radio_with_explanation("יש מקום ונרות להדלקת נרות שבת / ערכת הבדלה?", "hq63", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_shabbat_drills'] = radio_with_explanation("מבוצעים תרגילים ותרגולות בשבת?", "hq64", col=c1)
-        hq_vars['hq_food_warming'] = radio_with_explanation("נהלי חימום מזון בשבת מתקיימים במטבח ללא פערים?", "hq65", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_forced_reg'] = radio_with_explanation("מתבצע רישום מחייב שאינו חיוני בשבת (חתימות שומרים, מרפאה וכד')?", "hq66", col=c1)
-        hq_vars['hq_eruv_problem'] = radio_with_explanation("קיימת בעיה עם עירוב שבת ביחידה / בשטח וקיבלתם מענה?", "hq67", col=c2)
-        hq_vars['hq_shabbat_violation'] = radio_with_explanation("מתקיים חילול שבת יחידתי לצורך שאינו מבצעי?", "hq68")
-        c1, c2 = st.columns(2)
-        hq_vars['hq_soldier_prayer_allowed'] = radio_with_explanation("מתאפשר לכם להתפלל ומקבלים זמן מוקצה (כולל הליכה וחזרה)?", "hq69", col=c1)
-        hq_vars['hq_soldier_minyan'] = radio_with_explanation("מתאפשר להתפלל במניין?", "hq70", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_pre_shacharit'] = radio_with_explanation("נדרשים להשתתף במד\"סים / פעילות לפני תפילת שחרית?", "hq71", col=c1)
-        hq_vars['hq_breakfast_after_prayer'] = radio_with_explanation("יש מענה לארוחת בוקר בסיום שחרית?", "hq72", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_sleep_prayer'] = radio_with_explanation("זמן תפילת שחרית הוא חלק מזמן השינה?", "hq73", col=c1)
-        hq_vars['hq_mincha_arvit_time'] = radio_with_explanation("מוקצה זמן נפרד לתפילות מנחה וערבית מהארוחה?", "hq74", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_arvit_tash'] = radio_with_explanation("זמן ערבית הוא חלק משעת ת\"ש? אם כן – קיבלתם תוספת זמן?", "hq75", col=c1)
-        hq_vars['hq_fast_exempt_soldier'] = radio_with_explanation("במהלך הצומות – הצמים פטורים מכל פעילות?", "hq76", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_fast_office'] = radio_with_explanation("נדרשתם לעבודה משרדית / אחרת בצום?", "hq77", col=c1)
-        hq_vars['hq_fast_break_meal'] = radio_with_explanation("יש ארוחה חמה בסיום הצום לצמים?", "hq78", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_intense_pre_fast'] = radio_with_explanation("התקיימה פעילות גופנית עצימה לפני / בסיום הצום (בניגוד לנהלי קרפ\"ר)?", "hq79", col=c1)
-        hq_vars['hq_drills_in_fast'] = radio_with_explanation("התקיימה פעילות חריגה לא מבצעית בצום (תרגילים, מטווחים, מד\"סים)?", "hq80", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_holiday_equipment'] = radio_with_explanation("ניתן מענה בחגים (מגילה, חנוכיות וכד')?", "hq81", col=c1)
-        hq_vars['hq_mezuzot_gap'] = radio_with_explanation("ישנו פער במזוזות ביחידה?", "hq82", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_holiday_equip_recv'] = radio_with_explanation("מקבלים ציוד מותאם לחגים?", "hq83", col=c1)
-        hq_vars['hq_religion_equip_req'] = radio_with_explanation("פניתם וביקשתם ציוד דת ולא קיבלתם?", "hq84", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_shul_clean'] = radio_with_explanation("בית הכנסת מטופל / עובר ניקיון שוטף?", "hq85", col=c1)
-        hq_vars['hq_shul_equip_missing'] = radio_with_explanation("ישנו ציוד חסר בבית הכנסת?", "hq86", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_shul_sefer_torah'] = radio_with_explanation("בשגרה: ספר תורה, תפילין, טליתות, כיפות, נרות – תקינים?", "hq87", col=c1)
-        hq_vars['hq_yeshiva_days'] = radio_with_explanation("מתקיימים ימי ישיבה ביחידה ומאפשרים לדתיים להשתתף?", "hq88", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_torah_lessons'] = radio_with_explanation("מתקיימים שיעורי תורה קבועים / רב מגיע לפחות פעם בחודש?", "hq89", col=c1)
-        hq_vars['hq_spiritual_shabbat'] = radio_with_explanation("ישנו ליווי רוחני בשבתות?", "hq90", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_culture_exemption'] = radio_with_explanation("מאפשרים לדתיים להשתחרר מפעילויות תרבות שאינן מתאימות?", "hq91", col=c1)
-        hq_vars['hq_gym_separate'] = radio_with_explanation("ישנן שעות נפרדות בחדר כושר / בריכה?", "hq92", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_sport_gender'] = radio_with_explanation("מאפשרים פעילות ספורטיבית מגדרית?", "hq93", col=c1)
-        hq_vars['hq_yichud'] = radio_with_explanation("שמירות / סיורים / תורנויות הגורמות למצבי ייחוד? פנייה קיבלה מענה?", "hq94", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_alt_activity'] = radio_with_explanation("ישנה פעילות אלטרנטיבית לאוכלוסייה הדתית כשלא ניתן להשתתף בפעילות היחידה?", "hq95", col=c1)
-        hq_vars['hq_cmd_sensitivity'] = radio_with_explanation("המפקדים רגישים לצרכים הדתיים (תפילות ועוד)?", "hq96", col=c2)
+        s_smartbis = radio_with_explanation("האם יש תקלת בינוי (אם כן עדכנת בסמארט-ביס)?", "s5", col=c1)
+        s_geniza = radio_with_explanation("האם יש פח גניזה?", "s6", col=c2)
 
-    st.markdown("---")
-    free_text = st.text_area("הערות נוספות")
+        # שדות נוספים לחטיבות 35/89/900
+        _show_brigade_shul = unit in NO_LOUNGE_WECOOK_UNITS
+        hq_board_info = "לא רלוונטי"
+        hq_tefillin_stand = "לא רלוונטי"
+        if _show_brigade_shul:
+            st.markdown("#### 📋 לוח רבנות מורחב (חטיבות 35/89/900)")
+            c1, c2 = st.columns(2)
+            hq_board_info = radio_with_explanation(
+                "לוח הרבנות מכיל: לוז שבת, דרכי תקשורת, מפת עירוב, לוז ישיבה?", "hq_board_info", col=c1)
+            hq_tefillin_stand = radio_with_explanation(
+                "האם קיימת עמדת טלית ותפילין?", "hq_tefillin_stand", col=c2)
+
+        st.markdown("#### 🚧 עירוב")
+        c1, c2 = st.columns(2)
+        e_status = c1.selectbox("סטטוס עירוב", ["תקין", "פסול", "בטיפול"])
+        e_check = radio_with_explanation("האם בוצעה בדיקה?", "e1", col=c2)
+        c1, c2 = st.columns(2)
+        e_doc = radio_with_explanation("האם בוצע תיעוד?", "e2", col=c1)
+        e_photo = radio_with_explanation("האם קיימת תצ״א?", "e3", col=c2)
+
+        # שדות עירוב מורחבים לחטיבות 35/89/900
+        hq_eruv_door_shape = "לא רלוונטי"
+        hq_eruv_fence_work = "לא רלוונטי"
+        hq_shabbat_device_board = "לא רלוונטי"
+        if _show_brigade_shul:
+            st.markdown("#### 🔗 עירוב מורחב (35/89/900)")
+            c1, c2 = st.columns(2)
+            hq_eruv_door_shape = radio_with_explanation(
+                "האם קיימת צורת הפתח לעירוב?", "hq_eruv_door", col=c1)
+            hq_eruv_fence_work = radio_with_explanation(
+                "האם יש עבודת גדר פתוחה שפוגעת בעירוב?", "hq_eruv_fence", col=c2)
+            c1, c2 = st.columns(2)
+            hq_shabbat_device_board = radio_with_explanation(
+                "האם יש שילוט על התקני שבת הזמינים?", "hq_sdb", col=c1)
+
+    # ===========================================
+    # TAB 3: נהלים ורוח (Procedures, Torah, Shichat Chetek)
+    # ===========================================
+    with tab3:
+        st.markdown("#### 📜 נהלים")
+        c1, c2 = st.columns(2)
+        r_sg = radio_with_explanation("האם יש הוראות רבנות בש.ג?", "r1", col=c1)
+        r_hamal = radio_with_explanation("האם יש הוראות רבנות בחמ״ל?", "r2", col=c2)
+        c1, c2 = st.columns(2)
+        r_sign = radio_with_explanation("האם יש שילוט על מתקנים שיש בהם חילול שבת (כגון תמי 4)?", "r3", col=c1)
+        r_netilot = radio_with_explanation("האם קיימות נטלות?", "r4", col=c2)
+        c1, c2 = st.columns(2)
+        r_mezuzot_missing = c1.number_input("כמה מזוזות חסרות?", 0)
+        r_shabbat_device = c2.radio("האם קיימים התקני שבת?", ["כן", "לא", "חלקי"], horizontal=True, key="r5")
+
+        # שדות נהלים מורחבים לחטיבות
+        hq_shabbat_conduct = "לא רלוונטי"
+        if unit in NO_LOUNGE_WECOOK_UNITS:
+            st.markdown("#### 🕊️ התנהלות שבת (35/89/900)")
+            hq_shabbat_conduct = st.radio(
+                "התנהלות בשבת תקינה? (נוהל שבת, מד\"סים, שירות משותף)",
+                ["כן", "חלקי", "לא", "לא בדקתי"], horizontal=True, key="hq_shabbat_conduct"
+            )
+
+        st.markdown("#### 📖 רוח ושיעורי תורה")
+        c1, c2 = st.columns(2)
+        soldier_yeshiva = radio_with_explanation("האם יש ימי ישיבה?", "so1", col=c1)
+        soldier_want_lesson = radio_with_explanation("האם יש רצון לשיעור תורה?", "so_want_lesson", col=c2)
+        c1, c2 = st.columns(2)
+        soldier_has_lesson = radio_with_explanation("יש שיעור תורה במוצב?", "so_has_lesson", col=c1)
+        soldier_food = radio_with_explanation("האם המענה הכשרותי מספק?", "so2", col=c2)
+        soldier_lesson_teacher = ""
+        soldier_lesson_phone = ""
+        if soldier_has_lesson == "כן":
+            col_teacher, col_phone = st.columns(2)
+            with col_teacher:
+                soldier_lesson_teacher = st.text_input("שם מעביר השיעור", key="so_lesson_teacher", placeholder="לדוגמה: הרב כהן")
+            with col_phone:
+                soldier_lesson_phone = st.text_input("טלפון מעביר השיעור", key="so_lesson_phone", placeholder="לדוגמה: 050-1234567")
+
+        st.markdown("#### 💬 שיחת חתך חיילים")
+        st.caption("שאלות אלו מיועדות לשיחה ישירה עם חיילים בשטח")
+        c1, c2 = st.columns(2)
+        # שאלת קונטרול מתחלפת
+        if _flip == 1:
+            soldier_shabbat_training = radio_with_explanation("האם יש אימונים בשבת? ✅[תשובה שלילית = תקין]", "so3", col=c1)
+        else:
+            soldier_shabbat_training = radio_with_explanation("האם יש אימונים בשבת?", "so3", col=c1)
+        soldier_knows_rabbi = radio_with_explanation("האם מכיר את הרב?", "so4", col=c2)
+        c1, c2 = st.columns(2)
+        soldier_prayers = radio_with_explanation("האם יש זמני תפילות?", "so5", col=c1)
+        if _flip == 2:
+            soldier_talk_cmd = radio_with_explanation("האם יש שיח מפקדים? ✅[תשובה שלילית = בעיה]", "so6", col=c2)
+        else:
+            soldier_talk_cmd = radio_with_explanation("האם יש שיח מפקדים?", "so6", col=c2)
+
+    # ===========================================
+    # TAB 4: שאלון חטיבתי (35/89/900 only)
+    # ===========================================
+    with tab4:
+        _show_halacha = unit in NO_LOUNGE_WECOOK_UNITS
+        hq_vars = {}
+        if not _show_halacha:
+            st.info("📌 שאלון חטיבתי רלוונטי לחטיבות 35, 89, 900 בלבד.")
+        else:
+            st.markdown("#### 🕍 נספח הלכתי ושבת")
+            c1, c2 = st.columns(2)
+            hq_vars['hq_halachi_annex'] = radio_with_explanation("יש נספח הלכתי מצורף לנספח האבטחה של היחידה (בחמ\"ל)?", "hq1", col=c1)
+            hq_vars['hq_shabbat_pubs'] = radio_with_explanation("פרסום הנחיות שבת בש\"ג, חמ\"ל, נשקייה, מרפאה ובונקר?", "hq2", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_infra_shabbat'] = radio_with_explanation("קיימות מערכות תשתיתיות המחייבות חילול שבת (טרמויאל, עין אלקטרונית וכד')?", "hq3", col=c1)
+            hq_vars['hq_infra_response'] = radio_with_explanation("ניתן מענה/הנחיות לאוכלוסייה הדתית לגבי מערכות אלו?", "hq4", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_shabbat_devices'] = radio_with_explanation("הימצאות התקני שבת (עט, מקלדת, עכבר) בחמ\"ל ובמרפאה / שילוט מותאם?", "hq5", col=c1)
+            hq_vars['hq_mandatory_reg'] = radio_with_explanation("מחייבים רישום/החתמה מסמכים בשבת (נוכחות, ש.ג, מרותקים וכד')?", "hq6", col=c2)
+
+            st.markdown("#### 🏕️ שבתות שטח")
+            c1, c2 = st.columns(2)
+            hq_vars['hq_field_shabbat_orders'] = radio_with_explanation("שבתות שטח מתקיימות לפי הוראות רבצ\"ר ונכתב נספח רבנות?", "hq7", col=c1)
+            hq_vars['hq_field_jewish_dates'] = radio_with_explanation("התקיימו שבתות שטח במועדי ישראל (ר\"ה, יו\"כ, פסח וכד')?", "hq8", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_field_prep_time'] = radio_with_explanation("ההיערכות לשבת הושלמה לפני כניסת השבת?", "hq9", col=c1)
+            hq_vars['hq_field_wash'] = radio_with_explanation("אפשרו לחיילים להתרחץ / לשטוף ידיים ולהחליף מדים לפני שבת?", "hq10", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_field_shul'] = radio_with_explanation("הוקם ביכ\"נ במתחם (כשיש מניין)?", "hq11", col=c1)
+            hq_vars['hq_field_equipment'] = radio_with_explanation("היה ציוד שבת מלא: יין, חלות, כלים, מנות קרב, מים?", "hq12", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_field_hot_meal'] = radio_with_explanation("הוגשה סעודה מבושלת וחמה סביב כיסאות בליל שבת?", "hq13", col=c1)
+            hq_vars['hq_field_training'] = radio_with_explanation("תרגלו חיילים באימון כלשהו במהלך השבת?", "hq14", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_field_gear'] = radio_with_explanation("חייבו חיילים לנוע עם ציוד לחימה בשבת?", "hq15", col=c1)
+            hq_vars['hq_field_generator'] = radio_with_explanation("טיפלו בגנרטור / הקמת אוהל או ציליה בשבת?", "hq16", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_field_vehicles'] = radio_with_explanation("הייתה תנועת כלי רכב במהלך השבת בשטח הכוח?", "hq17", col=c1)
+            hq_vars['hq_field_prep_motzash'] = radio_with_explanation("במהלך השבת החלו הכנות לפעילות במוצ\"ש / המשך שבוע?", "hq18", col=c2)
+            hq_vars['hq_field_rabbi_rep'] = radio_with_explanation("שהה בשטח נציג הרבנות במהלך השבת?", "hq19")
+
+            st.markdown("#### 🌿 חגים")
+            c1, c2 = st.columns(2)
+            hq_vars['hq_sukkah_chada'] = radio_with_explanation("הוקמה סוכה ליד חד\"א?", "hq20", col=c1)
+            hq_vars['hq_sukkah_food'] = radio_with_explanation("קיימת סוכה ליד כל עסק למכירת מזון?", "hq21", col=c2)
+            hq_vars['hq_sukkah_option'] = radio_with_explanation("ניתנה אפשרות לחייל לאכול/לישון בסוכה?", "hq22")
+            c1, c2 = st.columns(2)
+            hq_vars['hq_pesach_chametz'] = radio_with_explanation("מיום י\"ג ניסן 09:00 לא היה חמץ בבסיסי צה\"ל?", "hq23", col=c1)
+            hq_vars['hq_pesach_kitchen'] = radio_with_explanation("מטבחים הוכשרו עד י\"ב ניסן 18:00 לפי פקודת פסח?", "hq24", col=c2)
+            hq_vars['hq_pesach_seder'] = radio_with_explanation("בליל פסח התקיים סדר פסח מסורתי לכלל החיילים לפי הוראות רבצ\"ר?", "hq25")
+            c1, c2 = st.columns(2)
+            hq_vars['hq_chanuka_lighting'] = radio_with_explanation("נערך טקס הדלקת נרות חנוכה ואפשרו לחיילים להשתתף?", "hq26", col=c1)
+            hq_vars['hq_purim_megilla'] = radio_with_explanation("אפשרו לחיילים לשמוע קריאת מגילה בפורים?", "hq27", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_rosh_shofar'] = radio_with_explanation("מאפשרים לכל חייל לשמוע קול שופר בראש השנה?", "hq28", col=c1)
+            hq_vars['hq_fast_shoes'] = radio_with_explanation("אפשרו לצמים לנעול נעליים ללא עור ביו\"כ ות\"ב (מלבד פעילות מבצעית)?", "hq29", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_fast_meals'] = radio_with_explanation("לכל צם הוגשה ארוחה חמה לפני ואחרי הצום?", "hq30", col=c1)
+            hq_vars['hq_yom_kippur_closed'] = radio_with_explanation("קנטינות, מזנונים וחד\"א היו סגורים במהלך יום כיפור?", "hq31", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_tisha_bav_events'] = radio_with_explanation("התקיימו בתשעה באב פעילות בידור / הווי / תרבות?", "hq32", col=c1)
+            hq_vars['hq_fast_exempt'] = radio_with_explanation("חיילים צמים שוחררו מפעילות (כולל הוראת קרפ\"ר) לפני ואחרי הצום?", "hq33", col=c2)
+
+            st.markdown("#### 🕌 בית הכנסת ופרסומים")
+            c1, c2 = st.columns(2)
+            hq_vars['hq_shul_mitzva_items'] = radio_with_explanation("יש פרסום על מקום תשמישי מצווה / קדושה (4 מינים, הבדלה וכד')?", "hq34", col=c1)
+            hq_vars['hq_shul_annex'] = radio_with_explanation("יש נספח הלכתי יחידתי בכל בית כנסת?", "hq35", col=c2)
+            hq_vars['hq_judaism_board'] = radio_with_explanation("לוח יהדות מתעדכן (זמני שבת, תפילות, שיעורים, דרכי תקשורת)?", "hq36")
+            hq_vars['hq_halacha_books'] = radio_with_explanation("קיימים ספרי תורת המחנה, חוברות הלכה, פרסומי \"והגית בו\" נגישים לחיילים?", "hq37")
+
+            st.markdown("#### 🔗 עירוב")
+            c1, c2 = st.columns(2)
+            hq_vars['hq_eruv_doc'] = radio_with_explanation("קיים תיעוד בדיקת עירוב?", "hq38", col=c1)
+            hq_vars['hq_eruv_valid'] = radio_with_explanation("העירוב תקין לכל אורכו ומקיף את כלל מסגרות היחידה?", "hq39", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_eruv_cert'] = radio_with_explanation("קיים בביהכ\"נ אישור תקינות עירוב ובדיקתו?", "hq40", col=c1)
+            hq_vars['hq_eruv_map'] = radio_with_explanation("קיים תצ\"א של העירוב עם פירוט ההסבר במשרד הרב?", "hq41", col=c2)
+
+            st.markdown("#### 🙏 תפילות")
+            c1, c2 = st.columns(2)
+            hq_vars['hq_prayer_times'] = radio_with_explanation("החיילים מקבלים זמני תפילות לפי פקודות?", "hq42", col=c1)
+            hq_vars['hq_pre_prayer_act'] = radio_with_explanation("עושים פעילות לפני זמן תפילת בוקר?", "hq43", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_post_prayer_meal'] = radio_with_explanation("החיילים מקבלים ארוחת בוקר לאחר תפילת הבוקר?", "hq44", col=c1)
+            hq_vars['hq_minyan'] = radio_with_explanation("מאפשרים לחיילים להתפלל במניין (ביחידה בה אפשרי)?", "hq45", col=c2)
+
+            st.markdown("#### 👮 שאלון חיילים – רבנות היחידה ונושאים נוספים")
+            c1, c2 = st.columns(2)
+            hq_vars['hq_know_rabbi'] = radio_with_explanation("מכירים את סגל הדת ביחידה (רב / נגד רבנות)?", "hq46", col=c1)
+            hq_vars['hq_kashrut_gaps'] = radio_with_explanation("ישנם פערי כשרות ביחידה בשגרה?", "hq47", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_mehadrin_req'] = radio_with_explanation("ביקשתם מוצרי מהדרין / חלק וקיבלתם?", "hq48", col=c1)
+            hq_vars['hq_six_hours'] = radio_with_explanation("יש הפרדה של 6 שעות בין ארוחה בשרית לחלבית?", "hq49", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_tools_marked'] = radio_with_explanation("הכלים מסומנים ויש הפרדה בין בשר לחלב?", "hq50", col=c1)
+            hq_vars['hq_field_cooking'] = radio_with_explanation("מתקיים בישול בשטח / על האש עם פיקוח כשרותי?", "hq51", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_shabbat_comms'] = radio_with_explanation("ישנן פניות ברשת הקשר / טלפוניות לצרכים לא מבצעיים בשבת?", "hq52", col=c1)
+            hq_vars['hq_shabbat_logistics'] = radio_with_explanation("מתקיים ניוד מזון / לוגיסטי בשבת?", "hq53", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_shabbat_movement'] = radio_with_explanation("מתקיים ניוד אנשים לעמדות / שמירות בשבת שלא לצורך מבצעי?", "hq54", col=c1)
+            hq_vars['hq_shabbat_vehicles'] = radio_with_explanation("נסיעות ביחידה בשבת שלא לצרכים מבצעיים?", "hq55", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_shabbat_entry'] = radio_with_explanation("קיימים מנגנוני בקרת כניסה מותאמים לשבת?", "hq56", col=c1)
+            hq_vars['hq_shabbat_pen'] = radio_with_explanation("התאפשר לקבל עט שבת / מקלדת / עכבר שבת?", "hq57", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_shabbat_procedure'] = radio_with_explanation("קיים נוהל שבת – שחרור שעה לפני כניסה, חזרה חצי שעה אחרי?", "hq58", col=c1)
+            hq_vars['hq_shabbat_return'] = radio_with_explanation("בחזרה ממוצ\"ש – לא נדרשו לצאת פחות משעה אחרי השבת?", "hq59", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_shabbat_kiddush'] = radio_with_explanation("התקיים קידוש וסעודת ליל שבת לכל חיילי היחידה?", "hq60", col=c1)
+            hq_vars['hq_shabbat_meal_timing'] = radio_with_explanation("סעודת שבת מתקיימת לאחר סיום התפילה (כשעה ורבע אחרי כניסת שבת)?", "hq61", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_challot'] = radio_with_explanation("קיבלתם חלות / לחמניות שלמות ויין בליל שבת ובשחרית?", "hq62", col=c1)
+            hq_vars['hq_candles'] = radio_with_explanation("יש מקום ונרות להדלקת נרות שבת / ערכת הבדלה?", "hq63", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_shabbat_drills'] = radio_with_explanation("מבוצעים תרגילים ותרגולות בשבת?", "hq64", col=c1)
+            hq_vars['hq_food_warming'] = radio_with_explanation("נהלי חימום מזון בשבת מתקיימים במטבח ללא פערים?", "hq65", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_forced_reg'] = radio_with_explanation("מתבצע רישום מחייב שאינו חיוני בשבת (חתימות שומרים, מרפאה וכד')?", "hq66", col=c1)
+            hq_vars['hq_eruv_problem'] = radio_with_explanation("קיימת בעיה עם עירוב שבת ביחידה / בשטח וקיבלתם מענה?", "hq67", col=c2)
+            hq_vars['hq_shabbat_violation'] = radio_with_explanation("מתקיים חילול שבת יחידתי לצורך שאינו מבצעי?", "hq68")
+            c1, c2 = st.columns(2)
+            hq_vars['hq_soldier_prayer_allowed'] = radio_with_explanation("מתאפשר לכם להתפלל ומקבלים זמן מוקצה (כולל הליכה וחזרה)?", "hq69", col=c1)
+            hq_vars['hq_soldier_minyan'] = radio_with_explanation("מתאפשר להתפלל במניין?", "hq70", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_pre_shacharit'] = radio_with_explanation("נדרשים להשתתף במד\"סים / פעילות לפני תפילת שחרית?", "hq71", col=c1)
+            hq_vars['hq_breakfast_after_prayer'] = radio_with_explanation("יש מענה לארוחת בוקר בסיום שחרית?", "hq72", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_sleep_prayer'] = radio_with_explanation("זמן תפילת שחרית הוא חלק מזמן השינה?", "hq73", col=c1)
+            hq_vars['hq_mincha_arvit_time'] = radio_with_explanation("מוקצה זמן נפרד לתפילות מנחה וערבית מהארוחה?", "hq74", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_arvit_tash'] = radio_with_explanation("זמן ערבית הוא חלק משעת ת\"ש? אם כן – קיבלתם תוספת זמן?", "hq75", col=c1)
+            hq_vars['hq_fast_exempt_soldier'] = radio_with_explanation("במהלך הצומות – הצמים פטורים מכל פעילות?", "hq76", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_fast_office'] = radio_with_explanation("נדרשתם לעבודה משרדית / אחרת בצום?", "hq77", col=c1)
+            hq_vars['hq_fast_break_meal'] = radio_with_explanation("יש ארוחה חמה בסיום הצום לצמים?", "hq78", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_intense_pre_fast'] = radio_with_explanation("התקיימה פעילות גופנית עצימה לפני / בסיום הצום (בניגוד לנהלי קרפ\"ר)?", "hq79", col=c1)
+            hq_vars['hq_drills_in_fast'] = radio_with_explanation("התקיימה פעילות חריגה לא מבצעית בצום (תרגילים, מטווחים, מד\"סים)?", "hq80", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_holiday_equipment'] = radio_with_explanation("ניתן מענה בחגים (מגילה, חנוכיות וכד')?", "hq81", col=c1)
+            hq_vars['hq_mezuzot_gap'] = radio_with_explanation("ישנו פער במזוזות ביחידה?", "hq82", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_holiday_equip_recv'] = radio_with_explanation("מקבלים ציוד מותאם לחגים?", "hq83", col=c1)
+            hq_vars['hq_religion_equip_req'] = radio_with_explanation("פניתם וביקשתם ציוד דת ולא קיבלתם?", "hq84", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_shul_clean'] = radio_with_explanation("בית הכנסת מטופל / עובר ניקיון שוטף?", "hq85", col=c1)
+            hq_vars['hq_shul_equip_missing'] = radio_with_explanation("ישנו ציוד חסר בבית הכנסת?", "hq86", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_shul_sefer_torah'] = radio_with_explanation("בשגרה: ספר תורה, תפילין, טליתות, כיפות, נרות – תקינים?", "hq87", col=c1)
+            hq_vars['hq_yeshiva_days'] = radio_with_explanation("מתקיימים ימי ישיבה ביחידה ומאפשרים לדתיים להשתתף?", "hq88", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_torah_lessons'] = radio_with_explanation("מתקיימים שיעורי תורה קבועים / רב מגיע לפחות פעם בחודש?", "hq89", col=c1)
+            hq_vars['hq_spiritual_shabbat'] = radio_with_explanation("ישנו ליווי רוחני בשבתות?", "hq90", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_culture_exemption'] = radio_with_explanation("מאפשרים לדתיים להשתחרר מפעילויות תרבות שאינן מתאימות?", "hq91", col=c1)
+            hq_vars['hq_gym_separate'] = radio_with_explanation("ישנן שעות נפרדות בחדר כושר / בריכה?", "hq92", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_sport_gender'] = radio_with_explanation("מאפשרים פעילות ספורטיבית מגדרית?", "hq93", col=c1)
+            hq_vars['hq_yichud'] = radio_with_explanation("שמירות / סיורים / תורנויות הגורמות למצבי ייחוד? פנייה קיבלה מענה?", "hq94", col=c2)
+            c1, c2 = st.columns(2)
+            hq_vars['hq_alt_activity'] = radio_with_explanation("ישנה פעילות אלטרנטיבית לאוכלוסייה הדתית כשלא ניתן להשתתף בפעילות היחידה?", "hq95", col=c1)
+            hq_vars['hq_cmd_sensitivity'] = radio_with_explanation("המפקדים רגישים לצרכים הדתיים (תפילות ועוד)?", "hq96", col=c2)
+
+    # ===========================================
+    # TAB 5: חוסרים ושליחה (Deficits + Submit)
+    # ===========================================
+    with tab5:
+        # --- בדיקת תנאי חובה לפני שליחה ---
+        _mandatory_warnings = []
+        # Tab 1 mandatory check: inspector and base must not be empty
+        if not inspector:
+            _mandatory_warnings.append("⚠️ חובה להזין שם מבקר (לשונית 📍 מיקום)")
+        if not base:
+            _mandatory_warnings.append("⚠️ חובה להזין מוצב / מיקום (לשונית 📍 מיקום)")
+        # Tab 1 mandatory: at least kashrut cert filled
+        if k_cert == "לא יודע / לא בדקתי":
+            _mandatory_warnings.append("⚠️ חובה לבדוק תעודת כשרות (לשונית 🍽️ כשרות)")
+        # Tab 2 mandatory: eruv status must be filled
+        if e_status not in ["תקין", "פסול", "בטיפול"]:
+            _mandatory_warnings.append("⚠️ חובה לציין סטטוס עירוב (לשונית 🕍 ביהכ\"נ ועירוב)")
+        # Tab 3 mandatory: at least r_sg not skipped
+        if r_sg == "לא יודע / לא בדקתי" and r_hamal == "לא יודע / לא בדקתי":
+            _mandatory_warnings.append("⚠️ חובה לבדוק לפחות נוהל אחד (לשונית 📜 נהלים ורוח)")
+
+        st.markdown("### ⚠️ חוסרים")
+        missing = st.text_area("פירוט חוסרים")
+        st.markdown("### 💬 הערות נוספות")
+        free_text = st.text_area("הערות נוספות")
+
+        if _mandatory_warnings:
+            for w in _mandatory_warnings:
+                st.warning(w)
+            st.error("🔴 יש לחזור ולמלא את הטאבים החסרים לפני השליחה.")
+
 
     # ===== סריקת ברקוד =====
     with st.expander("📷 סריקת ברקוד (רשות)"):
@@ -4659,6 +5109,9 @@ def render_unit_report():
     
     # שמירת הברקוד בדוח
     barcode_value = st.session_state.get('barcode_manual_input', '') or st.session_state.get('barcode_from_image_input', '')
+    # חתימה דיגיטלית
+    sig_url = render_signature_pad()
+    
     photo = st.file_uploader("📸 תמונה (חובה)", type=['jpg', 'png', 'jpeg'])
         
         # שליחת הדוח
@@ -4776,7 +5229,6 @@ def render_unit_report():
                 "t_private": t_private, "t_kitchen_tools": t_kitchen_tools, "t_procedure": t_procedure,
                 "t_friday": t_friday, "t_app": t_app, "w_location": w_location, "w_private": w_private,
                 "w_kitchen_tools": w_kitchen_tools, "w_procedure": w_procedure, "w_guidelines": w_guidelines,
-                "w_kitchen_tools": w_kitchen_tools, "w_procedure": w_procedure, "w_guidelines": w_guidelines,
                 "soldier_yeshiva": soldier_yeshiva,
                 "soldier_want_lesson": soldier_want_lesson,  # 🆕
                 "soldier_has_lesson": soldier_has_lesson,    # 🆕
@@ -4807,7 +5259,8 @@ def render_unit_report():
                 "k_issues_photo_url": k_issues_photo_url,
                 "k_shabbat_photo_url": k_shabbat_photo_url,
                 "report_duration": report_duration,  # ⏱️ חדש!
-                "barcode_verified": (barcode_value == BASE_BARCODES.get(base)) if base in BASE_BARCODES else False
+                "barcode_verified": (barcode_value == BASE_BARCODES.get(base)) if base in BASE_BARCODES else False,
+                "signature_url": sig_url or ""
             }
             
             # הוספת שאלות הלכה לחטיבות 35/89/900
@@ -4845,7 +5298,7 @@ def render_unit_report():
                             "k_shabbat_supervisor_name", "k_shabbat_supervisor_phone",
                             "k_issues_photo_url", "k_shabbat_photo_url",
                             "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone",
-                            "report_duration", "barcode_verified"
+                            "report_duration", "barcode_verified", "signature_url"
                         ]
                         for field in new_fields:
                             data.pop(field, None)
@@ -4863,8 +5316,15 @@ def render_unit_report():
                         create_maintenance_ticket(data, report_id)
                 
                 st.success("✅ הדוח נשלח בהצלחה ונקלט בחמ״ל!")
+                
+                # 📨 התראות WhatsApp לבעיות קריטיות
+                send_whatsapp_alert(data, unit)
+                
+                # 📊 הצגת מה השתנה מהפעם הקודמת
+                render_report_diff(data, unit, base)
+                
                 clear_cache()
-                time.sleep(1)
+                time.sleep(4)  # תוספת זמן לקריאת ה-Diff
                 st.rerun()
             except Exception as e:
                 error_msg = str(e)
