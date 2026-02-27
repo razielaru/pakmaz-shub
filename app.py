@@ -2235,9 +2235,9 @@ def render_login_gallery():
     st.markdown("---")
     st.markdown("### 🎖️ מפקדות ושליטה")
     
-    c_cols = st.columns(3)
+    c_cols = st.columns(4)
     for i, cmd in enumerate(COMMAND_UNITS):
-        with c_cols[i]:
+        with c_cols[i % 4]:
             render_unit_card(cmd)
 
 MAX_LOGIN_ATTEMPTS = 5
@@ -4348,6 +4348,55 @@ def render_unit_report():
     
     st.markdown("---")
     free_text = st.text_area("הערות נוספות")
+
+    # ===== סריקת ברקוד =====
+    with st.expander("📷 סריקת ברקוד (רשות)"):
+        st.markdown("""
+        <div id='barcode-scanner-container'>
+            <video id='barcode-video' width='100%' style='max-height:260px;border-radius:8px;background:#000;'></video>
+            <p id='barcode-result' style='font-size:18px;font-weight:bold;color:#1e3a8a;margin-top:8px;'>תוצאה: הפעל מצלמה והכוון לברקוד</p>
+        </div>
+        <script>
+        (function() {
+            const video = document.getElementById('barcode-video');
+            const resultEl = document.getElementById('barcode-result');
+            if (!video) return;
+            // Use BarcodeDetector if available (Chrome 83+)
+            if ('BarcodeDetector' in window) {
+                const barcodeDetector = new BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8'] });
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(stream => {
+                    video.srcObject = stream;
+                    video.play();
+                    const scan = () => {
+                        barcodeDetector.detect(video).then(barcodes => {
+                            if (barcodes.length > 0) {
+                                resultEl.textContent = '✅ ברקוד נסרק: ' + barcodes[0].rawValue;
+                                resultEl.style.color = '#10b981';
+                                stream.getTracks().forEach(t => t.stop());
+                            } else {
+                                requestAnimationFrame(scan);
+                            }
+                        }).catch(() => requestAnimationFrame(scan));
+                    };
+                    scan();
+                }).catch(err => {
+                    resultEl.textContent = 'אין גישה למצלמה: ' + err.message;
+                    resultEl.style.color = '#ef4444';
+                });
+            } else {
+                resultEl.textContent = 'הדפדפן אינו תומך BarcodeDetector. נסה Chrome/Edge עדכני.';
+                resultEl.style.color = '#f59e0b';
+            }
+        })();
+        </script>
+        """, unsafe_allow_html=True)
+        # שדה רזרבי לכתיבת ברקוד ידנית
+        barcode_manual = st.text_input("📟 או הזן ברקוד ידנית", placeholder="לדוגמא: ABC-12345", key="barcode_manual_input")
+        if barcode_manual:
+            st.success(f"📷 ברקוד: {barcode_manual}")
+    
+    # שמירת הברקוד בדוח (manual input only - JS value not accessible server-side)
+    barcode_value = st.session_state.get('barcode_manual_input', '')
     photo = st.file_uploader("📸 תמונה (חובה)", type=['jpg', 'png', 'jpeg'])
         
         # שליחת הדוח
