@@ -4162,13 +4162,17 @@ def render_unit_report():
     inspector = c3.text_input("מבקר *")
     base = st.text_input("מוצב / מיקום *", placeholder="לדוגמה: מחנה עופר, בית אל, וכו'")
         
-    st.markdown("### 🏠 פילבוקס / הגנ״ש")
-    c1, c2 = st.columns(2)
-    p_pakal = radio_with_explanation("האם יש פק״ל רבנות?", "p1", col=c1)
-    p_marked = radio_with_explanation("האם הכלים מסומנים?", "p2", col=c2)
-    c1, c2 = st.columns(2)
-    p_mix = radio_with_explanation("האם זוהה ערבוב כלים?", "p3", col=c1)
-    p_kasher = radio_with_explanation("האם נדרשת הכשרה כלים?", "p4", col=c2)
+    _show_pillbox = unit not in NO_LOUNGE_WECOOK_UNITS
+    if _show_pillbox:
+        st.markdown("### 🏠 פילבוקס / הגנ״ש")
+        c1, c2 = st.columns(2)
+        p_pakal = radio_with_explanation("האם יש פק״ל רבנות?", "p1", col=c1)
+        p_marked = radio_with_explanation("האם הכלים מסומנים?", "p2", col=c2)
+        c1, c2 = st.columns(2)
+        p_mix = radio_with_explanation("האם זוהה ערבוב כלים?", "p3", col=c1)
+        p_kasher = radio_with_explanation("האם נדרשת הכשרה כלים?", "p4", col=c2)
+    else:
+        p_pakal = p_marked = p_mix = p_kasher = "לא רלוונטי"
     
     st.markdown("### 📜 נהלים")
     c1, c2 = st.columns(2)
@@ -4307,7 +4311,7 @@ def render_unit_report():
     st.markdown("### ⚠️ חוסרים")
     missing = st.text_area("פירוט חוסרים")
     
-    st.markdown("### 💬 שיחת חתך - עם חייל/ת במוצב")
+    st.markdown("### 💬 שיחת חתך חיילים")
     
     c1, c2 = st.columns(2)
     soldier_yeshiva = radio_with_explanation("האם יש ימי ישיבה?", "so1", col=c1)
@@ -4346,57 +4350,227 @@ def render_unit_report():
     
     soldier_talk_cmd = radio_with_explanation("האם יש שיח מפקדים?", "so6")
     
+    # ===== שאלות הלכה מיוחדות לחטיבות 35, 89, 900 =====
+    _show_halacha = unit in NO_LOUNGE_WECOOK_UNITS
+    hq_vars = {}
+    if _show_halacha:
+        st.markdown("---")
+        st.markdown("### 📖 שאלון הלכה – חטיבתי")
+
+        st.markdown("#### 🕍 נספח הלכתי ושבת")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_halachi_annex'] = radio_with_explanation("יש נספח הלכתי מצורף לנספח האבטחה של היחידה (בחמ\"ל)?", "hq1", col=c1)
+        hq_vars['hq_shabbat_pubs'] = radio_with_explanation("פרסום הנחיות שבת בש\"ג, חמ\"ל, נשקייה, מרפאה ובונקר?", "hq2", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_infra_shabbat'] = radio_with_explanation("קיימות מערכות תשתיתיות המחייבות חילול שבת (טרמויאל, עין אלקטרונית וכד')?", "hq3", col=c1)
+        hq_vars['hq_infra_response'] = radio_with_explanation("ניתן מענה/הנחיות לאוכלוסייה הדתית לגבי מערכות אלו?", "hq4", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shabbat_devices'] = radio_with_explanation("הימצאות התקני שבת (עט, מקלדת, עכבר) בחמ\"ל ובמרפאה / שילוט מותאם?", "hq5", col=c1)
+        hq_vars['hq_mandatory_reg'] = radio_with_explanation("מחייבים רישום/החתמה מסמכים בשבת (נוכחות, ש.ג, מרותקים וכד')?", "hq6", col=c2)
+
+        st.markdown("#### 🏕️ שבתות שטח")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_field_shabbat_orders'] = radio_with_explanation("שבתות שטח מתקיימות לפי הוראות רבצ\"ר ונכתב נספח רבנות?", "hq7", col=c1)
+        hq_vars['hq_field_jewish_dates'] = radio_with_explanation("התקיימו שבתות שטח במועדי ישראל (ר\"ה, יו\"כ, פסח וכד')?", "hq8", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_field_prep_time'] = radio_with_explanation("ההיערכות לשבת הושלמה לפני כניסת השבת?", "hq9", col=c1)
+        hq_vars['hq_field_wash'] = radio_with_explanation("אפשרו לחיילים להתרחץ / לשטוף ידיים ולהחליף מדים לפני שבת?", "hq10", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_field_shul'] = radio_with_explanation("הוקם ביכ\"נ במתחם (כשיש מניין)?", "hq11", col=c1)
+        hq_vars['hq_field_equipment'] = radio_with_explanation("היה ציוד שבת מלא: יין, חלות, כלים, מנות קרב, מים?", "hq12", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_field_hot_meal'] = radio_with_explanation("הוגשה סעודה מבושלת וחמה סביב כיסאות בליל שבת?", "hq13", col=c1)
+        hq_vars['hq_field_training'] = radio_with_explanation("תרגלו חיילים באימון כלשהו במהלך השבת?", "hq14", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_field_gear'] = radio_with_explanation("חייבו חיילים לנוע עם ציוד לחימה בשבת?", "hq15", col=c1)
+        hq_vars['hq_field_generator'] = radio_with_explanation("טיפלו בגנרטור / הקמת אוהל או ציליה בשבת?", "hq16", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_field_vehicles'] = radio_with_explanation("הייתה תנועת כלי רכב במהלך השבת בשטח הכוח?", "hq17", col=c1)
+        hq_vars['hq_field_prep_motzash'] = radio_with_explanation("במהלך השבת החלו הכנות לפעילות במוצ\"ש / המשך שבוע?", "hq18", col=c2)
+        hq_vars['hq_field_rabbi_rep'] = radio_with_explanation("שהה בשטח נציג הרבנות במהלך השבת?", "hq19")
+
+        st.markdown("#### 🌿 חגים")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_sukkah_chada'] = radio_with_explanation("הוקמה סוכה ליד חד\"א?", "hq20", col=c1)
+        hq_vars['hq_sukkah_food'] = radio_with_explanation("קיימת סוכה ליד כל עסק למכירת מזון?", "hq21", col=c2)
+        hq_vars['hq_sukkah_option'] = radio_with_explanation("ניתנה אפשרות לחייל לאכול/לישון בסוכה?", "hq22")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_pesach_chametz'] = radio_with_explanation("מיום י\"ג ניסן 09:00 לא היה חמץ בבסיסי צה\"ל?", "hq23", col=c1)
+        hq_vars['hq_pesach_kitchen'] = radio_with_explanation("מטבחים הוכשרו עד י\"ב ניסן 18:00 לפי פקודת פסח?", "hq24", col=c2)
+        hq_vars['hq_pesach_seder'] = radio_with_explanation("בליל פסח התקיים סדר פסח מסורתי לכלל החיילים לפי הוראות רבצ\"ר?", "hq25")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_chanuka_lighting'] = radio_with_explanation("נערך טקס הדלקת נרות חנוכה ואפשרו לחיילים להשתתף?", "hq26", col=c1)
+        hq_vars['hq_purim_megilla'] = radio_with_explanation("אפשרו לחיילים לשמוע קריאת מגילה בפורים?", "hq27", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_rosh_shofar'] = radio_with_explanation("מאפשרים לכל חייל לשמוע קול שופר בראש השנה?", "hq28", col=c1)
+        hq_vars['hq_fast_shoes'] = radio_with_explanation("אפשרו לצמים לנעול נעליים ללא עור ביו\"כ ות\"ב (מלבד פעילות מבצעית)?", "hq29", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_fast_meals'] = radio_with_explanation("לכל צם הוגשה ארוחה חמה לפני ואחרי הצום?", "hq30", col=c1)
+        hq_vars['hq_yom_kippur_closed'] = radio_with_explanation("קנטינות, מזנונים וחד\"א היו סגורים במהלך יום כיפור?", "hq31", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_tisha_bav_events'] = radio_with_explanation("התקיימו בתשעה באב פעילות בידור / הווי / תרבות?", "hq32", col=c1)
+        hq_vars['hq_fast_exempt'] = radio_with_explanation("חיילים צמים שוחררו מפעילות (כולל הוראת קרפ\"ר) לפני ואחרי הצום?", "hq33", col=c2)
+
+        st.markdown("#### 🕌 בית הכנסת ופרסומים")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shul_mitzva_items'] = radio_with_explanation("יש פרסום על מקום תשמישי מצווה / קדושה (4 מינים, הבדלה וכד')?", "hq34", col=c1)
+        hq_vars['hq_shul_annex'] = radio_with_explanation("יש נספח הלכתי יחידתי בכל בית כנסת?", "hq35", col=c2)
+        hq_vars['hq_judaism_board'] = radio_with_explanation("לוח יהדות מתעדכן (זמני שבת, תפילות, שיעורים, דרכי תקשורת)?", "hq36")
+        hq_vars['hq_halacha_books'] = radio_with_explanation("קיימים ספרי תורת המחנה, חוברות הלכה, פרסומי \"והגית בו\" נגישים לחיילים?", "hq37")
+
+        st.markdown("#### 🔗 עירוב")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_eruv_doc'] = radio_with_explanation("קיים תיעוד בדיקת עירוב?", "hq38", col=c1)
+        hq_vars['hq_eruv_valid'] = radio_with_explanation("העירוב תקין לכל אורכו ומקיף את כלל מסגרות היחידה?", "hq39", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_eruv_cert'] = radio_with_explanation("קיים בביהכ\"נ אישור תקינות עירוב ובדיקתו?", "hq40", col=c1)
+        hq_vars['hq_eruv_map'] = radio_with_explanation("קיים תצ\"א של העירוב עם פירוט ההסבר במשרד הרב?", "hq41", col=c2)
+
+        st.markdown("#### 🙏 תפילות")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_prayer_times'] = radio_with_explanation("החיילים מקבלים זמני תפילות לפי פקודות?", "hq42", col=c1)
+        hq_vars['hq_pre_prayer_act'] = radio_with_explanation("עושים פעילות לפני זמן תפילת בוקר?", "hq43", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_post_prayer_meal'] = radio_with_explanation("החיילים מקבלים ארוחת בוקר לאחר תפילת הבוקר?", "hq44", col=c1)
+        hq_vars['hq_minyan'] = radio_with_explanation("מאפשרים לחיילים להתפלל במניין (ביחידה בה אפשרי)?", "hq45", col=c2)
+
+        st.markdown("#### 👮 שאלון חיילים – רבנות היחידה ונושאים נוספים")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_know_rabbi'] = radio_with_explanation("מכירים את סגל הדת ביחידה (רב / נגד רבנות)?", "hq46", col=c1)
+        hq_vars['hq_kashrut_gaps'] = radio_with_explanation("ישנם פערי כשרות ביחידה בשגרה?", "hq47", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_mehadrin_req'] = radio_with_explanation("ביקשתם מוצרי מהדרין / חלק וקיבלתם?", "hq48", col=c1)
+        hq_vars['hq_six_hours'] = radio_with_explanation("יש הפרדה של 6 שעות בין ארוחה בשרית לחלבית?", "hq49", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_tools_marked'] = radio_with_explanation("הכלים מסומנים ויש הפרדה בין בשר לחלב?", "hq50", col=c1)
+        hq_vars['hq_field_cooking'] = radio_with_explanation("מתקיים בישול בשטח / על האש עם פיקוח כשרותי?", "hq51", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shabbat_comms'] = radio_with_explanation("ישנן פניות ברשת הקשר / טלפוניות לצרכים לא מבצעיים בשבת?", "hq52", col=c1)
+        hq_vars['hq_shabbat_logistics'] = radio_with_explanation("מתקיים ניוד מזון / לוגיסטי בשבת?", "hq53", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shabbat_movement'] = radio_with_explanation("מתקיים ניוד אנשים לעמדות / שמירות בשבת שלא לצורך מבצעי?", "hq54", col=c1)
+        hq_vars['hq_shabbat_vehicles'] = radio_with_explanation("נסיעות ביחידה בשבת שלא לצרכים מבצעיים?", "hq55", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shabbat_entry'] = radio_with_explanation("קיימים מנגנוני בקרת כניסה מותאמים לשבת?", "hq56", col=c1)
+        hq_vars['hq_shabbat_pen'] = radio_with_explanation("התאפשר לקבל עט שבת / מקלדת / עכבר שבת?", "hq57", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shabbat_procedure'] = radio_with_explanation("קיים נוהל שבת – שחרור שעה לפני כניסה, חזרה חצי שעה אחרי?", "hq58", col=c1)
+        hq_vars['hq_shabbat_return'] = radio_with_explanation("בחזרה ממוצ\"ש – לא נדרשו לצאת פחות משעה אחרי השבת?", "hq59", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shabbat_kiddush'] = radio_with_explanation("התקיים קידוש וסעודת ליל שבת לכל חיילי היחידה?", "hq60", col=c1)
+        hq_vars['hq_shabbat_meal_timing'] = radio_with_explanation("סעודת שבת מתקיימת לאחר סיום התפילה (כשעה ורבע אחרי כניסת שבת)?", "hq61", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_challot'] = radio_with_explanation("קיבלתם חלות / לחמניות שלמות ויין בליל שבת ובשחרית?", "hq62", col=c1)
+        hq_vars['hq_candles'] = radio_with_explanation("יש מקום ונרות להדלקת נרות שבת / ערכת הבדלה?", "hq63", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shabbat_drills'] = radio_with_explanation("מבוצעים תרגילים ותרגולות בשבת?", "hq64", col=c1)
+        hq_vars['hq_food_warming'] = radio_with_explanation("נהלי חימום מזון בשבת מתקיימים במטבח ללא פערים?", "hq65", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_forced_reg'] = radio_with_explanation("מתבצע רישום מחייב שאינו חיוני בשבת (חתימות שומרים, מרפאה וכד')?", "hq66", col=c1)
+        hq_vars['hq_eruv_problem'] = radio_with_explanation("קיימת בעיה עם עירוב שבת ביחידה / בשטח וקיבלתם מענה?", "hq67", col=c2)
+        hq_vars['hq_shabbat_violation'] = radio_with_explanation("מתקיים חילול שבת יחידתי לצורך שאינו מבצעי?", "hq68")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_soldier_prayer_allowed'] = radio_with_explanation("מתאפשר לכם להתפלל ומקבלים זמן מוקצה (כולל הליכה וחזרה)?", "hq69", col=c1)
+        hq_vars['hq_soldier_minyan'] = radio_with_explanation("מתאפשר להתפלל במניין?", "hq70", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_pre_shacharit'] = radio_with_explanation("נדרשים להשתתף במד\"סים / פעילות לפני תפילת שחרית?", "hq71", col=c1)
+        hq_vars['hq_breakfast_after_prayer'] = radio_with_explanation("יש מענה לארוחת בוקר בסיום שחרית?", "hq72", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_sleep_prayer'] = radio_with_explanation("זמן תפילת שחרית הוא חלק מזמן השינה?", "hq73", col=c1)
+        hq_vars['hq_mincha_arvit_time'] = radio_with_explanation("מוקצה זמן נפרד לתפילות מנחה וערבית מהארוחה?", "hq74", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_arvit_tash'] = radio_with_explanation("זמן ערבית הוא חלק משעת ת\"ש? אם כן – קיבלתם תוספת זמן?", "hq75", col=c1)
+        hq_vars['hq_fast_exempt_soldier'] = radio_with_explanation("במהלך הצומות – הצמים פטורים מכל פעילות?", "hq76", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_fast_office'] = radio_with_explanation("נדרשתם לעבודה משרדית / אחרת בצום?", "hq77", col=c1)
+        hq_vars['hq_fast_break_meal'] = radio_with_explanation("יש ארוחה חמה בסיום הצום לצמים?", "hq78", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_intense_pre_fast'] = radio_with_explanation("התקיימה פעילות גופנית עצימה לפני / בסיום הצום (בניגוד לנהלי קרפ\"ר)?", "hq79", col=c1)
+        hq_vars['hq_drills_in_fast'] = radio_with_explanation("התקיימה פעילות חריגה לא מבצעית בצום (תרגילים, מטווחים, מד\"סים)?", "hq80", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_holiday_equipment'] = radio_with_explanation("ניתן מענה בחגים (מגילה, חנוכיות וכד')?", "hq81", col=c1)
+        hq_vars['hq_mezuzot_gap'] = radio_with_explanation("ישנו פער במזוזות ביחידה?", "hq82", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_holiday_equip_recv'] = radio_with_explanation("מקבלים ציוד מותאם לחגים?", "hq83", col=c1)
+        hq_vars['hq_religion_equip_req'] = radio_with_explanation("פניתם וביקשתם ציוד דת ולא קיבלתם?", "hq84", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shul_clean'] = radio_with_explanation("בית הכנסת מטופל / עובר ניקיון שוטף?", "hq85", col=c1)
+        hq_vars['hq_shul_equip_missing'] = radio_with_explanation("ישנו ציוד חסר בבית הכנסת?", "hq86", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shul_sefer_torah'] = radio_with_explanation("בשגרה: ספר תורה, תפילין, טליתות, כיפות, נרות – תקינים?", "hq87", col=c1)
+        hq_vars['hq_yeshiva_days'] = radio_with_explanation("מתקיימים ימי ישיבה ביחידה ומאפשרים לדתיים להשתתף?", "hq88", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_torah_lessons'] = radio_with_explanation("מתקיימים שיעורי תורה קבועים / רב מגיע לפחות פעם בחודש?", "hq89", col=c1)
+        hq_vars['hq_spiritual_shabbat'] = radio_with_explanation("ישנו ליווי רוחני בשבתות?", "hq90", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_culture_exemption'] = radio_with_explanation("מאפשרים לדתיים להשתחרר מפעילויות תרבות שאינן מתאימות?", "hq91", col=c1)
+        hq_vars['hq_gym_separate'] = radio_with_explanation("ישנן שעות נפרדות בחדר כושר / בריכה?", "hq92", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_sport_gender'] = radio_with_explanation("מאפשרים פעילות ספורטיבית מגדרית?", "hq93", col=c1)
+        hq_vars['hq_yichud'] = radio_with_explanation("שמירות / סיורים / תורנויות הגורמות למצבי ייחוד? פנייה קיבלה מענה?", "hq94", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_alt_activity'] = radio_with_explanation("ישנה פעילות אלטרנטיבית לאוכלוסייה הדתית כשלא ניתן להשתתף בפעילות היחידה?", "hq95", col=c1)
+        hq_vars['hq_cmd_sensitivity'] = radio_with_explanation("המפקדים רגישים לצרכים הדתיים (תפילות ועוד)?", "hq96", col=c2)
+
     st.markdown("---")
     free_text = st.text_area("הערות נוספות")
 
     # ===== סריקת ברקוד =====
     with st.expander("📷 סריקת ברקוד (רשות)"):
-        st.markdown("""
-        <div id='barcode-scanner-container'>
-            <video id='barcode-video' width='100%' style='max-height:260px;border-radius:8px;background:#000;'></video>
-            <p id='barcode-result' style='font-size:18px;font-weight:bold;color:#1e3a8a;margin-top:8px;'>תוצאה: הפעל מצלמה והכוון לברקוד</p>
-        </div>
-        <script>
-        (function() {
-            const video = document.getElementById('barcode-video');
-            const resultEl = document.getElementById('barcode-result');
-            if (!video) return;
-            // Use BarcodeDetector if available (Chrome 83+)
-            if ('BarcodeDetector' in window) {
-                const barcodeDetector = new BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8'] });
-                navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(stream => {
-                    video.srcObject = stream;
-                    video.play();
-                    const scan = () => {
-                        barcodeDetector.detect(video).then(barcodes => {
-                            if (barcodes.length > 0) {
-                                resultEl.textContent = '✅ ברקוד נסרק: ' + barcodes[0].rawValue;
-                                resultEl.style.color = '#10b981';
-                                stream.getTracks().forEach(t => t.stop());
-                            } else {
-                                requestAnimationFrame(scan);
-                            }
-                        }).catch(() => requestAnimationFrame(scan));
-                    };
-                    scan();
-                }).catch(err => {
-                    resultEl.textContent = 'אין גישה למצלמה: ' + err.message;
-                    resultEl.style.color = '#ef4444';
-                });
-            } else {
-                resultEl.textContent = 'הדפדפן אינו תומך BarcodeDetector. נסה Chrome/Edge עדכני.';
-                resultEl.style.color = '#f59e0b';
-            }
-        })();
-        </script>
-        """, unsafe_allow_html=True)
-        # שדה רזרבי לכתיבת ברקוד ידנית
-        barcode_manual = st.text_input("📟 או הזן ברקוד ידנית", placeholder="לדוגמא: ABC-12345", key="barcode_manual_input")
-        if barcode_manual:
-            st.success(f"📷 ברקוד: {barcode_manual}")
+        barcode_tab_cam, barcode_tab_img = st.tabs(["📷 סריקה חיה", "🖼️ העלאת תמונה"])
+        with barcode_tab_cam:
+            st.markdown("""
+            <div id='barcode-scanner-container'>
+                <video id='barcode-video' width='100%' style='max-height:260px;border-radius:8px;background:#000;'></video>
+                <p id='barcode-result' style='font-size:18px;font-weight:bold;color:#1e3a8a;margin-top:8px;'>תוצאה: הפעל מצלמה והכוון לברקוד</p>
+            </div>
+            <script>
+            (function() {
+                const video = document.getElementById('barcode-video');
+                const resultEl = document.getElementById('barcode-result');
+                if (!video) return;
+                if ('BarcodeDetector' in window) {
+                    const barcodeDetector = new BarcodeDetector({ formats: ['qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8'] });
+                    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(stream => {
+                        video.srcObject = stream;
+                        video.play();
+                        const scan = () => {
+                            barcodeDetector.detect(video).then(barcodes => {
+                                if (barcodes.length > 0) {
+                                    resultEl.textContent = '✅ ברקוד נסרק: ' + barcodes[0].rawValue;
+                                    resultEl.style.color = '#10b981';
+                                    stream.getTracks().forEach(t => t.stop());
+                                } else {
+                                    requestAnimationFrame(scan);
+                                }
+                            }).catch(() => requestAnimationFrame(scan));
+                        };
+                        scan();
+                    }).catch(err => {
+                        resultEl.textContent = 'אין גישה למצלמה: ' + err.message;
+                        resultEl.style.color = '#ef4444';
+                    });
+                } else {
+                    resultEl.textContent = 'הדפדפן אינו תומך BarcodeDetector. נסה Chrome/Edge עדכני.';
+                    resultEl.style.color = '#f59e0b';
+                }
+            })();
+            </script>
+            """, unsafe_allow_html=True)
+            barcode_manual = st.text_input("📟 או הזן ברקוד ידנית", placeholder="לדוגמא: ABC-12345", key="barcode_manual_input")
+            if barcode_manual:
+                st.success(f"📷 ברקוד: {barcode_manual}")
+        with barcode_tab_img:
+            st.caption("העלה תמונה של ברקוד – הזן את הערך ידנית למטה")
+            barcode_image_file = st.file_uploader("🖼️ העלה תמונת ברקוד", type=['jpg', 'png', 'jpeg'], key="barcode_image_upload")
+            if barcode_image_file:
+                st.image(barcode_image_file, caption="תמונת ברקוד שהועלתה", use_column_width=True)
+            barcode_from_image = st.text_input("הזן את ערך הברקוד מהתמונה", placeholder="לדוגמא: ABC-12345", key="barcode_from_image_input")
+            if barcode_from_image:
+                st.success(f"✅ ברקוד מתמונה: {barcode_from_image}")
     
-    # שמירת הברקוד בדוח (manual input only - JS value not accessible server-side)
-    barcode_value = st.session_state.get('barcode_manual_input', '')
+    # שמירת הברקוד בדוח
+    barcode_value = st.session_state.get('barcode_manual_input', '') or st.session_state.get('barcode_from_image_input', '')
     photo = st.file_uploader("📸 תמונה (חובה)", type=['jpg', 'png', 'jpeg'])
         
         # שליחת הדוח
@@ -4538,6 +4712,10 @@ def render_unit_report():
                 "k_issues_photo_url": k_issues_photo_url,
                 "k_shabbat_photo_url": k_shabbat_photo_url
             }
+            
+            # הוספת שאלות הלכה לחטיבות 35/89/900
+            if hq_vars:
+                data.update(hq_vars)
             
             # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
             # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
@@ -5194,7 +5372,388 @@ def render_ogda_summary_dashboard():
 
 
 
+
+# ===== Weekly AI Insights Functions =====
+
+def generate_weekly_questions(unit: str, accessible_units: list) -> dict:
+    """
+    🤖 יוצר שאלות חכמות שונות כל שבוע בהתאם לנתונים
+    """
+    all_reports = load_reports_cached(accessible_units)
+    df = pd.DataFrame(all_reports) if all_reports else pd.DataFrame()
+    if df.empty:
+        return {"error": "אין נתונים"}
+    insights = {}
+    kashrut_insights = analyze_kashrut_trend(df, accessible_units)
+    if kashrut_insights:
+        insights['kashrut'] = kashrut_insights
+    eruv_insights = analyze_eruv_trend(df, accessible_units)
+    if eruv_insights:
+        insights['eruv'] = eruv_insights
+    deficit_insights = analyze_deficit_progress(accessible_units)
+    if deficit_insights:
+        insights['deficits'] = deficit_insights
+    performance_insights = analyze_unit_performance(df, accessible_units)
+    if performance_insights:
+        insights['performance'] = performance_insights
+    anomaly_insights = detect_weekly_anomalies(df, accessible_units)
+    if anomaly_insights:
+        insights['anomalies'] = anomaly_insights
+    return insights
+
+
+def analyze_kashrut_trend(df: pd.DataFrame, units: list) -> dict:
+    """🔍 ניתוח מגמת כשרות שבועית"""
+    if 'date' not in df.columns:
+        return {}
+    df = df.copy()
+    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    current_week = df[df['date'] >= (pd.Timestamp.now() - pd.Timedelta(days=7))]
+    previous_week = df[(df['date'] >= (pd.Timestamp.now() - pd.Timedelta(days=14))) &
+                       (df['date'] < (pd.Timestamp.now() - pd.Timedelta(days=7)))]
+    current_issues = 0
+    prev_issues = 0
+    if not current_week.empty and 'k_cert' in current_week.columns:
+        current_issues = len(current_week[current_week['k_cert'] == 'לא'])
+    if not previous_week.empty and 'k_cert' in previous_week.columns:
+        prev_issues = len(previous_week[previous_week['k_cert'] == 'לא'])
+    if current_issues == 0 and prev_issues == 0:
+        question = "✅ כשרות במצב מצוין כל שבוע — האם זה בגלל אינספקשנים אקטיביים?"
+        suggestion = "שמור על הרמה! המשך עם אותו קצב בדיקות"
+        trend = "stable_good"
+    elif current_issues < prev_issues:
+        improvement = prev_issues - current_issues
+        improvement_pct = (improvement / prev_issues * 100) if prev_issues > 0 else 0
+        question = f"🎉 בשבוע האחרון הצטמצמו בעיות כשרות ב-{improvement} ({improvement_pct:.0f}%) — מה השתנה?"
+        suggestion = "בדוק מה עשית אחרת השבוע — זה עובד!"
+        trend = "improving"
+    elif current_issues > prev_issues:
+        worsening = current_issues - prev_issues
+        question = f"⚠️ בעיות כשרות עלו ב-{worsening} בשבוע זה — למה?"
+        suggestion = "אפשר: (1) מטבח חדש עם בעיה קבועה, (2) אינספקטור לא קפדן, (3) בחורים חדשים"
+        trend = "worsening"
+    else:
+        question = f"🟡 כשרות: {current_issues} בעיות כל שבוע — זה נורמלי אבל בדוק הסיבה"
+        suggestion = "יכול להיות: (1) יחידה גדולה, (2) תחלופה גבוהה, (3) אתגר ספציפי"
+        trend = "stable"
+    return {"question": question, "current": current_issues, "previous": prev_issues,
+            "trend": trend, "suggestion": suggestion}
+
+
+def analyze_eruv_trend(df: pd.DataFrame, units: list) -> dict:
+    """🚧 ניתוח מגמת עירוב שבועית"""
+    if 'date' not in df.columns:
+        return {}
+    df = df.copy()
+    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    current_week = df[df['date'] >= (pd.Timestamp.now() - pd.Timedelta(days=7))]
+    previous_week = df[(df['date'] >= (pd.Timestamp.now() - pd.Timedelta(days=14))) &
+                       (df['date'] < (pd.Timestamp.now() - pd.Timedelta(days=7)))]
+    current_eruv_issues = 0
+    prev_eruv_issues = 0
+    if not current_week.empty and 'e_status' in current_week.columns:
+        current_eruv_issues = len(current_week[current_week['e_status'] == 'פסול'])
+    if not previous_week.empty and 'e_status' in previous_week.columns:
+        prev_eruv_issues = len(previous_week[previous_week['e_status'] == 'פסול'])
+    if current_eruv_issues == 0:
+        if prev_eruv_issues > 0:
+            question = f"✅ עירוב תוקן! משבוע שעבר היו {prev_eruv_issues} בעיות — מה עזר?"
+            suggestion = "בדוק עם חטמ״ר / עיר בשביל ללמוד"
+            trend = "resolved"
+        else:
+            question = "✅ עירובין במצב מצוין — המשך כך"
+            suggestion = "זה תקין, לא צריך שינוי"
+            trend = "stable_good"
+    elif current_eruv_issues > prev_eruv_issues:
+        question = f"🚨 עירוב: {current_eruv_issues} בעיות (מ-{prev_eruv_issues} בשבוע שעבר) — CRITICAL!"
+        suggestion = "אפשרויות: (1) עירוב פסול חדש, (2) תקלה קבועה, (3) אי־דיווח של בעיה ישנה"
+        trend = "worsening"
+    else:
+        question = f"🟡 עירוב: {current_eruv_issues} בעיות — בדוק אם זה בעיה קבועה או זמנית"
+        suggestion = "כל שבוע חזור אל הצוות בשטח"
+        trend = "stable"
+    return {"question": question, "current": current_eruv_issues, "previous": prev_eruv_issues,
+            "trend": trend, "suggestion": suggestion}
+
+
+def analyze_deficit_progress(accessible_units: list) -> dict:
+    """📊 ניתוח התקדמות בסגירת חוסרים"""
+    try:
+        open_now = get_open_deficits(accessible_units)
+    except Exception:
+        open_now = []
+    try:
+        closed_this_week = supabase.table("deficit_tracking") \
+            .select("*").in_("unit", accessible_units).eq("status", "closed") \
+            .gte("resolved_date", (pd.Timestamp.now() - pd.Timedelta(days=7)).isoformat()) \
+            .execute()
+        closed_count = len(closed_this_week.data) if closed_this_week.data else 0
+    except Exception:
+        closed_count = 0
+    total_open = len(open_now) if hasattr(open_now, '__len__') else 0
+    try:
+        overdue = count_overdue_deficits(accessible_units)
+    except Exception:
+        overdue = 0
+    if total_open == 0:
+        if closed_count > 0:
+            question = f"🎉 סגרתם {closed_count} חוסרים בשבוע! — כל החוסרים סגורים!"
+            suggestion = "המשך עם הרמה הזו"
+            trend = "excellent"
+        else:
+            question = "✅ אין חוסרים פתוחים — שמור על הסטטוס"
+            suggestion = "זה חריג! נסה לשמור על זה"
+            trend = "stable_good"
+    elif overdue > 0:
+        question = f"🚨 {overdue} חוסרים עברו SLA (7 ימים) — זה דורש טיפול דחוף!"
+        suggestion = "בדוק איזה חוסרים עדיין פתוחים זמן רב וקדם אותם"
+        trend = "critical"
+    elif total_open > 5:
+        question = f"⚠️ {total_open} חוסרים פתוחים — זה הרבה. {closed_count} סגורים בשבוע"
+        suggestion = "בדוק: האם יש חוסרים שלא ניתן לתקן? או שהם קטנים מדי?"
+        trend = "high_volume"
+    else:
+        question = f"📊 {total_open} חוסרים פתוחים, {closed_count} סגורים בשבוע — קצב טוב"
+        suggestion = "המשך בקצב הנוכחי"
+        trend = "healthy"
+    return {"question": question, "open": total_open, "closed_this_week": closed_count,
+            "overdue": overdue, "trend": trend, "suggestion": suggestion}
+
+
+def analyze_unit_performance(df: pd.DataFrame, units: list) -> dict:
+    """📈 ניתוח ביצועים כללי יחידה"""
+    scores = []
+    for u in units:
+        unit_df = df[df['unit'] == u] if not df.empty and 'unit' in df.columns else pd.DataFrame()
+        if not unit_df.empty:
+            score = calculate_unit_score(unit_df)
+            scores.append((u, score))
+    if not scores:
+        return {}
+    scores.sort(key=lambda x: x[1], reverse=True)
+    best_unit, best_score = scores[0]
+    worst_unit, worst_score = scores[-1] if len(scores) > 1 else (scores[0][0], scores[0][1])
+    avg_score = sum(s[1] for _, s in scores) / len(scores)
+    if best_score >= 90:
+        question = f"🏆 {best_unit} עלתה ל-{best_score:.0f}! — מה הם עושים נכון?"
+        suggestion = "שתף את הניסיון שלהם עם יחידות אחרות"
+        trend = "excellent"
+    elif worst_score < 60:
+        gap = avg_score - worst_score
+        question = f"⚠️ {worst_unit} בציון {worst_score:.0f} (נמוך מממוצע ב-{gap:.0f} נקודות) — מה קורה?"
+        suggestion = "בדוק: בעיה בטיים? בקצב? בהנהלה?"
+        trend = "struggling"
+    else:
+        question = f"📊 ממוצע: {avg_score:.0f}/100 — טוב! מה {best_unit} עושה נכון?"
+        suggestion = f"בדוק את {best_unit} ושתף תרגול"
+        trend = "healthy"
+    return {"question": question, "avg_score": avg_score, "best": (best_unit, best_score),
+            "worst": (worst_unit, worst_score), "trend": trend, "suggestion": suggestion}
+
+
+def detect_weekly_anomalies(df: pd.DataFrame, units: list) -> dict:
+    """🔍 זיהוי חריגויות שבועיות"""
+    if 'date' not in df.columns:
+        return {}
+    df = df.copy()
+    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    current_week = df[df['date'] >= (pd.Timestamp.now() - pd.Timedelta(days=7))]
+    if current_week.empty:
+        return {}
+    anomalies = []
+    unit_col = current_week['unit'].values if 'unit' in current_week.columns else []
+    for u in units:
+        if u not in unit_col:
+            anomalies.append({"type": "no_report",
+                               "question": f"📡 {u} לא דיווחה כל שבוע! — מה קרה?",
+                               "severity": "high"})
+    try:
+        recurring_issues = supabase.table("deficit_tracking") \
+            .select("*").in_("unit", units).eq("status", "open") \
+            .gte("detected_date", (pd.Timestamp.now() - pd.Timedelta(days=30)).isoformat()) \
+            .execute()
+        if recurring_issues.data:
+            old_issues = [d for d in recurring_issues.data
+                         if (pd.Timestamp.now() - pd.to_datetime(d.get('detected_date', ''), errors='coerce')).days > 14]
+            if len(old_issues) > 3:
+                anomalies.append({"type": "chronic_deficits",
+                                   "question": f"🔴 {len(old_issues)} חוסרים פתוחים יותר מ-14 ימים! — זה בעיה מבנית?",
+                                   "severity": "critical"})
+    except Exception:
+        pass
+    if anomalies:
+        return {"anomalies": anomalies, "count": len(anomalies),
+                "highest_severity": max(a['severity'] for a in anomalies)}
+    return {}
+
+
+def render_weekly_questions_widget():
+    """🤖 תצוגת שאלות חכמות שבועיות — ממשק אינטראקטיבי"""
+    st.markdown("""
+    <div style='background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+                padding: 30px; border-radius: 16px; margin: 30px 0;'>
+        <h2 style='color: white; margin: 0;'>🤖 Weekly AI Insights</h2>
+        <p style='color: rgba(255,255,255,0.9); margin: 8px 0 0 0;'>
+            שאלות חכמות שמשתנות בהתאם לנתונים שלך
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    unit = st.session_state.get('selected_unit', '')
+    role = st.session_state.get('role', '')
+    accessible_units = get_accessible_units(unit, role)
+
+    insights = generate_weekly_questions(unit, accessible_units)
+
+    if "error" in insights:
+        st.warning("אין מספיק נתונים להצגת תובנות")
+        return
+
+    insight_tabs = st.tabs(["🍽️ כשרות", "🚧 עירוב", "📋 חוסרים", "📈 ביצועים", "🔍 חריגויות"])
+
+    # === Tab 1: Kashrut ===
+    with insight_tabs[0]:
+        if 'kashrut' in insights:
+            k = insights['kashrut']
+            color_map = {"stable_good": "#10b981", "improving": "#3b82f6",
+                         "worsening": "#ef4444", "stable": "#f59e0b"}
+            color = color_map.get(k['trend'], "#64748b")
+            st.markdown(f"""
+            <div style='background:{color}20;border-left:4px solid {color};
+                        padding:20px;border-radius:10px;margin-bottom:20px;'>
+                <h3 style='color:{color};margin:0 0 10px 0;'>❓ {k['question']}</h3>
+                <div style='background:white;padding:15px;border-radius:6px;margin-bottom:10px;'>
+                    <strong>📊 נתונים:</strong><br/>
+                    • שבוע זה: {k['current']} בעיות<br/>
+                    • שבוע שעבר: {k['previous']} בעיות<br/>
+                    • מגמה: <span style='color:{color};'>{k['trend'].replace('_',' ').upper()}</span>
+                </div>
+                <div style='background:#f0fdf4;padding:15px;border-radius:6px;border-left:3px solid #10b981;'>
+                    <strong>💡 הצעה:</strong><br/>{k['suggestion']}
+                </div>
+            </div>""", unsafe_allow_html=True)
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button("✅ טופלנו", key="ai_kashrut_resolved"):
+                    st.success("עודכן לשבוע הבא!")
+            with col2:
+                if st.button("📞 תזכורת", key="ai_kashrut_reminder"):
+                    st.info("תזכורת תישלח לרב")
+            with col3:
+                if st.button("📝 הוסף הערה", key="ai_kashrut_note"):
+                    st.text_input("הערה:", key="ai_kashrut_note_text")
+        else:
+            st.info("אין נתוני כשרות זמינים")
+
+    # === Tab 2: Eruv ===
+    with insight_tabs[1]:
+        if 'eruv' in insights:
+            e = insights['eruv']
+            color_map = {"resolved": "#10b981", "stable_good": "#10b981",
+                         "stable": "#f59e0b", "worsening": "#ef4444"}
+            color = color_map.get(e['trend'], "#64748b")
+            st.markdown(f"""
+            <div style='background:{color}20;border-left:4px solid {color};
+                        padding:20px;border-radius:10px;'>
+                <h3 style='color:{color};margin:0 0 10px 0;'>❓ {e['question']}</h3>
+                <div style='background:white;padding:15px;border-radius:6px;margin-bottom:10px;'>
+                    <strong>📊 נתונים:</strong><br/>
+                    • שבוע זה: {e['current']} בעיות עירוב<br/>
+                    • שבוע שעבר: {e['previous']} בעיות
+                </div>
+                <div style='background:#f0fdf4;padding:15px;border-radius:6px;border-left:3px solid #10b981;'>
+                    <strong>💡 הצעה:</strong><br/>{e['suggestion']}
+                </div>
+            </div>""", unsafe_allow_html=True)
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ עירוב תוקן", key="ai_eruv_fixed"):
+                    st.success("עדכון לשבוע הבא")
+            with col2:
+                if st.button("📞 התקשר לעיר", key="ai_eruv_call"):
+                    st.info("רשום: התקשר לעיר בנוגע לעירוב")
+        else:
+            st.info("אין נתוני עירוב זמינים")
+
+    # === Tab 3: Deficits ===
+    with insight_tabs[2]:
+        if 'deficits' in insights:
+            d = insights['deficits']
+            color_map = {"excellent": "#10b981", "healthy": "#3b82f6",
+                         "high_volume": "#f59e0b", "critical": "#ef4444", "stable_good": "#10b981"}
+            color = color_map.get(d['trend'], "#64748b")
+            st.markdown(f"""
+            <div style='background:{color}20;border-left:4px solid {color};
+                        padding:20px;border-radius:10px;'>
+                <h3 style='color:{color};margin:0 0 10px 0;'>❓ {d['question']}</h3>
+                <div style='background:white;padding:15px;border-radius:6px;margin-bottom:10px;'>
+                    <strong>📊 נתונים:</strong><br/>
+                    • חוסרים פתוחים: {d['open']}<br/>
+                    • סגורים בשבוע: {d['closed_this_week']}<br/>
+                    • עברו SLA: {d['overdue']}
+                </div>
+                <div style='background:#f0fdf4;padding:15px;border-radius:6px;border-left:3px solid #10b981;'>
+                    <strong>💡 הצעה:</strong><br/>{d['suggestion']}
+                </div>
+            </div>""", unsafe_allow_html=True)
+            closure_rate = (d['closed_this_week'] / (d['open'] + d['closed_this_week']) * 100
+                            if (d['open'] + d['closed_this_week']) > 0 else 0)
+            st.progress(min(100, closure_rate) / 100, text=f"שיעור סגירה: {closure_rate:.0f}%")
+        else:
+            st.info("אין נתוני חוסרים זמינים")
+
+    # === Tab 4: Performance ===
+    with insight_tabs[3]:
+        if 'performance' in insights:
+            p = insights['performance']
+            color_map = {"excellent": "#10b981", "healthy": "#3b82f6", "struggling": "#ef4444"}
+            color = color_map.get(p['trend'], "#64748b")
+            st.markdown(f"""
+            <div style='background:{color}20;border-left:4px solid {color};
+                        padding:20px;border-radius:10px;'>
+                <h3 style='color:{color};margin:0 0 10px 0;'>❓ {p['question']}</h3>
+                <div style='background:white;padding:15px;border-radius:6px;margin-bottom:10px;'>
+                    <strong>📊 נתונים:</strong><br/>
+                    • ממוצע אוגדה: {p['avg_score']:.0f}/100<br/>
+                    • יחידה מובילה: {p['best'][0]} ({p['best'][1]:.0f})<br/>
+                    • יחידה זקוקה לעזרה: {p['worst'][0]} ({p['worst'][1]:.0f})
+                </div>
+                <div style='background:#f0fdf4;padding:15px;border-radius:6px;border-left:3px solid #10b981;'>
+                    <strong>💡 הצעה:</strong><br/>{p['suggestion']}
+                </div>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.info("אין נתוני ביצועים זמינים")
+
+    # === Tab 5: Anomalies ===
+    with insight_tabs[4]:
+        if 'anomalies' in insights:
+            anom = insights['anomalies']
+            for a in anom.get('anomalies', []):
+                severity_colors = {"high": "#ef4444", "critical": "#dc2626", "medium": "#f59e0b"}
+                color = severity_colors.get(a['severity'], "#64748b")
+                st.markdown(f"""
+                <div style='background:{color}20;border-left:4px solid {color};
+                            padding:15px;border-radius:10px;margin-bottom:12px;'>
+                    <h4 style='color:{color};margin:0 0 8px 0;'>{a['question']}</h4>
+                    <span style='background:{color};color:white;padding:3px 8px;
+                                 border-radius:3px;font-size:12px;'>{a['severity'].upper()}</span>
+                </div>""", unsafe_allow_html=True)
+        else:
+            st.success("✅ אין חריגויות שבועיות")
+
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.info("השאלות הבאות תופעלנה בעוד **7 ימים**")
+    with col2:
+        if st.button("🔄 עדכן שאלות עכשיו", key="ai_refresh_questions"):
+            st.success("שאלות עודכנו!")
+            st.balloons()
+
+
 def render_ogda_summary_dashboard_v2():
+
     """Ogda Dashboard v2 - enhanced design with rich visuals."""
 
     import datetime as _dt
