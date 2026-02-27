@@ -1138,7 +1138,22 @@ def calculate_inspector_credibility(inspector_name: str, df: pd.DataFrame) -> di
         except Exception:
             pass
 
-    final_score = round(defect_score * 0.6 + variance_score * 0.4, 1)
+    # 3. משך הדיווח (חדש!)
+    duration_score = 70  # ברירת מחדל אם אין נתונים
+    if 'report_duration' in inspector_df.columns:
+        mean_duration = pd.to_numeric(inspector_df['report_duration'], errors='coerce').mean()
+        if not pd.isna(mean_duration):
+            if mean_duration < 45:    # מהיר מדי (חשוד כשיטחי)
+                duration_score = 10
+            elif mean_duration < 90:  # מהיר (סביר אבל גבולי)
+                duration_score = 50
+            elif mean_duration < 600: # טווח אופטימלי (1.5-10 דקות)
+                duration_score = 100
+            else:                     # איטי מאוד (אולי פער טכני או מילוי לא רציף)
+                duration_score = 80
+
+    # שקלול סופי: 50% אחוז ליקויים, 30% שונות תזמון, 20% משך הדיווח
+    final_score = round(defect_score * 0.5 + variance_score * 0.3 + duration_score * 0.2, 1)
 
     if final_score >= 80:
         credibility, color = "✅ גבוהה", "#10b981"
@@ -3632,6 +3647,10 @@ def render_unit_report():
     """הטופס המלא"""
     unit = st.session_state.selected_unit
     
+    # ⏱️ אתחול טיימר דיווח (למדידת אמינות)
+    if "report_start_time" not in st.session_state:
+        st.session_state.report_start_time = time.time()
+    
     # ✅ ניקוי cache בכל טעינה כדי למנוע שגיאות schema
     clear_cache()
     """הטופס המלא"""
@@ -4617,6 +4636,13 @@ def render_unit_report():
         submitted = st.button("🚀 שגר דיווח", type="primary", use_container_width=True, key="submit_new_report")
         
     if submitted:
+        # חישוב משך הדיווח
+        report_duration = 0
+        if "report_start_time" in st.session_state:
+            report_duration = int(time.time() - st.session_state.report_start_time)
+            # איפוס הטיימר לדיווח הבא
+            del st.session_state.report_start_time
+
         # בדיקת יום בשבוע - חמישי (3) ושישי (4) ב-Python weekday
         current_weekday = datetime.datetime.now().weekday()
         is_thursday_or_friday = current_weekday in [3, 4]
@@ -4735,7 +4761,8 @@ def render_unit_report():
                 "k_shabbat_supervisor_name": k_shabbat_supervisor_name,    # 🆕
                 "k_shabbat_supervisor_phone": k_shabbat_supervisor_phone,  # 🆕
                 "k_issues_photo_url": k_issues_photo_url,
-                "k_shabbat_photo_url": k_shabbat_photo_url
+                "k_shabbat_photo_url": k_shabbat_photo_url,
+                "report_duration": report_duration  # ⏱️ חדש!
             }
             
             # הוספת שאלות הלכה לחטיבות 35/89/900
@@ -4772,7 +4799,8 @@ def render_unit_report():
                             "k_issues", "k_issues_description", "k_shabbat_supervisor", 
                             "k_shabbat_supervisor_name", "k_shabbat_supervisor_phone",
                             "k_issues_photo_url", "k_shabbat_photo_url",
-                            "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone"
+                            "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone",
+                            "report_duration"
                         ]
                         for field in new_fields:
                             data.pop(field, None)
