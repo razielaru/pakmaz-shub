@@ -4569,12 +4569,114 @@ def render_unit_report():
         st.warning("📡 מחפש מיקום GPS... אנא המתן עד להופעת אישור ירוק לפני השליחה")
         st.caption("ירושלים: lat ~31.7, lon ~35.2")
     
+    # --- 🆕 ניהול ברקוד למציאת מיקום ---
+    if 'barcode_manual_input' in st.session_state and st.session_state.barcode_manual_input:
+        scanned_val = st.session_state.barcode_manual_input
+        # חיפוש הבסיס לפי הברקוד
+        found_base = None
+        for b_name, b_code in BASE_BARCODES.items():
+            if b_code == scanned_val:
+                found_base = b_name
+                break
+        if found_base and st.session_state.get('base_input') != found_base:
+            st.session_state.base_input = found_base
+            st.toast(f"📍 נמצא מיקום: {found_base}", icon="✅")
+
+    if 'barcode_from_image_input' in st.session_state and st.session_state.barcode_from_image_input:
+        scanned_val = st.session_state.barcode_from_image_input
+        found_base = None
+        for b_name, b_code in BASE_BARCODES.items():
+            if b_code == scanned_val:
+                found_base = b_name
+                break
+        if found_base and st.session_state.get('base_input') != found_base:
+            st.session_state.base_input = found_base
+            st.toast(f"📍 נמצא מיקום: {found_base}", icon="✅")
+
     c1, c2, c3 = st.columns(3)
     date = c1.date_input("תאריך", datetime.date.today())
     time_v = c2.time_input("שעה", datetime.datetime.now().time())
     inspector = c3.text_input("מבקר *")
-    base = st.text_input("מוצב / מיקום *", placeholder="לדוגמה: מחנה עופר, בית אל, וכו'")
+    base = st.text_input("מוצב / מיקום *", placeholder="לדוגמה: מחנה עופר, בית אל, וכו'", key="base_input")
     render_base_history_card(base, unit)
+
+    # ===== סריקת ברקוד מוצב =====
+    with st.expander("📷 סריקת ברקוד מוצב (רשות)"):
+        barcode_tab_cam, barcode_tab_img = st.tabs(["📷 סריקה חיה", "🖼️ העלאת תמונה"])
+        with barcode_tab_cam:
+            expected_barcode = BASE_BARCODES.get(base, "NONE")
+            scanner_js = """
+            <div id='barcode-scanner-container'>
+                <video id='barcode-video' width='100%' style='max-height:260px;border-radius:8px;background:#000;'></video>
+                <div id='barcode-feedback' style='padding:10px; border-radius:8px; margin-top:8px; background:#f1f5f9;'>
+                    <p id='barcode-result' style='font-size:18px;font-weight:bold;color:#1e3a8a;margin:0;'>תוצאה: מחכה לסריקה...</p>
+                    <p id='verification-status' style='font-size:14px;margin:4px 0 0 0;color:#64748b;'>סטטוס אימות: טרם נסרק</p>
+                </div>
+            </div>
+            <script>
+            (function() {
+                const video = document.getElementById('barcode-video');
+                const resultEl = document.getElementById('barcode-result');
+                const statusEl = document.getElementById('verification-status');
+                const feedbackEl = document.getElementById('barcode-feedback');
+                const expected = "{{EXPECTED}}";
+                
+                if (!video) return;
+                if ('BarcodeDetector' in window) {
+                    const barcodeDetector = new BarcodeDetector({ formats: ['qr_code', 'data_matrix', 'pdf417', 'code_128', 'code_39', 'ean_13'] });
+                    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(stream => {
+                        video.srcObject = stream;
+                        video.play();
+                        const scan = () => {
+                            barcodeDetector.detect(video).then(barcodes => {
+                                if (barcodes.length > 0) {
+                                    const val = barcodes[0].rawValue;
+                                    resultEl.textContent = '✅ נסרק: ' + val;
+                                    if (expected !== "NONE") {
+                                        if (val === expected) {
+                                            statusEl.textContent = '🌟 אימות הצליח: ברקוד מיקום תקין!';
+                                            feedbackEl.style.background = '#dcfce7';
+                                            statusEl.style.color = '#166534';
+                                        } else {
+                                            statusEl.textContent = '❌ אימות נכשל: הברקוד אינו תואם למיקום זה';
+                                            feedbackEl.style.background = '#fee2e2';
+                                            statusEl.style.color = '#991b1b';
+                                        }
+                                    } else {
+                                        statusEl.textContent = '⚠️ לא הוגדר ברקוד אימות למיקום זה';
+                                    }
+                                    stream.getTracks().forEach(t => t.stop());
+                                } else {
+                                    requestAnimationFrame(scan);
+                                }
+                            }).catch(() => requestAnimationFrame(scan));
+                        };
+                        scan();
+                    }).catch(err => {
+                        resultEl.textContent = 'אין גישה למצלמה: ' + err.message;
+                        resultEl.style.color = '#ef4444';
+                    });
+                } else {
+                    resultEl.textContent = 'הדפדפן אינו תומך בסריקה. נסה Chrome.';
+                    resultEl.style.color = '#f59e0b';
+                }
+            })();
+            </script>
+            """.replace("{{EXPECTED}}", expected_barcode)
+            st.markdown(scanner_js, unsafe_allow_html=True)
+            barcode_manual = st.text_input("📟 או הזן ברקוד ידנית", placeholder="לדוגמא: ABC-12345", key="barcode_manual_input")
+            if barcode_manual:
+                st.success(f"📷 ברקוד: {barcode_manual}")
+        with barcode_tab_img:
+            st.caption("העלה תמונה של ברקוד – הזן את הערך ידנית למטה")
+            barcode_image_file = st.file_uploader("🖼️ העלה תמונת ברקוד", type=['jpg', 'png', 'jpeg'], key="barcode_image_upload")
+            if barcode_image_file:
+                st.image(barcode_image_file, caption="תמונת ברקוד שהועלתה", use_column_width=True)
+            barcode_from_image = st.text_input("הזן את ערך הברקוד מהתמונה", placeholder="לדוגמא: ABC-12345", key="barcode_from_image_input")
+            if barcode_from_image:
+                st.success(f"✅ ברקוד מתמונה: {barcode_from_image}")
+
+    barcode_value = st.session_state.get('barcode_manual_input', '') or st.session_state.get('barcode_from_image_input', '')
         
     # ========================================
     # 📁 טאבי הטופס (5 טאבים)
@@ -4655,13 +4757,9 @@ def render_unit_report():
                 col_sup_name, col_sup_phone = st.columns(2)
                 k_shabbat_supervisor_name = col_sup_name.text_input("שם נאמן כשרות", key="k_sup_name")
                 k_shabbat_supervisor_phone = col_sup_phone.text_input("טלפון נאמן", key="k_sup_phone")
-        c1, c2 = st.columns(2)
-        k_issues_photo = c1.file_uploader("📷 תמונת תקלה (אם יש)", type=['jpg', 'png', 'jpeg'], key="k_issues_photo")
-        current_day = datetime.datetime.now().weekday()
-        if current_day in [3, 4]:
-            k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן ⚠️ (חובה בחמישי-שישי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo")
-        else:
-            k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo")
+        # (Photos moved to Tab 5)
+        
+        st.info("🔜 יש לעבור לטאב הבא: 🕍 בית כנסת ועירוב")
 
         # רשימת שאלות כשרות לשאפל
         kashrut_questions = [
@@ -4774,6 +4872,8 @@ def render_unit_report():
             hq_shabbat_device_board = radio_with_explanation(
                 "האם יש שילוט על התקני שבת הזמינים?", "hq_sdb", col=c1)
 
+        st.info("🔜 יש לעבור לטאב הבא: 📜 נהלים ורוח")
+
     # ===========================================
     # TAB 3: נהלים ורוח (Procedures, Torah, Shichat Chetek)
     # ===========================================
@@ -4830,6 +4930,8 @@ def render_unit_report():
         else:
             soldier_talk_cmd = radio_with_explanation("האם יש שיח מפקדים?", "so6", col=c2)
 
+        st.info("🔜 יש לעבור לטאב הבא: 📖 שאלון חטיבתי (לחטיבות רלוונטיות) או ⚠️ חוסרים ושליחה")
+
     # ===========================================
     # TAB 4: שאלון חטיבתי (35/89/900 only)
     # ===========================================
@@ -4883,7 +4985,8 @@ def render_unit_report():
             c1, c2 = st.columns(2)
             hq_vars['hq_chanuka_lighting'] = radio_with_explanation("נערך טקס הדלקת נרות חנוכה ואפשרו לחיילים להשתתף?", "hq26", col=c1)
             hq_vars['hq_purim_megilla'] = radio_with_explanation("אפשרו לחיילים לשמוע קריאת מגילה בפורים?", "hq27", col=c2)
-            c1, c2 = st.columns(2)
+
+        st.info("🔜 יש לעבור לטאב הבא: ⚠️ חוסרים ושליחה")
             hq_vars['hq_rosh_shofar'] = radio_with_explanation("מאפשרים לכל חייל לשמוע קול שופר בראש השנה?", "hq28", col=c1)
             hq_vars['hq_fast_shoes'] = radio_with_explanation("אפשרו לצמים לנעול נעליים ללא עור ביו\"כ ות\"ב (מלבד פעילות מבצעית)?", "hq29", col=c2)
             c1, c2 = st.columns(2)
@@ -5020,331 +5123,247 @@ def render_unit_report():
         st.markdown("### 💬 הערות נוספות")
         free_text = st.text_area("הערות נוספות")
 
+        st.markdown("### 📸 צילומים וחתימה")
+        photo = st.file_uploader("📸 תמונה כללית (חובה)", type=['jpg', 'png', 'jpeg'], key="main_report_photo")
+        
+        c1, c2 = st.columns(2)
+        k_issues_photo = None
+        if k_issues == "כן":
+            k_issues_photo = c1.file_uploader("📷 תמונת תקלה (אם יש)", type=['jpg', 'png', 'jpeg'], key="k_issues_photo_tab5")
+        
+        current_day = datetime.datetime.now().weekday()
+        k_shabbat_photo = None
+        if k_shabbat_supervisor == "כן":
+            if current_day in [3, 4]:
+                k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן ⚠️ (חובה בחמישי-שישי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo_tab5")
+            else:
+                k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo_tab5")
+
+        # חתימה דיגיטלית - הועבר לסוף טאב שליחה
+        st.markdown("---")
+        st.markdown("### ✍️ חתימת המבקר")
+        sig_url = render_signature_pad()
+
         if _mandatory_warnings:
             for w in _mandatory_warnings:
                 st.warning(w)
             st.error("🔴 יש לחזור ולמלא את הטאבים החסרים לפני השליחה.")
-
-
-    # ===== סריקת ברקוד =====
-    with st.expander("📷 סריקת ברקוד (רשות)"):
-        barcode_tab_cam, barcode_tab_img = st.tabs(["📷 סריקה חיה", "🖼️ העלאת תמונה"])
-        with barcode_tab_cam:
-            # 🆕 הכנת נתוני אימות עבור ה-JS
-            expected_barcode = BASE_BARCODES.get(base, "NONE")
+        else:
+            if not sig_url:
+                st.warning("⚠️ חובה לחתום לפני השליחה")
             
-            # שימוש ב-replace במקום f-string לכל ה-JS כדי למנוע טעויות סוגריים מסולסלים
-            scanner_js = """
-            <div id='barcode-scanner-container'>
-                <video id='barcode-video' width='100%' style='max-height:260px;border-radius:8px;background:#000;'></video>
-                <div id='barcode-feedback' style='padding:10px; border-radius:8px; margin-top:8px; background:#f1f5f9;'>
-                    <p id='barcode-result' style='font-size:18px;font-weight:bold;color:#1e3a8a;margin:0;'>תוצאה: מחכה לסריקה...</p>
-                    <p id='verification-status' style='font-size:14px;margin:4px 0 0 0;color:#64748b;'>סטטוס אימות: טרם נסרק</p>
-                </div>
-            </div>
-            <script>
-            (function() {
-                const video = document.getElementById('barcode-video');
-                const resultEl = document.getElementById('barcode-result');
-                const statusEl = document.getElementById('verification-status');
-                const feedbackEl = document.getElementById('barcode-feedback');
-                const expected = "{{EXPECTED}}";
+            # שליחת הדוח רק בטאב 5
+            st.markdown("---")
+            col_submit, col_draft = st.columns([3, 1])
+            
+            with col_draft:
+                if st.button("💾 שמור טיוטה", key="save_draft_btn"):
+                    draft_data = {
+                        "unit": unit, "base": base, "inspector": inspector,
+                        "date": str(date), "time": str(time_v),
+                        "timestamp": datetime.datetime.now().isoformat()
+                    }
+                    save_draft_locally(draft_data, f"{unit}_last_draft")
+        
+            with col_submit:
+                submitted = st.button("🚀 שגר דיווח", type="primary", use_container_width=True, key="submit_new_report", disabled=not sig_url)
+
+
+        if submitted:
+            # חישוב משך הדיווח
+            report_duration = 0
+            if "report_start_time" in st.session_state:
+                report_duration = int(time.time() - st.session_state.report_start_time)
+                # איפוס הטיימר לדיווח הבא
+                del st.session_state.report_start_time
+
+            # בדיקת יום בשבוע - חמישי (3) ושישי (4) ב-Python weekday
+            current_weekday = datetime.datetime.now().weekday()
+            is_thursday_or_friday = current_weekday in [3, 4]
+
+            # 🆕 בדיקת הסברים חסרים עבור "לא יודע / לא בדקתי"
+            missing_explanations = []
+
+            # This list must match the variables used above.
+            answers_to_check = {
+                "פק״ל רבנות": p_pakal, "כלים מסומנים": p_marked, "ערבוב כלים": p_mix, "הכשרת כלים": p_kasher,
+                "הוראות בש.ג": r_sg, "הוראות בחמ״ל": r_hamal, "שילוט שבת": r_sign, "נטלות": r_netilot,
+                "לוח רבנות": s_board, "ניקיון בית כנסת": s_clean, "ערכת הבדלה": s_havdala, "גמ״ח טלית ותפילין": s_gemach,
+                "תקלת בינוי": s_smartbis, "פח גניזה": s_geniza,
+                "בדיקת עירוב": e_check, "תיעוד עירוב": e_doc, "תצ״א עירוב": e_photo,
+                "תעודת כשרות": k_cert, "בישול ישראל": k_bishul, "תקלות כשרות": k_issues, "נאמן שבת": k_shabbat_supervisor,
+                "הפרדה במטבח": k_separation, "תדריך טבחים": k_briefing, "רכש חוץ": k_products, "דף תאריכים": k_dates,
+                "שטיפת ירק": k_leafs, "חירור גסטרונומים": k_holes, "בדיקת ביצים": k_eggs, "חדר מכ״ש": k_machshir,
+                "חימום נפרד": k_heater, "אפליקציה במטבח": k_app,
+                # טרקלין ויקוק – רק אם רלוונטי ליחידה
+                **({
+                    "כלים פרטיים טרקלין": t_private, "כלי מטבח טרקלין": t_kitchen_tools,
+                    "נוהל סגירה טרקלין": t_procedure, "סגור בשבת טרקלין": t_friday, "אפליקציה טרקלין": t_app,
+                    "כלים פרטיים ויקוק": w_private, "כלי מטבח ויקוק": w_kitchen_tools,
+                    "נהלים ויקוק": w_procedure, "הנחיות ויקוק": w_guidelines,
+                } if _show_lounge_wecook else {}),
+                "ימי ישיבה": soldier_yeshiva, "רצון לשיעור": soldier_want_lesson, "שיעור קיים": soldier_has_lesson,
+                "מענה כשרותי": soldier_food, "אימונים בשבת": soldier_shabbat_training, "מכיר את הרב": soldier_knows_rabbi,
+                "זמני תפילות": soldier_prayers, "שיח מפקדים": soldier_talk_cmd
+            }
+            
+            for label, value in answers_to_check.items():
+                if isinstance(value, str) and value.startswith("__MISSING_EXPLANATION__"):
+                    missing_explanations.append(label)
+            
+            if missing_explanations:
+                st.error("❌ לא ניתן לשלוח את הדוח! חסר פירוט עבור התשובות 'לא יודע / לא בדקתי':")
+                for item in missing_explanations:
+                    st.warning(f"⚠️ {item} - חובה לפרט סיבה בתיבת הטקסט")
+            
+            # בדיקת חובת תמונת נאמן כשרות בחמישי-שישי
+            elif is_thursday_or_friday and k_shabbat_supervisor == "כן" and not k_shabbat_photo:
+                st.error("⚠️ **חובה להעלות תמונת נאמן כשרות בימי חמישי ושישי!**")
+                st.warning("💡 נא להעלות תמונה של נאמן הכשרות בשדה המתאים למעלה")
+            
+            # 🆕 בדיקת מיקום חובה (נוסף לבקשת המשתמש)
+            elif not (gps_lat and gps_lon):
+                 st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח!")
+                 st.warning("💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום")
+                 
+            elif base and inspector and photo:
+                photo_url = upload_report_photo(photo.getvalue(), unit, base)
                 
-                if (!video) return;
-                if ('BarcodeDetector' in window) {
-                    const barcodeDetector = new BarcodeDetector({ formats: ['qr_code', 'data_matrix', 'pdf417', 'code_128', 'code_39', 'ean_13'] });
-                    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(stream => {
-                        video.srcObject = stream;
-                        video.play();
-                        const scan = () => {
-                            barcodeDetector.detect(video).then(barcodes => {
-                                if (barcodes.length > 0) {
-                                    const val = barcodes[0].rawValue;
-                                    resultEl.textContent = '✅ נסרק: ' + val;
-                                    
-                                    if (expected !== "NONE") {
-                                        if (val === expected) {
-                                            statusEl.textContent = '🌟 אימות הצליח: ברקוד מיקום תקין!';
-                                            feedbackEl.style.background = '#dcfce7';
-                                            statusEl.style.color = '#166534';
-                                        } else {
-                                            statusEl.textContent = '❌ אימות נכשל: הברקוד אינו תואם למיקום זה';
-                                            feedbackEl.style.background = '#fee2e2';
-                                            statusEl.style.color = '#991b1b';
-                                        }
-                                    } else {
-                                        statusEl.textContent = '⚠️ לא הוגדר ברקוד אימות למיקום זה';
-                                    }
-                                    stream.getTracks().forEach(t => t.stop());
-                                } else {
-                                    requestAnimationFrame(scan);
-                                }
-                            }).catch(() => requestAnimationFrame(scan));
-                        };
-                        scan();
-                    }).catch(err => {
-                        resultEl.textContent = 'אין גישה למצלמה: ' + err.message;
-                        resultEl.style.color = '#ef4444';
-                    });
-                } else {
-                    resultEl.textContent = 'הדפדפן אינו תומך בסריקה. נסה Chrome.';
-                    resultEl.style.color = '#f59e0b';
+                # העלאת תמונות נוספות (תקלות כשרות ונאמן כשרות)
+                k_issues_photo_url = None
+                k_shabbat_photo_url = None
+                
+                if k_issues_photo:
+                    k_issues_photo_url = upload_report_photo(k_issues_photo.getvalue(), unit, f"{base}_kashrut_issue")
+                
+                if k_shabbat_photo:
+                    k_shabbat_photo_url = upload_report_photo(k_shabbat_photo.getvalue(), unit, f"{base}_shabbat_supervisor")
+                
+                data = {
+                    "unit": st.session_state.selected_unit, "date": datetime.datetime.now().isoformat(),
+                    "base": base, "inspector": inspector, "photo_url": photo_url,
+                    "k_cert": k_cert, "k_dates": k_dates,
+                    "e_status": e_status,
+                    "s_clean": s_clean,
+                    "t_private": t_private, "t_kitchen_tools": t_kitchen_tools, "t_procedure": t_procedure,
+                    "t_friday": t_friday, "t_app": t_app, "w_location": w_location, "w_private": w_private,
+                    "w_kitchen_tools": w_kitchen_tools, "w_procedure": w_procedure, "w_guidelines": w_guidelines,
+                    "soldier_yeshiva": soldier_yeshiva,
+                    "soldier_want_lesson": soldier_want_lesson,  # 🆕
+                    "soldier_has_lesson": soldier_has_lesson,    # 🆕
+                    "soldier_lesson_teacher": soldier_lesson_teacher,  # 🆕
+                    "soldier_lesson_phone": soldier_lesson_phone,      # 🆕
+                    "soldier_food": soldier_food,
+                    "soldier_shabbat_training": soldier_shabbat_training, "soldier_knows_rabbi": soldier_knows_rabbi,
+                    "soldier_prayers": soldier_prayers, "soldier_talk_cmd": soldier_talk_cmd, "free_text": free_text,
+                    "time": str(time_v), "p_pakal": p_pakal, "missing_items": missing,
+                    "r_mezuzot_missing": r_mezuzot_missing, "k_cook_type": k_cook_type,
+                    "p_marked": p_marked, "p_mix": p_mix, "p_kasher": p_kasher,
+                    "r_sg": r_sg, "r_hamal": r_hamal, "r_sign": r_sign, "r_netilot": r_netilot,
+                    "r_shabbat_device": r_shabbat_device, "s_board": s_board, "s_books": str(s_books),
+                    "s_havdala": s_havdala, "s_gemach": s_gemach, "s_smartbis": s_smartbis, "s_geniza": s_geniza,
+                    # 🆕
+                    "s_torah_id": s_torah_id, "s_torah_nusach": s_torah_nusach,
+                    "e_check": e_check, "e_doc": e_doc, "e_photo": e_photo,
+                    "k_separation": k_separation, "k_briefing": k_briefing, "k_products": k_products,
+                    "k_leafs": k_leafs, "k_holes": k_holes, "k_bishul": k_bishul,
+                    "k_eggs": k_eggs, "k_machshir": k_machshir, "k_heater": k_heater, "k_app": k_app,
+                    # שדות חדשים
+                    # שדות חדשים
+                    "k_issues": k_issues,
+                    "k_issues_description": k_issues_description,  # 🆕
+                    "k_shabbat_supervisor": k_shabbat_supervisor,
+                    "k_shabbat_supervisor_name": k_shabbat_supervisor_name,    # 🆕
+                    "k_shabbat_supervisor_phone": k_shabbat_supervisor_phone,  # 🆕
+                    "k_issues_photo_url": k_issues_photo_url,
+                    "k_shabbat_photo_url": k_shabbat_photo_url,
+                    "report_duration": report_duration,  # ⏱️ חדש!
+                    "barcode_verified": (barcode_value == BASE_BARCODES.get(base)) if base in BASE_BARCODES else False,
+                    "signature_url": sig_url or ""
                 }
-            })();
-            </script>
-            """.replace("{{EXPECTED}}", expected_barcode)
-            
-            st.markdown(scanner_js, unsafe_allow_html=True)
-            barcode_manual = st.text_input("📟 או הזן ברקוד ידנית", placeholder="לדוגמא: ABC-12345", key="barcode_manual_input")
-            if barcode_manual:
-                st.success(f"📷 ברקוד: {barcode_manual}")
-        with barcode_tab_img:
-            st.caption("העלה תמונה של ברקוד – הזן את הערך ידנית למטה")
-            barcode_image_file = st.file_uploader("🖼️ העלה תמונת ברקוד", type=['jpg', 'png', 'jpeg'], key="barcode_image_upload")
-            if barcode_image_file:
-                st.image(barcode_image_file, caption="תמונת ברקוד שהועלתה", use_column_width=True)
-            barcode_from_image = st.text_input("הזן את ערך הברקוד מהתמונה", placeholder="לדוגמא: ABC-12345", key="barcode_from_image_input")
-            if barcode_from_image:
-                st.success(f"✅ ברקוד מתמונה: {barcode_from_image}")
-    
-    # שמירת הברקוד בדוח
-    barcode_value = st.session_state.get('barcode_manual_input', '') or st.session_state.get('barcode_from_image_input', '')
-    # חתימה דיגיטלית
-    sig_url = render_signature_pad()
-    
-    photo = st.file_uploader("📸 תמונה (חובה)", type=['jpg', 'png', 'jpeg'])
-        
-        # שליחת הדוח
-    # שליחת הדוח
-    col_submit, col_draft = st.columns([3, 1])
-    
-    # 🆕 שמירת טיוטה
-    with col_draft:
-        if st.button("💾 שמור טיוטה", key="save_draft_btn"):
-            # איסוף נתונים חלקי לשמירה
-            draft_data = {
-                "unit": unit, "base": base, "inspector": inspector,
-                "date": str(date), "time": str(time_v),
-                "timestamp": datetime.datetime.now().isoformat()
-            }
-            save_draft_locally(draft_data, f"{unit}_last_draft")
-
-    with col_submit:
-        submitted = st.button("🚀 שגר דיווח", type="primary", use_container_width=True, key="submit_new_report")
-        
-    if submitted:
-        # חישוב משך הדיווח
-        report_duration = 0
-        if "report_start_time" in st.session_state:
-            report_duration = int(time.time() - st.session_state.report_start_time)
-            # איפוס הטיימר לדיווח הבא
-            del st.session_state.report_start_time
-
-        # בדיקת יום בשבוע - חמישי (3) ושישי (4) ב-Python weekday
-        current_weekday = datetime.datetime.now().weekday()
-        is_thursday_or_friday = current_weekday in [3, 4]
-
-        # 🆕 בדיקת הסברים חסרים עבור "לא יודע / לא בדקתי"
-        missing_explanations = []
-        # We iterate over session state keys that start with "radio_" to identify questions
-        # But the values are already in local variables. 
-        # Ideally we check the compiled 'data' dict, but that is created *after* this check.
-        # So we will reconstruct the list of values to check or just check the data dict after creation?
-        # Better to create 'data' first, THEN validate, THEN upload/save.
-        
-        # Let's create a temporary dictionary for validation similar to 'data' 
-        # or just check the variables directly. Checking variables directly is verbose.
-        # Let's verify the 'data' construction approach.
-        
-        # We will move the data dictionary creation UP, before the validation check.
-        # Wait, moving it up might be complex because of photo uploads.
-        
-        # Simpler approach: Check the local variables that we assigned from radio_with_explanation.
-        # We have many variables.
-        # Let's assume we check the 'data' dict *before* uploading photos? 
-        # No, 'data' contains photo URLs which come from upload_report_photo.
-        
-        # Okay, let's create a list of all potential 'Don't Know' answers to check.
-        # This list must match the variables used above.
-        answers_to_check = {
-            "פק״ל רבנות": p_pakal, "כלים מסומנים": p_marked, "ערבוב כלים": p_mix, "הכשרת כלים": p_kasher,
-            "הוראות בש.ג": r_sg, "הוראות בחמ״ל": r_hamal, "שילוט שבת": r_sign, "נטלות": r_netilot,
-            "לוח רבנות": s_board, "ניקיון בית כנסת": s_clean, "ערכת הבדלה": s_havdala, "גמ״ח טלית ותפילין": s_gemach,
-            "תקלת בינוי": s_smartbis, "פח גניזה": s_geniza,
-            "בדיקת עירוב": e_check, "תיעוד עירוב": e_doc, "תצ״א עירוב": e_photo,
-            "תעודת כשרות": k_cert, "בישול ישראל": k_bishul, "תקלות כשרות": k_issues, "נאמן שבת": k_shabbat_supervisor,
-            "הפרדה במטבח": k_separation, "תדריך טבחים": k_briefing, "רכש חוץ": k_products, "דף תאריכים": k_dates,
-            "שטיפת ירק": k_leafs, "חירור גסטרונומים": k_holes, "בדיקת ביצים": k_eggs, "חדר מכ״ש": k_machshir,
-            "חימום נפרד": k_heater, "אפליקציה במטבח": k_app,
-            # טרקלין ויקוק – רק אם רלוונטי ליחידה
-            **({
-                "כלים פרטיים טרקלין": t_private, "כלי מטבח טרקלין": t_kitchen_tools,
-                "נוהל סגירה טרקלין": t_procedure, "סגור בשבת טרקלין": t_friday, "אפליקציה טרקלין": t_app,
-                "כלים פרטיים ויקוק": w_private, "כלי מטבח ויקוק": w_kitchen_tools,
-                "נהלים ויקוק": w_procedure, "הנחיות ויקוק": w_guidelines,
-            } if _show_lounge_wecook else {}),
-            "ימי ישיבה": soldier_yeshiva, "רצון לשיעור": soldier_want_lesson, "שיעור קיים": soldier_has_lesson,
-            "מענה כשרותי": soldier_food, "אימונים בשבת": soldier_shabbat_training, "מכיר את הרב": soldier_knows_rabbi,
-            "זמני תפילות": soldier_prayers, "שיח מפקדים": soldier_talk_cmd
-        }
-        
-        for label, value in answers_to_check.items():
-            if isinstance(value, str) and value.startswith("__MISSING_EXPLANATION__"):
-                missing_explanations.append(label)
-        
-        if missing_explanations:
-            st.error("❌ לא ניתן לשלוח את הדוח! חסר פירוט עבור התשובות 'לא יודע / לא בדקתי':")
-            for item in missing_explanations:
-                st.warning(f"⚠️ {item} - חובה לפרט סיבה בתיבת הטקסט")
-        
-        # בדיקת חובת תמונת נאמן כשרות בחמישי-שישי
-        elif is_thursday_or_friday and k_shabbat_supervisor == "כן" and not k_shabbat_photo:
-            st.error("⚠️ **חובה להעלות תמונת נאמן כשרות בימי חמישי ושישי!**")
-            st.warning("💡 נא להעלות תמונה של נאמן הכשרות בשדה המתאים למעלה")
-            
-        # 🆕 בדיקת מיקום חובה (נוסף לבקשת המשתמש)
-        elif not (gps_lat and gps_lon):
-             st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח!")
-             st.warning("💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום")
-             
-        elif base and inspector and photo:
-            photo_url = upload_report_photo(photo.getvalue(), unit, base)
-            
-            # העלאת תמונות נוספות (תקלות כשרות ונאמן כשרות)
-            k_issues_photo_url = None
-            k_shabbat_photo_url = None
-            
-            if k_issues_photo:
-                k_issues_photo_url = upload_report_photo(k_issues_photo.getvalue(), unit, f"{base}_kashrut_issue")
-            
-            if k_shabbat_photo:
-                k_shabbat_photo_url = upload_report_photo(k_shabbat_photo.getvalue(), unit, f"{base}_shabbat_supervisor")
-            
-            data = {
-                "unit": st.session_state.selected_unit, "date": datetime.datetime.now().isoformat(),
-                "base": base, "inspector": inspector, "photo_url": photo_url,
-                "k_cert": k_cert, "k_dates": k_dates,
-                "e_status": e_status,
-                "s_clean": s_clean,
-                "t_private": t_private, "t_kitchen_tools": t_kitchen_tools, "t_procedure": t_procedure,
-                "t_friday": t_friday, "t_app": t_app, "w_location": w_location, "w_private": w_private,
-                "w_kitchen_tools": w_kitchen_tools, "w_procedure": w_procedure, "w_guidelines": w_guidelines,
-                "soldier_yeshiva": soldier_yeshiva,
-                "soldier_want_lesson": soldier_want_lesson,  # 🆕
-                "soldier_has_lesson": soldier_has_lesson,    # 🆕
-                "soldier_lesson_teacher": soldier_lesson_teacher,  # 🆕
-                "soldier_lesson_phone": soldier_lesson_phone,      # 🆕
-                "soldier_food": soldier_food,
-                "soldier_shabbat_training": soldier_shabbat_training, "soldier_knows_rabbi": soldier_knows_rabbi,
-                "soldier_prayers": soldier_prayers, "soldier_talk_cmd": soldier_talk_cmd, "free_text": free_text,
-                "time": str(time_v), "p_pakal": p_pakal, "missing_items": missing,
-                "r_mezuzot_missing": r_mezuzot_missing, "k_cook_type": k_cook_type,
-                "p_marked": p_marked, "p_mix": p_mix, "p_kasher": p_kasher,
-                "r_sg": r_sg, "r_hamal": r_hamal, "r_sign": r_sign, "r_netilot": r_netilot,
-                "r_shabbat_device": r_shabbat_device, "s_board": s_board, "s_books": str(s_books),
-                "s_havdala": s_havdala, "s_gemach": s_gemach, "s_smartbis": s_smartbis, "s_geniza": s_geniza,
-                # 🆕
-                "s_torah_id": s_torah_id, "s_torah_nusach": s_torah_nusach,
-                "e_check": e_check, "e_doc": e_doc, "e_photo": e_photo,
-                "k_separation": k_separation, "k_briefing": k_briefing, "k_products": k_products,
-                "k_leafs": k_leafs, "k_holes": k_holes, "k_bishul": k_bishul,
-                "k_eggs": k_eggs, "k_machshir": k_machshir, "k_heater": k_heater, "k_app": k_app,
-                # שדות חדשים
-                # שדות חדשים
-                "k_issues": k_issues,
-                "k_issues_description": k_issues_description,  # 🆕
-                "k_shabbat_supervisor": k_shabbat_supervisor,
-                "k_shabbat_supervisor_name": k_shabbat_supervisor_name,    # 🆕
-                "k_shabbat_supervisor_phone": k_shabbat_supervisor_phone,  # 🆕
-                "k_issues_photo_url": k_issues_photo_url,
-                "k_shabbat_photo_url": k_shabbat_photo_url,
-                "report_duration": report_duration,  # ⏱️ חדש!
-                "barcode_verified": (barcode_value == BASE_BARCODES.get(base)) if base in BASE_BARCODES else False,
-                "signature_url": sig_url or ""
-            }
-            
-            # הוספת שאלות הלכה לחטיבות 35/89/900
-            if hq_vars:
-                data.update(hq_vars)
-            
-            # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
-            # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
-            if gps_lat and gps_lon:
-                # ✅ בדיקה נוספת שהמיקום תקין
-                if 29.5 <= gps_lat <= 33.5 and 34.2 <= gps_lon <= 35.9:
-                    # הוספת רעש למיקום GPS לצורכי אבטחה (~500 מטר)
-                    # ✅ שימוש ב-secure_location_offset עם ID יציב
-                    unique_id_for_offset = f"{unit}_{base}"
-                    lat_with_offset, lon_with_offset = secure_location_offset(gps_lat, gps_lon, unique_id_for_offset, offset_meters=500)
-                    data["latitude"] = lat_with_offset
-                    data["longitude"] = lon_with_offset
-                    
-                    # ✅ הדפסה ללוג
-                    print(f"💾 שומר למסד נתונים: lat={lat_with_offset:.6f}, lon={lon_with_offset:.6f}")
-                else:
-                    st.warning("⚠️ המיקום לא נשמר כי הוא מחוץ לגבולות ישראל")
-            
-            try:
-                # ניסיון לשמור את הדוח
-                try:
-                    result = supabase.table("reports").insert(data).execute()
-                except Exception as e:
-                    # טיפול בשגיאה אם העמודות החדשות עדיין לא קיימות במסד הנתונים
-                    if "PGRST204" in str(e) or "Could not find" in str(e):
-                        # ניסיון חוזר ללא השדות החדשים (שמירה שקטה של בסיס הדוח)
-                        # רשימת כל השדות החדשים שאולי חסרים
-                        new_fields = [
-                            "k_issues", "k_issues_description", "k_shabbat_supervisor", 
-                            "k_shabbat_supervisor_name", "k_shabbat_supervisor_phone",
-                            "k_issues_photo_url", "k_shabbat_photo_url",
-                            "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone",
-                            "report_duration", "barcode_verified", "signature_url"
-                        ]
-                        for field in new_fields:
-                            data.pop(field, None)
-                        result = supabase.table("reports").insert(data).execute()
-                    else:
-                        raise e
                 
-                # מעקב אוטומטי אחר חוסרים
-                if result.data and len(result.data) > 0:
-                    report_id = result.data[0].get('id')
-                    if report_id:
-                        detect_and_track_deficits(data, report_id, unit)
+                # הוספת שאלות הלכה לחטיבות 35/89/900
+                if hq_vars:
+                    data.update(hq_vars)
+                
+                # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
+                if gps_lat and gps_lon:
+                    # ✅ בדיקה נוספת שהמיקום תקין
+                    if 29.5 <= gps_lat <= 33.5 and 34.2 <= gps_lon <= 35.9:
+                        # הוספת רעש למיקום GPS לצורכי אבטחה (~500 מטר)
+                        # ✅ שימוש ב-secure_location_offset עם ID יציב
+                        unique_id_for_offset = f"{unit}_{base}"
+                        lat_with_offset, lon_with_offset = secure_location_offset(gps_lat, gps_lon, unique_id_for_offset, offset_meters=500)
+                        data["latitude"] = lat_with_offset
+                        data["longitude"] = lon_with_offset
                         
-                        # 🆕 יצירת כרטיס תקלה אוטומטי (Closed-Loop Ticketing)
-                        create_maintenance_ticket(data, report_id)
+                        # ✅ הדפסה ללוג
+                        print(f"💾 שומר למסד נתונים: lat={lat_with_offset:.6f}, lon={lon_with_offset:.6f}")
+                    else:
+                        st.warning("⚠️ המיקום לא נשמר כי הוא מחוץ לגבולות ישראל")
                 
-                st.success("✅ הדוח נשלח בהצלחה ונקלט בחמ״ל!")
-                
-                # 📨 התראות WhatsApp לבעיות קריטיות
-                send_whatsapp_alert(data, unit)
-                
-                # 📊 הצגת מה השתנה מהפעם הקודמת
-                render_report_diff(data, unit, base)
-                
-                clear_cache()
-                time.sleep(4)  # תוספת זמן לקריאת ה-Diff
-                st.rerun()
-            except Exception as e:
-                error_msg = str(e)
-                # אם השגיאה היא בגלל עמודות שלא קיימות, נסה בלעדיהן
-                if any(col in error_msg for col in ["latitude", "longitude", "photo_url"]):
+                try:
+                    # ניסיון לשמור את הדוח
                     try:
-                        # הסרת עמודות שלא קיימות
-                        data.pop("latitude", None)
-                        data.pop("longitude", None)
-                        data.pop("photo_url", None)
-                        supabase.table("reports").insert(data).execute()
-                        st.success("✅ הדוח נשלח בהצלחה!")
-                        clear_cache()
-                        time.sleep(2)
-                        st.rerun()
-                    except Exception as e2:
-                        st.error(f"❌ שגיאה בשמירה: {e2}")
-                else:
-                    st.error(f"❌ שגיאה בשמירה: {error_msg}")
-        else: st.error("⚠️ חסרים פרטי חובה (מוצב, מבקר או תמונה)")
+                        result = supabase.table("reports").insert(data).execute()
+                    except Exception as e:
+                        # טיפול בשגיאה אם העמודות החדשות עדיין לא קיימות במסד הנתונים
+                        if "PGRST204" in str(e) or "Could not find" in str(e):
+                            # ניסיון חוזר ללא השדות החדשים (שמירה שקטה של בסיס הדוח)
+                            # רשימת כל השדות החדשים שאולי חסרים
+                            new_fields = [
+                                "k_issues", "k_issues_description", "k_shabbat_supervisor", 
+                                "k_shabbat_supervisor_name", "k_shabbat_supervisor_phone",
+                                "k_issues_photo_url", "k_shabbat_photo_url",
+                                "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone",
+                                "report_duration", "barcode_verified", "signature_url"
+                            ]
+                            for field in new_fields:
+                                data.pop(field, None)
+                            result = supabase.table("reports").insert(data).execute()
+                        else:
+                            raise e
+                    
+                    # מעקב אוטומטי אחר חוסרים
+                    if result.data and len(result.data) > 0:
+                        report_id = result.data[0].get('id')
+                        if report_id:
+                            detect_and_track_deficits(data, report_id, unit)
+                            
+                            # 🆕 יצירת כרטיס תקלה אוטומטי (Closed-Loop Ticketing)
+                            create_maintenance_ticket(data, report_id)
+                    
+                    st.success("✅ הדוח נשלח בהצלחה ונקלט בחמ״ל!")
+                    
+                    # 📨 התראות WhatsApp לבעיות קריטיות
+                    send_whatsapp_alert(data, unit)
+                    
+                    # 📊 הצגת מה השתנה מהפעם הקודמת
+                    render_report_diff(data, unit, base)
+                    
+                    clear_cache()
+                    time.sleep(4)  # תוספת זמן לקריאת ה-Diff
+                    st.rerun()
+                except Exception as e:
+                    error_msg = str(e)
+                    # אם השגיאה היא בגלל עמודות שלא קיימות, נסה בלעדיהן
+                    if any(col in error_msg for col in ["latitude", "longitude", "photo_url"]):
+                        try:
+                            # הסרת עמודות שלא קיימות
+                            data.pop("latitude", None)
+                            data.pop("longitude", None)
+                            data.pop("photo_url", None)
+                            supabase.table("reports").insert(data).execute()
+                            st.success("✅ הדוח נשלח בהצלחה!")
+                            clear_cache()
+                            time.sleep(2)
+                            st.rerun()
+                        except Exception as e2:
+                            st.error(f"❌ שגיאה בשמירה: {e2}")
+                    else:
+                        st.error(f"❌ שגיאה בשמירה: {error_msg}")
+            else:
+                st.error("⚠️ חסרים פרטי חובה (מוצב, מבקר או תמונה)")
     
     # --- סטטיסטיקות מבקרים ---
     st.markdown("---")
