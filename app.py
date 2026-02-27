@@ -3724,7 +3724,7 @@ def render_unit_report():
                 )
             
             # טאבים לניתוח
-            analysis_tabs = st.tabs(["🔴 חוסרים ובעיות", "🍴 עירוב וכשרות", "🏗️ תשתיות ויומן ביקורת", "📊 סיכום כללי", "🛰️ מפה ארצית"])
+            analysis_tabs = st.tabs(["🔴 חוסרים ובעיות", "🍴 עירוב וכשרות", "🏗️ תשתיות ויומן ביקורת", "📊 סיכום כללי", "🔍 אמינות מבקרים", "🛰️ מפה ארצית"])
             
             latest_report = unit_df.sort_values('date', ascending=False).iloc[0] if len(unit_df) > 0 else None
             
@@ -3886,8 +3886,33 @@ def render_unit_report():
                     st.info("👍 **טוב!** היחידה במצב סביר, יש מקום לשיפור")
                 else:
                     st.warning("⚠️ **דורש תשומת לב!** יש נושאים שדורשים טיפול")
-            
-            with analysis_tabs[4]: # מפה ארצית
+
+            with analysis_tabs[4]:  # אמינות מבקרים
+                st.markdown("## 🔍 אמינות מבקרים")
+                if not unit_df.empty and 'inspector' in unit_df.columns:
+                    inspectors = unit_df['inspector'].dropna().unique()
+                    if len(inspectors) > 0:
+                        for inspector in sorted(inspectors):
+                            cred = calculate_inspector_credibility(inspector, unit_df)
+                            col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
+                            with col1:
+                                st.markdown(f"**{inspector}**")
+                            with col2:
+                                st.metric("ציון", f"{cred['score']:.0f}")
+                            with col3:
+                                st.metric("% ליקויים", f"{cred['defect_rate']:.0f}%")
+                            with col4:
+                                st.markdown(
+                                    f"<span style='color:{cred['color']}'>{cred['credibility']}</span>",
+                                    unsafe_allow_html=True
+                                )
+                            st.divider()
+                    else:
+                        st.info("אין מבקרים רשומים ליחידה זו")
+                else:
+                    st.info("אין נתוני מבקרים")
+
+            with analysis_tabs[5]: # מפה ארצית
                 st.markdown("#### 🛰️ מפה ארצית מלאה")
                 
                 # טעינת כל הנתונים ללא סינון
@@ -6648,7 +6673,7 @@ def main():
                 st.rerun()
             
             # שלב 1: הוסף לקובץ הראשי (app.py) בתוך הסיידבר
-            if st.session_state.role == 'pikud':
+            if st.session_state.role in ['pikud', 'ugda']:
                 st.markdown("---")
                 with st.expander("⚙️ ניהול מערכת", expanded=False):
                     render_weekly_insights_control_panel()
