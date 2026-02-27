@@ -5482,24 +5482,32 @@ def generate_weekly_questions(unit: str, accessible_units: list) -> dict:
     """
     all_reports = load_reports_cached(accessible_units)
     df = pd.DataFrame(all_reports) if all_reports else pd.DataFrame()
-    if df.empty:
-        return {"error": "אין נתונים"}
+    
     insights = {}
-    kashrut_insights = analyze_kashrut_trend(df, accessible_units)
-    if kashrut_insights:
-        insights['kashrut'] = kashrut_insights
-    eruv_insights = analyze_eruv_trend(df, accessible_units)
-    if eruv_insights:
-        insights['eruv'] = eruv_insights
+    
+    # 1. ניתוחים שתלויים בדיווחים חדשים
+    if not df.empty:
+        kashrut_insights = analyze_kashrut_trend(df, accessible_units)
+        if kashrut_insights:
+            insights['kashrut'] = kashrut_insights
+            
+        eruv_insights = analyze_eruv_trend(df, accessible_units)
+        if eruv_insights:
+            insights['eruv'] = eruv_insights
+            
+        performance_insights = analyze_unit_performance(df, accessible_units)
+        if performance_insights:
+            insights['performance'] = performance_insights
+            
+        anomaly_insights = detect_weekly_anomalies(df, accessible_units)
+        if anomaly_insights:
+            insights['anomalies'] = anomaly_insights
+            
+    # 2. ניתוח חוסרים (תמיד רץ - בודק את טבלת deficit_tracking)
     deficit_insights = analyze_deficit_progress(accessible_units)
     if deficit_insights:
         insights['deficits'] = deficit_insights
-    performance_insights = analyze_unit_performance(df, accessible_units)
-    if performance_insights:
-        insights['performance'] = performance_insights
-    anomaly_insights = detect_weekly_anomalies(df, accessible_units)
-    if anomaly_insights:
-        insights['anomalies'] = anomaly_insights
+        
     return insights
 
 
@@ -5577,12 +5585,80 @@ def analyze_eruv_trend(df: pd.DataFrame, units: list) -> dict:
             "trend": trend, "suggestion": suggestion}
 
 
-def analyze_deficit_progress(accessible_units: list) -> dict:
-    """📊 ניתוח התקדמות בסגירת חוסרים"""
+def analyze_recurring_base_issues(df: pd.DataFrame) -> list:
+    """🔍 זיהוי בעיות חוזרות באותו בסיס"""
+    if df.empty or 'base' not in df.columns:
+        return []
+    
+    recurring = []
+    recent_df = df.copy()
+    recent_df['date'] = pd.to_datetime(recent_df['date'], errors='coerce')
+    # רק 30 יום אחרונים
+    recent_df = recent_df[recent_df['date'] >= (pd.Timestamp.now() - pd.Timedelta(days=30))]
+    
+    for base in recent_df['base'].unique():
+        if not base or base == "לא ידוע": continue
+        base_df = recent_df[recent_df['base'] == base]
+        if len(base_df) < 2: continue
+            
+        # כשרות
+        kashrut_fails = base_df[base_df['k_cert'] == 'לא']
+        if len(kashrut_fails) >= 2:
+            recurring.append({
+                "type": "kashrut",
+                "base": base,
+                "unit": base_df.iloc[0]['unit'],
+                "question": f"🔴 למה יש בעיות חוזרות בכשרות ב-{base}? (כבר {len(kashrut_fails)} דיווחים בפסול בחודש האחרון)",
+                "suggestion": "בדוק אם הרב המקומי מכיר את הבעיה או שיש חוסר כוח אדם"
+            })
+            
+        # עירוב
+        eruv_fails = base_df[base_df['e_status'] == 'פסול']
+        if len(eruv_fails) >= 2:
+            recurring.append({
+                "type": "eruv",
+                "base": base,
+                "unit": base_df.iloc[0]['unit'],
+                "question": f"🚧 בעיות חוזרות בעירוב ב-{base} (פסול {len(eruv_fails)} פעמים בחודש האחרון) — למה?",
+                "suggestion": "אולי צריך תקציב לתיקון תשתיתי ולא רק תיקון נקודתי"
+            })
+            
+    return recurring
+
+
+def analyze_critical_data_changes(df: pd.DataFrame) -> list:
+    """🧐 זיהוי שינויים בנתונים קריטיים (כמו מס' ספר תורה)"""
+    if df.empty or 'base' not in df.columns or 's_torah_id' not in df.columns:
+        return []
+        
+    changes = []
+    for base in df['base'].unique():
+        if not base or base == "לא ידוע": continue
+        base_df = df[df['base'] == base].sort_values('date', ascending=False)
+        if len(base_df) < 2: continue
+            
+        latest_torah = str(base_df.iloc[0]['s_torah_id'])
+        prev_torah = str(base_df.iloc[1]['s_torah_id'])
+        
+        if latest_torah and prev_torah and latest_torah != prev_torah and latest_torah != "nan" and prev_torah != "nan":
+             changes.append({
+                "type": "data_change",
+                "base": base,
+                "unit": base_df.iloc[0]['unit'],
+                "question": f"🧐 בבסיס {base} ({base_df.iloc[0]['unit']}) השתנה מס' צ' של ספר התורה מ-{prev_torah} ל-{latest_torah} — מה הסיבה?",
+                "suggestion": "בדוק אם הספר הוחלף, נשלח לתיקון או שמדובר בטעות הקלדה"
+            })
+    return changes
+
+
+def analyze_deficit_progress(accessible_units: list) -> list:
+    """📊 ניתוח התקדמות בסגירת חוסרים - מורחב"""
+    insight_list = []
     try:
         open_now = get_open_deficits(accessible_units)
     except Exception:
-        open_now = []
+        open_now = pd.DataFrame()
+        
     try:
         closed_this_week = supabase.table("deficit_tracking") \
             .select("*").in_("unit", accessible_units).eq("status", "closed") \
@@ -5591,34 +5667,41 @@ def analyze_deficit_progress(accessible_units: list) -> dict:
         closed_count = len(closed_this_week.data) if closed_this_week.data else 0
     except Exception:
         closed_count = 0
-    total_open = len(open_now) if hasattr(open_now, '__len__') else 0
-    try:
+        
+    total_open = len(open_now) if not open_now.empty else 0
+    
+    # 1. ניתוח כללי
+    if total_open > 0:
         overdue = count_overdue_deficits(accessible_units)
-    except Exception:
-        overdue = 0
-    if total_open == 0:
-        if closed_count > 0:
-            question = f"🎉 סגרתם {closed_count} חוסרים בשבוע! — כל החוסרים סגורים!"
-            suggestion = "המשך עם הרמה הזו"
-            trend = "excellent"
-        else:
-            question = "✅ אין חוסרים פתוחים — שמור על הסטטוס"
-            suggestion = "זה חריג! נסה לשמור על זה"
-            trend = "stable_good"
-    elif overdue > 0:
-        question = f"🚨 {overdue} חוסרים עברו SLA (7 ימים) — זה דורש טיפול דחוף!"
-        suggestion = "בדוק איזה חוסרים עדיין פתוחים זמן רב וקדם אותם"
-        trend = "critical"
-    elif total_open > 5:
-        question = f"⚠️ {total_open} חוסרים פתוחים — זה הרבה. {closed_count} סגורים בשבוע"
-        suggestion = "בדוק: האם יש חוסרים שלא ניתן לתקן? או שהם קטנים מדי?"
-        trend = "high_volume"
-    else:
-        question = f"📊 {total_open} חוסרים פתוחים, {closed_count} סגורים בשבוע — קצב טוב"
-        suggestion = "המשך בקצב הנוכחי"
-        trend = "healthy"
-    return {"question": question, "open": total_open, "closed_this_week": closed_count,
-            "overdue": overdue, "trend": trend, "suggestion": suggestion}
+        if overdue > 0:
+            insight_list.append({
+                "type": "deficits",
+                "question": f"🚨 {overdue} חוסרים עברו SLA (7 ימים) — למה הם לא מטופלים בדחיפות?",
+                "suggestion": "בדוק איזה חוסרים פתוחים זמן רב וקדם אותם מול הלוגיסטיקה"
+            })
+            
+        # 2. ניתוח בסיסים ספציפיים (החוסרים הכי ישנים)
+        if 'detected_date' in open_now.columns and 'base' in open_now.columns:
+            open_now['detected_date'] = pd.to_datetime(open_now['detected_date'], errors='coerce')
+            old_items = open_now[open_now['detected_date'] < (pd.Timestamp.now() - pd.Timedelta(days=14))]
+            if not old_items.empty:
+                for _, row in old_items.sort_values('detected_date').head(2).iterrows():
+                    days = (pd.Timestamp.now() - row['detected_date']).days
+                    insight_list.append({
+                        "type": "deficits",
+                        "base": row['base'],
+                        "question": f"🔴 למה החוסרים ב-{row['base']} ({row['unit']}) לא הושלמו כבר {days} ימים?",
+                        "suggestion": "יכול להיות שיש בעיית תקציב או חוסר במלאי ארצי?"
+                    })
+    
+    elif closed_count > 0:
+        insight_list.append({
+            "type": "deficits",
+            "question": f"🎉 סגרתם {closed_count} חוסרים בשבוע! — כל הכבוד על המעקב.",
+            "suggestion": "שתף את שיטת העבודה עם יחידות אחרות"
+        })
+        
+    return insight_list
 
 
 def analyze_unit_performance(df: pd.DataFrame, units: list) -> dict:
@@ -5891,11 +5974,12 @@ def update_weekly_insights_now():
                 try:
                     role = get_user_role(unit)
                     accessible = get_accessible_units(unit, role)
-                    insights = generate_weekly_questions(unit, accessible)
-                    # שמור כל insight
-                    for insight_type, insight_data in insights.items():
+                    insights_list = generate_weekly_questions(unit, accessible)
+                    # שמור כל insight ברשימה
+                    for insight_data in insights_list:
                         if isinstance(insight_data, dict) and 'question' in insight_data:
-                            save_insight(unit, insight_type, insight_data)
+                            i_type = insight_data.get('type', 'general')
+                            save_insight(unit, i_type, insight_data)
                             new_insights_count += 1
                 except Exception as e:
                     print(f"⚠️ {unit}: {str(e)[:50]}")
