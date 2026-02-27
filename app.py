@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import datetime
+import datetimeכ
 import time
 from PIL import Image
 import io
@@ -14,7 +14,7 @@ import hashlib
 import bcrypt
 import shutil
 import os
-import pydeck as pdk
+import pydeck as pdkכ
 import random
 from streamlit_geolocation import streamlit_geolocation
 import math
@@ -4770,7 +4770,7 @@ def render_unit_report():
         "🍽️ כשרות",
         "🕍 ביהכ\"נ ועירוב",
         "📜 נהלים ורוח",
-        "📖 שאלון חטיבתי",
+        "📖 שיחת חתך",
         "⚠️ חוסרים ושליחה"
     ])
 
@@ -5006,10 +5006,9 @@ def render_unit_report():
         else:
             soldier_talk_cmd = radio_with_explanation("האם יש שיח מפקדים?", "so6", col=c2)
 
-        st.info("🔜 יש לעבור לטאב הבא: 📖 שאלון חטיבתי (לחטיבות רלוונטיות) או ⚠️ חוסרים ושליחה")
+        st.info("🔜 יש לעבור לטאב הבא: 📖 שיחת חתך (לחטיבות רלוונטיות) או ⚠️ חוסרים ושליחה")
 
     # ===========================================
-    # TAB 4/ שיחת חתך )
     # ===========================================
     with tab4:
         _show_halacha = unit in NO_LOUNGE_WECOOK_UNITS
