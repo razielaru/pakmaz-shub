@@ -29,15 +29,7 @@ except ImportError:
 st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")  # title intentionally unchanged
 
 # WhatsApp phones for Hatmar Rabbis
-HATMAR_PHONES = {
-    "חטמ״ר בנימין":  "whatsapp:+972501234501",
-    "חטמ״ר שומרון":  "whatsapp:+972501234502",
-    "חטמ״ר יהודה":   "whatsapp:+972501234503",
-    "חטמ״ר עציון":   "whatsapp:+972501234504",
-    "חטמ״ר אפרים":   "whatsapp:+972501234505",
-    "חטמ״ר מנשה":   "whatsapp:+972501234506",
-    "חטמ״ר הבקעה":  "whatsapp:+972501234507",
-}
+
 
 # ===== פונקציות עזר למיקום וחישוב מרחקים =====
 
@@ -101,60 +93,111 @@ def find_nearest_base(lat: float, lon: float) -> Tuple[str, float]:
 # ════════════════════════════════════════════════════════════
 # פיצ'ר 4 — WhatsApp / SMS התראות אוטומטיות
 # ════════════════════════════════════════════════════════════
-def send_whatsapp_alert(report_data: dict, unit: str):
+def send_email_alerts(report_data: dict, unit: str):
     """
-    שולח WhatsApp לרב החטמ"ר כשיש בעיה קריטית.
+    שולח דוא"ל לרב החטמ"ר, רב האוגדה ורב הפיקוד כשיש בעיה קריטית.
     """
-    try:
-        from twilio.rest import Client as TwilioClient
-    except ImportError:
-        return
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
 
     # בדיקת בעיות קריטיות
     alerts = []
     if report_data.get("e_status") == "פסול":
-        alerts.append(f"🚧 *עירוב פסול* במוצב {report_data.get('base','?')}")
+        alerts.append(f"🚧 עירוב פסול במוצב {report_data.get('base','?')}")
     if report_data.get("k_cert") == "לא":
-        alerts.append(f"🍽️ *כשרות חסרה* במוצב {report_data.get('base','?')}")
+        alerts.append(f"🍽️ כשרות חסרה במוצב {report_data.get('base','?')}")
     mezuzot = int(report_data.get("r_mezuzot_missing", 0) or 0)
     if mezuzot >= 5:
-        alerts.append(f"📜 *{mezuzot} מזוזות חסרות* במוצב {report_data.get('base','?')}")
+        alerts.append(f"📜 {mezuzot} מזוזות חסרות במוצב {report_data.get('base','?')}")
     if report_data.get("p_mix") == "כן":
-        alerts.append(f"🔴 *ערבוב כלים* במוצב {report_data.get('base','?')}")
+        alerts.append(f"🔴 ערבוב כלים במוצב {report_data.get('base','?')}")
 
     if not alerts:
         return
 
-    phone = HATMAR_PHONES.get(unit)
-    if not phone:
+    # איסוף כתובות אימייל לפי ההיררכיה
+    recipients = []
+    
+    def add_unit_email(u):
+        try:
+            res = supabase.table("unit_emails").select("email").eq("unit", u).execute()
+            if res.data:
+                recipients.append(res.data[0]['email'])
+        except:
+            pass
+
+    # 1. אימייל של היחידה עצמה
+    add_unit_email(unit)
+    
+    # 2. אימייל של היחידות מעל (אוגדה, פיקוד)
+    try:
+        current_u = unit
+        for _ in range(2): # עד 2 רמות מעל
+            res = supabase.table("hierarchy").select("parent_unit").eq("child_unit", current_u).execute()
+            if res.data:
+                parent = res.data[0]['parent_unit']
+                add_unit_email(parent)
+                current_u = parent
+            else:
+                break
+    except:
+        pass
+
+    recipients = list(set([r for r in recipients if r])) # הסרת כפילויות וריקים
+    if not recipients:
         return
 
+    # הגדרות SMTP מה-secrets
     try:
-        account_sid = st.secrets["twilio"]["account_sid"]
-        auth_token  = st.secrets["twilio"]["auth_token"]
-        from_number = st.secrets["twilio"]["from_whatsapp"]
+        smtp_server = st.secrets["email"]["smtp_server"]
+        smtp_port = st.secrets["email"]["smtp_port"]
+        smtp_user = st.secrets["email"]["smtp_user"]
+        smtp_pass = st.secrets["email"]["smtp_pass"]
+        from_email = st.secrets["email"].get("from_email", smtp_user)
     except Exception:
+        print("⚠️ חסרים secrets של Email (SMTP)")
         return
 
-    message_body = (
-        f"🛡️ *התראה — מערכת רבנות פקמ\"ז*\n\n"
-        f"📋 יחידה: *{unit}*\n"
-        f"👤 מבקר: {report_data.get('inspector','?')}\n"
-        f"📅 תאריך: {report_data.get('date','?')[:10]}\n\n"
-        f"⚠️ *בעיות שדווחו:*\n" +
-        "\n".join(f"  • {a}" for a in alerts) +
-        f"\n\n🔗 לפרטים נוספים היכנס למערכת"
-    )
+    subject = f"🛡️ התראה קריטית - מערכת רבנות פקמ\"ז - {unit}"
+    body = f"""
+    שלום רב,
+    
+    זוהי התראה אוטומטית ממערכת רבנות פקמ"ז לגבי דיווח חדש:
+    
+    📋 יחידה: {unit}
+    👤 מבקר: {report_data.get('inspector','?')}
+    📍 מוצב: {report_data.get('base','?')}
+    📅 תאריך: {report_data.get('date','?')[:10]}
+    
+    ⚠️ בעיות שדווחו:
+    """ + "\n".join(f"  • {a}" for a in alerts) + f"""
+    
+    🔗 לפרטים מלאים וצפייה בתמונות, היכנס למערכת.
+    
+    בברכה,
+    חמ"ל רבנות פקמ"ז
+    """
 
     try:
-        client = TwilioClient(account_sid, auth_token)
-        client.messages.create(body=message_body, from_=from_number, to=phone)
-        st.toast(f"📱 התראה נשלחה לרב {unit}", icon="✅")
-        log_audit_event("WHATSAPP_ALERT", unit,
-                        details={"alerts": alerts, "base": report_data.get("base")},
+        msg = MIMEMultipart()
+        msg['From'] = from_email
+        msg['To'] = ", ".join(recipients)
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain', 'utf-8'))
+
+        server = smtplib.SMTP(smtp_server, smtp_port)
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+        server.send_message(msg)
+        server.quit()
+        
+        st.toast(f"📧 התראה נשלחה בדוא\"ל ל-{len(recipients)} נמענים", icon="✅")
+        log_audit_event("EMAIL_ALERT", unit,
+                        details={"alerts": alerts, "recipients": recipients, "base": report_data.get("base")},
                         severity="warning")
     except Exception as e:
-        pass
+        print(f"⚠️ שגיאה בשליחת Email: {e}")
 
 
 # ════════════════════════════════════════════════════════════
@@ -3784,7 +3827,7 @@ def render_command_dashboard():
     # ===== טאב 10: ניהול (רק פיקוד) =====
     if role == 'pikud':
         with tabs[9]:
-            management_tabs = st.tabs(["🔗 ניהול היררכיה", "🔑 ניהול סיסמאות", "🖼️ ניהול לוגואים"])
+            management_tabs = st.tabs(["🔗 ניהול היררכיה", "🔑 ניהול סיסמאות", "📧 הגדרות מייל", "🖼️ ניהול לוגואים"])
             
             # ניהול היררכיה
             with management_tabs[0]:
@@ -3857,9 +3900,39 @@ def render_command_dashboard():
                             st.info("💡 **אפשרויות פתרון:**\n- ודא שהטבלה `unit_passwords` קיימת ב-Supabase\n- בדוק שיש לך הרשאות כתיבה\n- נסה שוב או צור קשר עם התמיכה")
                     else:
                         st.warning("⚠️ הסיסמה חייבת להכיל לפחות 4 תווים")
-            
-            # ניהול לוגואים
-            with management_tabs[2]:
+
+            # הגדרות אימייל להתראות
+            with management_tabs[2]: # I will move logos to [3] and add email to [2]
+                st.subheader("📧 הגדרות מייל להתראות אוטומטיות")
+                st.info("כאן ניתן להגדיר את כתובת המייל שאליה יישלחו התראות קריטיות עבור כל יחידה.")
+                
+                # בחירת יחידה להגדרת מייל
+                selected_email_unit = st.selectbox("בחר יחידה להגדרה", ALL_UNITS, key="alert_email_unit")
+                
+                # שליפת מייל קיים
+                current_email = ""
+                try:
+                    res = supabase.table("unit_emails").select("email").eq("unit", selected_email_unit).execute()
+                    if res.data:
+                        current_email = res.data[0]['email']
+                except:
+                    pass
+                
+                with st.form("set_unit_email"):
+                    new_email = st.text_input("כתובת אימייל להתראות", value=current_email)
+                    if st.form_submit_button("💾 שמור הגדרות מייל", use_container_width=True):
+                        try:
+                            supabase.table("unit_emails").upsert({"unit": selected_email_unit, "email": new_email}).execute()
+                            st.success(f"✅ כתובת המייל עבור {selected_email_unit} עודכנה בהצלחה")
+                            clear_cache()
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ שגיאה בשמירה: {e}")
+                            st.info("💡 ודא שטבלת `unit_emails` קיימת ב-Supabase עם העמודות `unit` (PK, text) ו-`email` (text).")
+
+            # ניהול לוגואים (מוזז לטאב 4)
+            with management_tabs[3]:
                 st.subheader("🖼️ העלאת לוגואים")
                 
                 selected_logo_unit = st.selectbox("בחר יחידה", ALL_UNITS, key="logo_unit")
@@ -4987,66 +5060,66 @@ def render_unit_report():
             hq_vars['hq_purim_megilla'] = radio_with_explanation("אפשרו לחיילים לשמוע קריאת מגילה בפורים?", "hq27", col=c2)
 
         st.info("🔜 יש לעבור לטאב הבא: ⚠️ חוסרים ושליחה")
-            hq_vars['hq_rosh_shofar'] = radio_with_explanation("מאפשרים לכל חייל לשמוע קול שופר בראש השנה?", "hq28", col=c1)
-            hq_vars['hq_fast_shoes'] = radio_with_explanation("אפשרו לצמים לנעול נעליים ללא עור ביו\"כ ות\"ב (מלבד פעילות מבצעית)?", "hq29", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_fast_meals'] = radio_with_explanation("לכל צם הוגשה ארוחה חמה לפני ואחרי הצום?", "hq30", col=c1)
-            hq_vars['hq_yom_kippur_closed'] = radio_with_explanation("קנטינות, מזנונים וחד\"א היו סגורים במהלך יום כיפור?", "hq31", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_tisha_bav_events'] = radio_with_explanation("התקיימו בתשעה באב פעילות בידור / הווי / תרבות?", "hq32", col=c1)
-            hq_vars['hq_fast_exempt'] = radio_with_explanation("חיילים צמים שוחררו מפעילות (כולל הוראת קרפ\"ר) לפני ואחרי הצום?", "hq33", col=c2)
+        hq_vars['hq_rosh_shofar'] = radio_with_explanation("מאפשרים לכל חייל לשמוע קול שופר בראש השנה?", "hq28", col=c1)
+        hq_vars['hq_fast_shoes'] = radio_with_explanation("אפשרו לצמים לנעול נעליים ללא עור ביו\"כ ות\"ב (מלבד פעילות מבצעית)?", "hq29", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_fast_meals'] = radio_with_explanation("לכל צם הוגשה ארוחה חמה לפני ואחרי הצום?", "hq30", col=c1)
+        hq_vars['hq_yom_kippur_closed'] = radio_with_explanation("קנטינות, מזנונים וחד\"א היו סגורים במהלך יום כיפור?", "hq31", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_tisha_bav_events'] = radio_with_explanation("התקיימו בתשעה באב פעילות בידור / הווי / תרבות?", "hq32", col=c1)
+        hq_vars['hq_fast_exempt'] = radio_with_explanation("חיילים צמים שוחררו מפעילות (כולל הוראת קרפ\"ר) לפני ואחרי הצום?", "hq33", col=c2)
 
-            st.markdown("#### 🕌 בית הכנסת ופרסומים")
-            c1, c2 = st.columns(2)
-            hq_vars['hq_shul_mitzva_items'] = radio_with_explanation("יש פרסום על מקום תשמישי מצווה / קדושה (4 מינים, הבדלה וכד')?", "hq34", col=c1)
-            hq_vars['hq_shul_annex'] = radio_with_explanation("יש נספח הלכתי יחידתי בכל בית כנסת?", "hq35", col=c2)
-            hq_vars['hq_judaism_board'] = radio_with_explanation("לוח יהדות מתעדכן (זמני שבת, תפילות, שיעורים, דרכי תקשורת)?", "hq36")
-            hq_vars['hq_halacha_books'] = radio_with_explanation("קיימים ספרי תורת המחנה, חוברות הלכה, פרסומי \"והגית בו\" נגישים לחיילים?", "hq37")
+        st.markdown("#### 🕌 בית הכנסת ופרסומים")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shul_mitzva_items'] = radio_with_explanation("יש פרסום על מקום תשמישי מצווה / קדושה (4 מינים, הבדלה וכד')?", "hq34", col=c1)
+        hq_vars['hq_shul_annex'] = radio_with_explanation("יש נספח הלכתי יחידתי בכל בית כנסת?", "hq35", col=c2)
+        hq_vars['hq_judaism_board'] = radio_with_explanation("לוח יהדות מתעדכן (זמני שבת, תפילות, שיעורים, דרכי תקשורת)?", "hq36")
+        hq_vars['hq_halacha_books'] = radio_with_explanation("קיימים ספרי תורת המחנה, חוברות הלכה, פרסומי \"והגית בו\" נגישים לחיילים?", "hq37")
 
-            st.markdown("#### 🔗 עירוב")
-            c1, c2 = st.columns(2)
-            hq_vars['hq_eruv_doc'] = radio_with_explanation("קיים תיעוד בדיקת עירוב?", "hq38", col=c1)
-            hq_vars['hq_eruv_valid'] = radio_with_explanation("העירוב תקין לכל אורכו ומקיף את כלל מסגרות היחידה?", "hq39", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_eruv_cert'] = radio_with_explanation("קיים בביהכ\"נ אישור תקינות עירוב ובדיקתו?", "hq40", col=c1)
-            hq_vars['hq_eruv_map'] = radio_with_explanation("קיים תצ\"א של העירוב עם פירוט ההסבר במשרד הרב?", "hq41", col=c2)
+        st.markdown("#### 🔗 עירוב")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_eruv_doc'] = radio_with_explanation("קיים תיעוד בדיקת עירוב?", "hq38", col=c1)
+        hq_vars['hq_eruv_valid'] = radio_with_explanation("העירוב תקין לכל אורכו ומקיף את כלל מסגרות היחידה?", "hq39", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_eruv_cert'] = radio_with_explanation("קיים בביהכ\"נ אישור תקינות עירוב ובדיקתו?", "hq40", col=c1)
+        hq_vars['hq_eruv_map'] = radio_with_explanation("קיים תצ\"א של העירוב עם פירוט ההסבר במשרד הרב?", "hq41", col=c2)
 
-            st.markdown("#### 🙏 תפילות")
-            c1, c2 = st.columns(2)
-            hq_vars['hq_prayer_times'] = radio_with_explanation("החיילים מקבלים זמני תפילות לפי פקודות?", "hq42", col=c1)
-            hq_vars['hq_pre_prayer_act'] = radio_with_explanation("עושים פעילות לפני זמן תפילת בוקר?", "hq43", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_post_prayer_meal'] = radio_with_explanation("החיילים מקבלים ארוחת בוקר לאחר תפילת הבוקר?", "hq44", col=c1)
-            hq_vars['hq_minyan'] = radio_with_explanation("מאפשרים לחיילים להתפלל במניין (ביחידה בה אפשרי)?", "hq45", col=c2)
+        st.markdown("#### 🙏 תפילות")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_prayer_times'] = radio_with_explanation("החיילים מקבלים זמני תפילות לפי פקודות?", "hq42", col=c1)
+        hq_vars['hq_pre_prayer_act'] = radio_with_explanation("עושים פעילות לפני זמן תפילת בוקר?", "hq43", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_post_prayer_meal'] = radio_with_explanation("החיילים מקבלים ארוחת בוקר לאחר תפילת הבוקר?", "hq44", col=c1)
+        hq_vars['hq_minyan'] = radio_with_explanation("מאפשרים לחיילים להתפלל במניין (ביחידה בה אפשרי)?", "hq45", col=c2)
 
-            st.markdown("#### 👮 שאלון חיילים – רבנות היחידה ונושאים נוספים")
-            c1, c2 = st.columns(2)
-            hq_vars['hq_know_rabbi'] = radio_with_explanation("מכירים את סגל הדת ביחידה (רב / נגד רבנות)?", "hq46", col=c1)
-            hq_vars['hq_kashrut_gaps'] = radio_with_explanation("ישנם פערי כשרות ביחידה בשגרה?", "hq47", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_mehadrin_req'] = radio_with_explanation("ביקשתם מוצרי מהדרין / חלק וקיבלתם?", "hq48", col=c1)
-            hq_vars['hq_six_hours'] = radio_with_explanation("יש הפרדה של 6 שעות בין ארוחה בשרית לחלבית?", "hq49", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_tools_marked'] = radio_with_explanation("הכלים מסומנים ויש הפרדה בין בשר לחלב?", "hq50", col=c1)
-            hq_vars['hq_field_cooking'] = radio_with_explanation("מתקיים בישול בשטח / על האש עם פיקוח כשרותי?", "hq51", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_shabbat_comms'] = radio_with_explanation("ישנן פניות ברשת הקשר / טלפוניות לצרכים לא מבצעיים בשבת?", "hq52", col=c1)
-            hq_vars['hq_shabbat_logistics'] = radio_with_explanation("מתקיים ניוד מזון / לוגיסטי בשבת?", "hq53", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_shabbat_movement'] = radio_with_explanation("מתקיים ניוד אנשים לעמדות / שמירות בשבת שלא לצורך מבצעי?", "hq54", col=c1)
-            hq_vars['hq_shabbat_vehicles'] = radio_with_explanation("נסיעות ביחידה בשבת שלא לצרכים מבצעיים?", "hq55", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_shabbat_entry'] = radio_with_explanation("קיימים מנגנוני בקרת כניסה מותאמים לשבת?", "hq56", col=c1)
-            hq_vars['hq_shabbat_pen'] = radio_with_explanation("התאפשר לקבל עט שבת / מקלדת / עכבר שבת?", "hq57", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_shabbat_procedure'] = radio_with_explanation("קיים נוהל שבת – שחרור שעה לפני כניסה, חזרה חצי שעה אחרי?", "hq58", col=c1)
-            hq_vars['hq_shabbat_return'] = radio_with_explanation("בחזרה ממוצ\"ש – לא נדרשו לצאת פחות משעה אחרי השבת?", "hq59", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_shabbat_kiddush'] = radio_with_explanation("התקיים קידוש וסעודת ליל שבת לכל חיילי היחידה?", "hq60", col=c1)
-            hq_vars['hq_shabbat_meal_timing'] = radio_with_explanation("סעודת שבת מתקיימת לאחר סיום התפילה (כשעה ורבע אחרי כניסת שבת)?", "hq61", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_challot'] = radio_with_explanation("קיבלתם חלות / לחמניות שלמות ויין בליל שבת ובשחרית?", "hq62", col=c1)
-            hq_vars['hq_candles'] = radio_with_explanation("יש מקום ונרות להדלקת נרות שבת / ערכת הבדלה?", "hq63", col=c2)
+        st.markdown("#### 👮 שאלון חיילים – רבנות היחידה ונושאים נוספים")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_know_rabbi'] = radio_with_explanation("מכירים את סגל הדת ביחידה (רב / נגד רבנות)?", "hq46", col=c1)
+        hq_vars['hq_kashrut_gaps'] = radio_with_explanation("ישנם פערי כשרות ביחידה בשגרה?", "hq47", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_mehadrin_req'] = radio_with_explanation("ביקשתם מוצרי מהדרין / חלק וקיבלתם?", "hq48", col=c1)
+        hq_vars['hq_six_hours'] = radio_with_explanation("יש הפרדה של 6 שעות בין ארוחה בשרית לחלבית?", "hq49", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_tools_marked'] = radio_with_explanation("הכלים מסומנים ויש הפרדה בין בשר לחלב?", "hq50", col=c1)
+        hq_vars['hq_field_cooking'] = radio_with_explanation("מתקיים בישול בשטח / על האש עם פיקוח כשרותי?", "hq51", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shabbat_comms'] = radio_with_explanation("ישנן פניות ברשת הקשר / טלפוניות לצרכים לא מבצעיים בשבת?", "hq52", col=c1)
+        hq_vars['hq_shabbat_logistics'] = radio_with_explanation("מתקיים ניוד מזון / לוגיסטי בשבת?", "hq53", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shabbat_movement'] = radio_with_explanation("מתקיים ניוד אנשים לעמדות / שמירות בשבת שלא לצורך מבצעי?", "hq54", col=c1)
+        hq_vars['hq_shabbat_vehicles'] = radio_with_explanation("נסיעות ביחידה בשבת שלא לצרכים מבצעיים?", "hq55", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shabbat_entry'] = radio_with_explanation("קיימים מנגנוני בקרת כניסה מותאמים לשבת?", "hq56", col=c1)
+        hq_vars['hq_shabbat_pen'] = radio_with_explanation("התאפשר לקבל עט שבת / מקלדת / עכבר שבת?", "hq57", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shabbat_procedure'] = radio_with_explanation("קיים נוהל שבת – שחרור שעה לפני כניסה, חזרה חצי שעה אחרי?", "hq58", col=c1)
+        hq_vars['hq_shabbat_return'] = radio_with_explanation("בחזרה ממוצ\"ש – לא נדרשו לצאת פחות משעה אחרי השבת?", "hq59", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shabbat_kiddush'] = radio_with_explanation("התקיים קידוש וסעודת ליל שבת לכל חיילי היחידה?", "hq60", col=c1)
+        hq_vars['hq_shabbat_meal_timing'] = radio_with_explanation("סעודת שבת מתקיימת לאחר סיום התפילה (כשעה ורבע אחרי כניסת שבת)?", "hq61", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_challot'] = radio_with_explanation("קיבלתם חלות / לחמניות שלמות ויין בליל שבת ובשחרית?", "hq62", col=c1)
+        hq_vars['hq_candles'] = radio_with_explanation("יש מקום ונרות להדלקת נרות שבת / ערכת הבדלה?", "hq63", col=c2)
             c1, c2 = st.columns(2)
             hq_vars['hq_shabbat_drills'] = radio_with_explanation("מבוצעים תרגילים ותרגולות בשבת?", "hq64", col=c1)
             hq_vars['hq_food_warming'] = radio_with_explanation("נהלי חימום מזון בשבת מתקיימים במטבח ללא פערים?", "hq65", col=c2)
@@ -5335,8 +5408,8 @@ def render_unit_report():
                     
                     st.success("✅ הדוח נשלח בהצלחה ונקלט בחמ״ל!")
                     
-                    # 📨 התראות WhatsApp לבעיות קריטיות
-                    send_whatsapp_alert(data, unit)
+                    # 📨 התראות דוא"ל לבעיות קריטיות
+                    send_email_alerts(data, unit)
                     
                     # 📊 הצגת מה השתנה מהפעם הקודמת
                     render_report_diff(data, unit, base)
