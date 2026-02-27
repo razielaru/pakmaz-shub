@@ -5297,8 +5297,11 @@ def render_executive_summary_dashboard():
         table_html += "</tbody></table>"
         st.markdown(table_html, unsafe_allow_html=True)
     else:
-        st.success("\u2705 No open deficits")
+        st.success("✅ No open deficits")
 
+    st.markdown("---")
+    # 🤖 Weekly Insights Manager - Command Panel
+    render_weekly_insights_control_panel()
     st.markdown("---")
     c1, c2, c3 = st.columns(3)
     with c1: st.metric("📊 Total Reports", len(df) if not df.empty else 0)
@@ -6194,6 +6197,10 @@ def render_ogda_summary_dashboard_v2():
             st.info(f"לא ניתן לטעון טרנד: {e}")
 
     st.markdown("---")
+    # 🤖 Weekly Insights Manager - Command Panel
+    render_weekly_insights_control_panel()
+    
+    st.markdown("---")
 
     # ===== Footer Metrics =====
     footer_cols = st.columns(4)
@@ -6671,12 +6678,6 @@ def main():
                 st.session_state.logged_in = False
                 st.session_state.login_stage = "gallery"
                 st.rerun()
-            
-            # שלב 1: הוסף לקובץ הראשי (app.py) בתוך הסיידבר
-            if st.session_state.role in ['pikud', 'ugda']:
-                st.markdown("---")
-                with st.expander("⚙️ ניהול מערכת", expanded=False):
-                    render_weekly_insights_control_panel()
         if st.session_state.role in ['pikud', 'ugda']: render_command_dashboard()
         else: render_unit_report()
 
