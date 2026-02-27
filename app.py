@@ -2372,7 +2372,7 @@ def render_command_dashboard():
     if role == 'pikud':
         tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🎯 Risk Center", "🔍 אמינות מבקרים", "⚙️ ניהול"])
     else:
-        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map"])
+        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🔍 אמינות מבקרים"])
     
     # ===== טאב 1: סקירה כללית =====
     with tabs[0]:
@@ -3421,32 +3421,32 @@ def render_command_dashboard():
         with tabs[7]:
             render_risk_command_center(df, accessible_units)
 
-    # ===== טאב 9: אמינות מבקרים (רק פיקוד) =====
-    if role == 'pikud':
-        with tabs[8]:
-            st.markdown("## 🔍 אמינות מבקרים")
-            if not df.empty and 'inspector' in df.columns:
-                inspectors = df['inspector'].dropna().unique()
-                if len(inspectors) > 0:
-                    for inspector in sorted(inspectors):
-                        cred = calculate_inspector_credibility(inspector, df)
-                        col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
-                        with col1:
-                            st.markdown(f"**{inspector}**")
-                        with col2:
-                            st.metric("ציון", f"{cred['score']:.0f}")
-                        with col3:
-                            st.metric("% ליקויים", f"{cred['defect_rate']:.0f}%")
-                        with col4:
-                            st.markdown(
-                                f"<span style='color:{cred['color']}'>{cred['credibility']}</span>",
-                                unsafe_allow_html=True
-                            )
-                        st.divider()
-                else:
-                    st.info("אין מבקרים רשומים")
+    # ===== טאב: אמינות מבקרים =====
+    reliability_tab_index = 8 if role == 'pikud' else 7
+    with tabs[reliability_tab_index]:
+        st.markdown("## 🔍 אמינות מבקרים")
+        if not df.empty and 'inspector' in df.columns:
+            inspectors = df['inspector'].dropna().unique()
+            if len(inspectors) > 0:
+                for inspector in sorted(inspectors):
+                    cred = calculate_inspector_credibility(inspector, df)
+                    col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
+                    with col1:
+                        st.markdown(f"**{inspector}**")
+                    with col2:
+                        st.metric("ציון", f"{cred['score']:.0f}")
+                    with col3:
+                        st.metric("% ליקויים", f"{cred['defect_rate']:.0f}%")
+                    with col4:
+                        st.markdown(
+                            f"<span style='color:{cred['color']}'>{cred['credibility']}</span>",
+                            unsafe_allow_html=True
+                        )
+                    st.divider()
             else:
-                st.info("אין נתוני מבקרים")
+                st.info("אין מבקרים רשומים")
+        else:
+            st.info("אין נתוני מבקרים")
 
     # ===== טאב 10: ניהול (רק פיקוד) =====
     if role == 'pikud':
@@ -5752,6 +5752,169 @@ def render_weekly_questions_widget():
             st.balloons()
 
 
+def render_weekly_insights_control_panel():
+    """
+    🎛️ פאנל בקרה מנהלי — עדכן שאלות בלחיצת כפתור
+    הכי פשוט, הכי יציב, בלי Cron/Scheduler/Triggers
+    """
+    st.markdown("""
+    <div style='background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+                padding: 20px; border-radius: 12px; margin-bottom: 20px;'>
+        <h2 style='color: white; margin: 0;'>🤖 Weekly Insights Manager</h2>
+    </div>
+    """, unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔄 עדכן שאלות עכשיו", use_container_width=True, type="primary", key="update_weekly_now"):
+            update_weekly_insights_now()
+    with col2:
+        if st.button("📊 ראה את השאלות האחרונות", use_container_width=True, key="show_last_weekly"):
+            show_last_weekly_questions()
+
+
+def update_weekly_insights_now():
+    """
+    🚀 עדכן את כל השאלות עכשיו
+    כל מה שצריך: לחיצה אחת על כפתור
+    """
+    with st.spinner("⏳ מעדכן שאלות... זה לוקח 10 שניות"):
+        try:
+            # 1. יצור טבלה אם לא קיימת
+            create_weekly_insights_table()
+            # 2. מחק שאלות של שבוע שעבר
+            delete_old_insights()
+            # 3. הכן את כל היחידות
+            all_units = HATMAR_UNITS + COMMAND_UNITS
+            new_insights_count = 0
+            for unit in all_units:
+                try:
+                    role = get_user_role(unit)
+                    accessible = get_accessible_units(unit, role)
+                    insights = generate_weekly_questions(unit, accessible)
+                    # שמור כל insight
+                    for insight_type, insight_data in insights.items():
+                        if isinstance(insight_data, dict) and 'question' in insight_data:
+                            save_insight(unit, insight_type, insight_data)
+                            new_insights_count += 1
+                except Exception as e:
+                    print(f"⚠️ {unit}: {str(e)[:50]}")
+            # 4. הצג הצלחה
+            st.success(f"✅ עדכנו {new_insights_count} שאלות חדשות!")
+            st.balloons()
+            time.sleep(2)
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ שגיאה: {str(e)}")
+
+
+def create_weekly_insights_table():
+    """
+    🔧 יצור טבלה פעם אחת בלבד
+    """
+    sql = """
+    CREATE TABLE IF NOT EXISTS weekly_insights (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        week_start DATE NOT NULL DEFAULT CURRENT_DATE,
+        unit TEXT NOT NULL,
+        insight_type TEXT NOT NULL,
+        previous_value INT DEFAULT 0,
+        current_value INT DEFAULT 0,
+        change_direction TEXT,
+        ai_question TEXT NOT NULL,
+        ai_suggestion TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(week_start, unit, insight_type)
+    );
+    CREATE INDEX IF NOT EXISTS idx_weekly_insights_unit 
+    ON weekly_insights(unit, week_start DESC);
+    """
+    try:
+        # חלק את ה-SQL לשתי הצהרות
+        for statement in sql.split(';'):
+            if statement.strip():
+                supabase.postgrest.client.execute(statement)
+    except Exception as e:
+        if "already exists" not in str(e).lower():
+            print(f"⚠️ {str(e)[:100]}")
+
+
+def delete_old_insights():
+    """
+    🗑️ מחק שאלות מ-7 ימים אחרונים
+    כדי לא להיות כפילויות
+    """
+    try:
+        week_ago = (pd.Timestamp.now() - pd.Timedelta(days=7)).strftime('%Y-%m-%d')
+        supabase.table("weekly_insights") \
+            .delete() \
+            .gte("week_start", week_ago) \
+            .execute()
+    except Exception as e:
+        print(f"⚠️ לא הצלחנו למחוק: {str(e)[:50]}")
+
+
+def save_insight(unit: str, insight_type: str, insight_data: dict):
+    """
+    💾 שמור insight אחד
+    """
+    try:
+        supabase.table("weekly_insights").insert({
+            "week_start": pd.Timestamp.now().strftime('%Y-%m-%d'),
+            "unit": unit,
+            "insight_type": insight_type,
+            "previous_value": insight_data.get('previous', insight_data.get('open', 0)),
+            "current_value": insight_data.get('current', insight_data.get('closed_this_week', 0)),
+            "change_direction": insight_data.get('trend', 'unknown'),
+            "ai_question": insight_data.get('question', ''),
+            "ai_suggestion": insight_data.get('suggestion', '')
+        }).execute()
+    except Exception as e:
+        if "violates unique constraint" not in str(e):
+            print(f"⚠️ שגיאה בשמירה: {str(e)[:50]}")
+
+
+def show_last_weekly_questions():
+    """
+    📋 הצג את השאלות האחרונות שנוצרו
+    """
+    try:
+        result = supabase.table("weekly_insights") \
+            .select("*") \
+            .order("created_at", desc=True) \
+            .limit(20) \
+            .execute()
+        if result.data:
+            df = pd.DataFrame(result.data)
+            # עצב את התצוגה
+            st.markdown("### 📊 שאלות זה עתה:")
+            for _, row in df.iterrows():
+                unit = row['unit']
+                insight_type = row['insight_type']
+                question = row['ai_question']
+                suggestion = row.get('ai_suggestion', '')
+                # צבע לפי סוג
+                color_map = {
+                    'kashrut': '#f59e0b',
+                    'eruv': '#ef4444',
+                    'deficits': '#3b82f6',
+                    'performance': '#10b981',
+                    'anomalies': '#ec4899'
+                }
+                color = color_map.get(insight_type, '#64748b')
+                st.markdown(f"""
+                <div style='background: {color}15; border-left: 4px solid {color};
+                            padding: 15px; border-radius: 8px; margin-bottom: 12px;'>
+                    <strong style='color: {color};'>{unit} • {insight_type.upper()}</strong><br/>
+                    <div style='margin-top: 8px; font-size: 15px;'>{question}</div>
+                    {f'<div style="margin-top: 8px; color: #64748b; font-size: 13px;">💡 {suggestion}</div>' if suggestion else ''}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("📭 אין שאלות עדיין. לחץ על 'עדכן שאלות עכשיו'")
+    except Exception as e:
+        st.warning(f"⚠️ לא ניתן לטעון: {str(e)}")
+
+
 def render_ogda_summary_dashboard_v2():
 
     """Ogda Dashboard v2 - enhanced design with rich visuals."""
@@ -6483,6 +6646,12 @@ def main():
                 st.session_state.logged_in = False
                 st.session_state.login_stage = "gallery"
                 st.rerun()
+            
+            # שלב 1: הוסף לקובץ הראשי (app.py) בתוך הסיידבר
+            if st.session_state.role == 'pikud':
+                st.markdown("---")
+                with st.expander("⚙️ ניהול מערכת", expanded=False):
+                    render_weekly_insights_control_panel()
         if st.session_state.role in ['pikud', 'ugda']: render_command_dashboard()
         else: render_unit_report()
 
