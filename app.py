@@ -20,7 +20,7 @@ import math
 from typing import Tuple, Optional, List, Dict
 import folium
 from streamlit_folium import st_folium
-st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")
+st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")  # title intentionally unchanged
 
 # ===== פונקציות עזר למיקום וחישוב מרחקים =====
 
@@ -485,16 +485,21 @@ except:
 
 # --- 3. קונפיגורציה ---
 HATMAR_UNITS = [
-    "חטמ״ר בנימין", "חטמ״ר שומרון", "חטמ״ר יהודה", 
-    "חטמ״ר עציון", "חטמ״ר אפרים", "חטמ״ר מנשה", "חטמ״ר הבקעה"
+    "חטמ״ר בנימין", "חטמ״ר שומרון", "חטמ״ר יהודה",
+    "חטמ״ר עציון", "חטמ״ר אפרים", "חטמ״ר מנשה", "חטמ״ר הבקעה",
+    "חטיבה 35", "חטיבה 89", "חטיבה 900"
 ]
-COMMAND_UNITS = ["אוגדת 877", "אוגדת 96", "פיקוד מרכז"]
+# חטיבות ללא טרקלין ויקוק
+NO_LOUNGE_WECOOK_UNITS = {"חטיבה 35", "חטיבה 89", "חטיבה 900"}
+COMMAND_UNITS = ["אוגדת 877", "אוגדת 96", "אוגדת 98", "פיקוד מרכז"]
 ALL_UNITS = HATMAR_UNITS + COMMAND_UNITS
 
 UNIT_ID_MAP = {
     "חטמ״ר בנימין": "binyamin", "חטמ״ר שומרון": "shomron", "חטמ״ר יהודה": "yehuda",
     "חטמ״ר עציון": "etzion", "חטמ״ר אפרים": "efraim", "חטמ״ר מנשה": "menashe",
-    "חטמ״ר הבקעה": "habikaa", "אוגדת 977": "ugdat_977", "אוגדת 96": "ugda_96",
+    "חטמ״ר הבקעה": "habikaa",
+    "חטיבה 35": "hativa_35", "חטיבה 89": "hativa_89", "חטיבה 900": "hativa_900",
+    "אוגדת 877": "ugdat_877", "אוגדת 96": "ugda_96", "אוגדת 98": "ugda_98",
     "פיקוד מרכז": "pikud"
 }
 
@@ -573,6 +578,8 @@ def get_user_role(unit_name):
     if unit_name == "פיקוד מרכז": return "pikud"
     # בדיקה לאוגדה - גם "אוגדה" וגם "אוגדת"
     if "אוגדה" in unit_name or "אוגדת" in unit_name: return "ugda"
+    # חטיבות נכנסות כחטמ"ר (hatmar)
+    if unit_name in NO_LOUNGE_WECOOK_UNITS: return "hatmar"
     try:
         res = supabase.table("unit_passwords").select("role").eq("unit_name", unit_name).execute()
         if res.data and res.data[0].get("role"): return res.data[0]["role"]
@@ -1937,7 +1944,7 @@ def create_hierarchy_flowchart():
         hierarchy_data = supabase.table("hierarchy").select("*").execute().data
         
         if not hierarchy_data:
-            return "```mermaid\ngraph TD\n    PIKUD[\"🎖️ פיקוד מרכז\"]\n    U1[\"⭐ אוגדת 877\"]\n    U2[\"⭐ אוגדת 96\"]\n    PIKUD --> U1\n    PIKUD --> U2\n    \n    style PIKUD fill:#1e3a8a,stroke:#1e40af,stroke-width:3px,color:#fff\n    style U1 fill:#3b82f6,stroke:#2563eb,stroke-width:2px,color:#fff\n    style U2 fill:#3b82f6,stroke:#2563eb,stroke-width:2px,color:#fff\n```"
+            return "```mermaid\ngraph TD\n    PIKUD[\"🎖️ פיקוד מרכז\"]\n    U1[\"⭐ אוגדת 877\"]\n    U2[\"⭐ אוגדת 96\"]\n    U3[\"⭐ אוגדת 98\"]\n    PIKUD --> U1\n    PIKUD --> U2\n    PIKUD --> U3\n    \n    style PIKUD fill:#1e3a8a,stroke:#1e40af,stroke-width:3px,color:#fff\n    style U1 fill:#3b82f6,stroke:#2563eb,stroke-width:2px,color:#fff\n    style U2 fill:#3b82f6,stroke:#2563eb,stroke-width:2px,color:#fff\n    style U3 fill:#059669,stroke:#047857,stroke-width:2px,color:#fff\n```"
         
         # בניית הגרף
         mermaid_code = "```mermaid\ngraph TD\n"
@@ -3476,7 +3483,7 @@ def render_command_dashboard():
                 with st.form("assign_hierarchy"):
                     col1, col2 = st.columns(2)
                     with col1:
-                        parent = st.selectbox("אוגדה (Parent)", [u for u in COMMAND_UNITS if u != "פיקוד מרכז"])
+                        parent = st.selectbox("אוגדה (Parent)", [u for u in COMMAND_UNITS if u not in ("פיקוד מרכז",)])
                     with col2:
                         child = st.selectbox("חטמ״ר (Child)", HATMAR_UNITS)
                     
@@ -4270,23 +4277,31 @@ def render_unit_report():
     k_heater = radio_with_explanation("האם יש חימום נפרד בין בשר ודגים?", "k11", col=c1)
     k_app = radio_with_explanation("האם מולאה אפליקציה?", "k12", col=c2)
     
-    st.markdown("### ☕ טרקלין")
-    c1, c2 = st.columns(2)
-    t_private = radio_with_explanation("האם יש כלים פרטיים?", "t1", col=c1)
-    t_kitchen_tools = radio_with_explanation("האם יש כלי מטבח?", "t2", col=c2)
-    c1, c2 = st.columns(2)
-    t_procedure = radio_with_explanation("האם נשמר נוהל סגירה?", "t3", col=c1)
-    t_friday = radio_with_explanation("האם הכלים החשמליים סגורים בשבת?", "t4", col=c2)
-    t_app = radio_with_explanation("האם מולאה אפליקציה לטרקלין?", "t5")
-        
-    st.markdown("### 🍳 WeCook ויקווק")
-    w_location = st.text_input("מיקום הוויקוק")
-    c1, c2 = st.columns(2)
-    w_private = radio_with_explanation("האם יש כלים פרטיים בוויקוק?", "w1", col=c1)
-    w_kitchen_tools = radio_with_explanation("האם יש כלי מטבח בוויקוק?", "w2", col=c2)
-    c1, c2 = st.columns(2)
-    w_procedure = radio_with_explanation("האם עובד לפי פקודה?", "w3", col=c1)
-    w_guidelines = radio_with_explanation("האם יש הנחיות?", "w4", col=c2)
+    # טרקלין ויקוק – רק ליחידות שיש להן (לא לחטיבה 35/89/900)
+    _show_lounge_wecook = unit not in NO_LOUNGE_WECOOK_UNITS
+    if _show_lounge_wecook:
+        st.markdown("### ☕ טרקלין")
+        c1, c2 = st.columns(2)
+        t_private = radio_with_explanation("האם יש כלים פרטיים?", "t1", col=c1)
+        t_kitchen_tools = radio_with_explanation("האם יש כלי מטבח?", "t2", col=c2)
+        c1, c2 = st.columns(2)
+        t_procedure = radio_with_explanation("האם נשמר נוהל סגירה?", "t3", col=c1)
+        t_friday = radio_with_explanation("האם הכלים החשמליים סגורים בשבת?", "t4", col=c2)
+        t_app = radio_with_explanation("האם מולאה אפליקציה לטרקלין?", "t5")
+
+        st.markdown("### 🍳 WeCook ויקווק")
+        w_location = st.text_input("מיקום הוויקוק")
+        c1, c2 = st.columns(2)
+        w_private = radio_with_explanation("האם יש כלים פרטיים בוויקוק?", "w1", col=c1)
+        w_kitchen_tools = radio_with_explanation("האם יש כלי מטבח בוויקוק?", "w2", col=c2)
+        c1, c2 = st.columns(2)
+        w_procedure = radio_with_explanation("האם עובד לפי פקודה?", "w3", col=c1)
+        w_guidelines = radio_with_explanation("האם יש הנחיות?", "w4", col=c2)
+    else:
+        # ברירת מחדל ריקה ליחידות ללא טרקלין/ויקוק
+        t_private = t_kitchen_tools = t_procedure = t_friday = t_app = "לא רלוונטי"
+        w_location = ""
+        w_private = w_kitchen_tools = w_procedure = w_guidelines = "לא רלוונטי"
     
     st.markdown("### ⚠️ חוסרים")
     missing = st.text_area("פירוט חוסרים")
@@ -4389,9 +4404,13 @@ def render_unit_report():
             "הפרדה במטבח": k_separation, "תדריך טבחים": k_briefing, "רכש חוץ": k_products, "דף תאריכים": k_dates,
             "שטיפת ירק": k_leafs, "חירור גסטרונומים": k_holes, "בדיקת ביצים": k_eggs, "חדר מכ״ש": k_machshir,
             "חימום נפרד": k_heater, "אפליקציה במטבח": k_app,
-            "כלים פרטיים טרקלין": t_private, "כלי מטבח טרקלין": t_kitchen_tools, "נוהל סגירה טרקלין": t_procedure,
-            "סגור בשבת טרקלין": t_friday, "אפליקציה טרקלין": t_app,
-            "כלים פרטיים ויקוק": w_private, "כלי מטבח ויקוק": w_kitchen_tools, "נהלים ויקוק": w_procedure, "הנחיות ויקוק": w_guidelines,
+            # טרקלין ויקוק – רק אם רלוונטי ליחידה
+            **({
+                "כלים פרטיים טרקלין": t_private, "כלי מטבח טרקלין": t_kitchen_tools,
+                "נוהל סגירה טרקלין": t_procedure, "סגור בשבת טרקלין": t_friday, "אפליקציה טרקלין": t_app,
+                "כלים פרטיים ויקוק": w_private, "כלי מטבח ויקוק": w_kitchen_tools,
+                "נהלים ויקוק": w_procedure, "הנחיות ויקוק": w_guidelines,
+            } if _show_lounge_wecook else {}),
             "ימי ישיבה": soldier_yeshiva, "רצון לשיעור": soldier_want_lesson, "שיעור קיים": soldier_has_lesson,
             "מענה כשרותי": soldier_food, "אימונים בשבת": soldier_shabbat_training, "מכיר את הרב": soldier_knows_rabbi,
             "זמני תפילות": soldier_prayers, "שיח מפקדים": soldier_talk_cmd
