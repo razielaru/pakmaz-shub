@@ -3097,13 +3097,43 @@ def render_executive_ai_brief(df: pd.DataFrame, accessible_units: list):
                     st.markdown(response.text)
                 else:
                     st.error("כל מודלי Gemini נכשלו. בדוק מפתח API.")
-
-            except KeyError:
-                st.warning("⚠️ חסר מפתח Gemini ב-secrets.toml")
-            except ImportError:
-                st.warning("⚠️ חסרה חבילת google-generativeai")
             except Exception as e:
-                st.error(f"❌ שגיאה: {e}")
+                st.error(f"שגיאה אסטרטגית: {e}")
+
+    # 🆕 חיזוי וסיכונים עתידיים (Predictive)
+    st.markdown("---")
+    st.markdown("#### 🔮 מנוע חיזוי סיכונים (שבוע קרוב)")
+    mri_df = calculate_mri(df)
+    c1, c2 = st.columns(2)
+    with c1:
+        unit_to_predict = st.selectbox("בחר יחידה לחיזוי:", ["כלל היחידות"] + list(mri_df["יחידה"].unique()))
+        if unit_to_predict != "כלל היחידות":
+            risk = predict_unit_risk_next_week(unit_to_predict, df)
+            if risk.get("level") == "high":
+                st.error(f"⚠️ {risk['prediction']}")
+            else:
+                st.success(f"✅ {risk['prediction']}")
+    
+    with c2:
+        st.markdown("##### 🏹 סדר עדיפויות חכם (AI Priority Queue)")
+        if st.toggle("הצג תור עדיפויות", value=False):
+            with st.spinner("מדרג משימות..."):
+                queue = generate_smart_priority_queue(df, accessible_units)
+                for item in queue:
+                    st.markdown(f"**{item.get('priority', '?')}. {item.get('issue', '???')}**")
+                    st.caption(f"💡 סיבה: {item.get('reason', '')}")
+
+    # 🆕 חיפוש סמנטי (Semantic Search)
+    st.markdown("---")
+    st.markdown("#### 🔍 חיפוש סמנטי חכם (AI Search)")
+    search_q = st.text_input("חפש בדוחות (לדוגמה: 'מוצבים עם תקלות כשרות חוזרות', 'דיווחים על עירוב פסול השבוע'):")
+    if search_q:
+        with st.spinner("ה-AI סורק את הדוחות..."):
+            results = semantic_search_reports(search_q, df)
+            if not results.empty:
+                st.dataframe(results[['unit', 'base', 'date', 'inspector', 'k_issues', 'e_status']], use_container_width=True)
+            else:
+                st.info("לא נמצאו תוצאות רלוונטיות.")
 
 
 
@@ -3153,6 +3183,357 @@ def analyze_report_with_ai(base_name: str, report_data: dict) -> dict:
         pass
     # ברירת מחדל בטוחה — אף פעם לא חוסם שמירה
     return {"risk_level": "לא סווג", "sla": "טרם נקבע", "recommended_action": "נדרשת בחינה ידנית"}
+
+
+def analyze_photo_with_vision(image_bytes: bytes) -> dict:
+    """שימוש ב-Gemini Vision לניתוח תמונות מהשטח"""
+    import google.generativeai as genai
+    import base64
+    import json as _json
+
+    try:
+        genai.configure(api_key=st.secrets["gemini"]["api_key"])
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        image_data = base64.b64encode(image_bytes).decode()
+
+        prompt = """
+        אתה מומחה רבנות צבאית. נתח תמונה זו ודווח:
+        1. האם רואים בעיות כשרות גלויות? (ערבוב, אוכל לא כשר)
+        2. מצב ניקיון המטבח (1-5)
+        3. האם רואים מזוזות / היעדרן
+        4. בעיות עירוב גלויות
+        5. ציון אמינות הדוח (האם התמונה תואמת את הדיווח?)
+        
+        ענה בפורמט JSON בלבד עם מפתחות באנגלית: kashrut_issues, kitchen_cleanliness, mezuzot, eruv_issues, reliability_score.
+        """
+
+        response = model.generate_content([
+            {"mime_type": "image/jpeg", "data": image_data},
+            prompt
+        ])
+        clean = response.text.strip().replace("```json", "").replace("```", "").strip()
+        return _json.loads(clean)
+    except Exception:
+        return {}
+
+
+def transcribe_voice_note(audio_bytes: bytes) -> str:
+    """תמלול הקלטות קוליות מהשטח באמצעות Gemini"""
+    import google.generativeai as genai
+    import base64
+
+    try:
+        genai.configure(api_key=st.secrets["gemini"]["api_key"])
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        audio_b64 = base64.b64encode(audio_bytes).decode()
+
+        response = model.generate_content([
+            {"mime_type": "audio/mp3", "data": audio_b64},
+            "תמלל את ההקלטה לעברית וחלץ ממנה ממצאי ביקורת כשרות בפורמט טקסט חופשי קצר"
+        ])
+        return response.text
+    except Exception:
+        return "שגיאה בתמלול"
+
+
+def ml_anomaly_detection(df: pd.DataFrame) -> pd.DataFrame:
+    """זיהוי דוחות חשודים (אנומליות) באמצעות Isolation Forest"""
+    try:
+        from sklearn.ensemble import IsolationForest
+        import numpy as np
+
+        if df.empty or len(df) < 10:
+            return df
+
+        # בחירת מאפיינים לניתוח
+        features = []
+        for _, row in df.iterrows():
+            features.append([
+                1 if row.get('k_cert') == 'כן' else 0,
+                1 if row.get('e_status') == 'תקין' else 0,
+                int(row.get('r_mezuzot_missing', 0) or 0),
+                1 if row.get('p_mix') == 'לא' else 0,
+            ])
+
+        X = np.array(features)
+        clf = IsolationForest(contamination=0.1, random_state=42)
+        df['anomaly_score'] = clf.fit_predict(X)
+        df['is_suspicious'] = df['anomaly_score'] == -1
+
+        return df
+    except Exception:
+        return df
+
+
+def semantic_search_reports(query: str, df: pd.DataFrame) -> pd.DataFrame:
+    """חיפוש סמנטי חכם בדוחות באמצעות Gemini"""
+    import google.generativeai as genai
+    import json as _json
+
+    try:
+        if df.empty: return df
+        genai.configure(api_key=st.secrets["gemini"]["api_key"])
+
+        # תקציר דוחות (50 אחרונים)
+        summary = df[['unit', 'base', 'date', 'k_issues', 'e_status']].tail(50).to_string()
+
+        prompt = f"""
+        שאילתה: {query}
+        נתונים: {summary}
+        החזר רשימת אינדקסים (indices) של השורות הרלוונטיות ביותר מתוך הנתונים לעיל.
+        ענה בפורמט JSON בלבד: {{"relevant_indices": [0, 5, 23]}}
+        """
+
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        response = model.generate_content(prompt)
+        clean = response.text.strip().replace("```json", "").replace("```", "").strip()
+        result = _json.loads(clean)
+        indices = result.get('relevant_indices', [])
+        return df.iloc[indices] if indices else df.head(0)
+    except Exception:
+        return df.head(0)
+
+
+def predict_unit_risk_next_week(unit: str, df: pd.DataFrame) -> dict:
+    """ניבוי סיכונים לשבוע הקרוב מבוסס מגמות"""
+    unit_df = df[df['unit'] == unit].copy()
+    if len(unit_df) < 5:
+        return {"prediction": "אין מספיק נתונים לחיזוי מהימן"}
+
+    if 'date' not in unit_df.columns:
+        return {"prediction": "חסר שדה תאריך"}
+
+    unit_df['date'] = pd.to_datetime(unit_df['date'], errors='coerce')
+    unit_df['day_of_week'] = unit_df['date'].dt.dayofweek
+
+    # בדיקת דפוס חזרתי בשישי
+    friday_issues = unit_df[unit_df['day_of_week'] == 4]
+    if friday_issues.empty:
+        return {"prediction": "לא זוהה דפוס סיכון שבועי מובהק"}
+
+    eruv_fail_rate = (friday_issues['e_status'] == 'פסול').mean() if 'e_status' in friday_issues.columns else 0
+
+    if eruv_fail_rate > 0.3:
+        return {
+            "prediction": f"סיכון גבוה ({eruv_fail_rate*100:.0f}%) לתקלת עירוב בשישי הקרוב",
+            "level": "high",
+            "type": "Eruv"
+        }
+    return {"prediction": "המערכת חוזה יציבות בשבוע הקרוב", "level": "low"}
+
+
+def generate_smart_priority_queue(df: pd.DataFrame, accessible_units: list) -> list:
+    """יצירת תור עדיפויות חכם לטיפול בליקויים"""
+    import google.generativeai as genai
+    import json as _json
+
+    issues = []
+    for unit in accessible_units:
+        u_df = df[df['unit'] == unit] if not df.empty else pd.DataFrame()
+        if not u_df.empty:
+            latest = u_df.sort_values('date').iloc[-1]
+            if latest.get('e_status') == 'פסול':
+                issues.append(f"{unit}: עירוב פסול במוצב {latest.get('base')}")
+            if latest.get('k_cert') == 'לא':
+                issues.append(f"{unit}: חסרה תעודת כשרות ב{latest.get('base')}")
+            if latest.get('k_issues') == 'כן':
+                issues.append(f"{unit}: תקלת כשרות דווחה ב{latest.get('base')}")
+
+    if not issues: return []
+
+    try:
+        genai.configure(api_key=st.secrets["gemini"]["api_key"])
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        prompt = f"""דרג את רשימת הליקויים הבאה לפי דחיפות טיפול (1 - הכי דחוף).
+        שקול: השפעה על כשרות החיילים והלכה. החזר JSON: [{{"priority": 1, "issue": "...", "reason": "..."}}]
+        ליקויים: {chr(10).join(issues[:10])}"""
+
+        response = model.generate_content(prompt)
+        clean = response.text.strip().replace("```json", "").replace("```", "").strip()
+        return _json.loads(clean)
+    except Exception:
+        return [{"priority": i+1, "issue": iss} for i, iss in enumerate(issues[:5])]
+
+
+def calculate_inspector_credibility(inspector: str, df: pd.DataFrame) -> dict:
+    """חישוב ציון אמינות למבקר לפי רמת הפירוט והליקויים שנמצאו"""
+    insp_df = df[df['inspector'] == inspector]
+    if insp_df.empty:
+        return {"score": 50, "credibility": "אין נתונים", "color": "#64748b", "defect_rate": 0}
+    
+    # 1. אחוז ליקויים (מבקר שמוצא 0 ליקויים ב-100% מהמקרים הוא חשוד)
+    defect_cols = ['k_issues', 'e_status', 'r_mezuzot_missing']
+    found_defects = 0
+    for _, row in insp_df.iterrows():
+        if row.get('k_issues') == 'כן' or row.get('e_status') == 'פסול' or (row.get('r_mezuzot_missing', 0) or 0) > 0:
+            found_defects += 1
+    
+    defect_rate = (found_defects / len(insp_df)) * 100
+    
+    # 2. רמת פירוט (הערות חופשיות)
+    notes_len = insp_df['notes'].fillna('').apply(len).mean() if 'notes' in insp_df.columns else 0
+    
+    # חישוב ציון (פירמידה: מעט מדי ליקויים = חשוד, המון ליקויים = חשוד/שטח בעייתי, פירוט גבוה = אמין)
+    score = 70 # בסיס
+    if defect_rate < 5: score -= 30 # חשד ל"כיסוי ראש" (הכל תקין תמיד)
+    if notes_len > 50: score += 20 # פירוט גבוה
+    if notes_len < 10: score -= 10 # פירוט נמוך
+    
+    score = max(0, min(100, score))
+    
+    if score >= 80: return {"score": score, "credibility": "אמינות גבוהה", "color": "#10b981", "defect_rate": defect_rate}
+    if score >= 50: return {"score": score, "credibility": "אמינות בינונית", "color": "#f59e0b", "defect_rate": defect_rate}
+    return {"score": score, "credibility": "חשד לחוסר אמינות", "color": "#ef4444", "defect_rate": defect_rate}
+
+
+def count_unvisited_bases_this_week(df: pd.DataFrame, unit: str) -> int:
+    """ספירת מוצבים שלא בוקרו ב-7 הימים האחרונים"""
+    import datetime
+    if df.empty or 'base' not in df.columns: return 0
+    
+    unit_df = df[df['unit'] == unit]
+    bases = unit_df['base'].unique()
+    
+    unvisited = 0
+    now = datetime.datetime.now()
+    week_ago = now - datetime.timedelta(days=7)
+    
+    for base in bases:
+        base_df = unit_df[unit_df['base'] == base]
+        latest_visit = pd.to_datetime(base_df['date']).max()
+        if pd.isna(latest_visit) or latest_visit < week_ago:
+            unvisited += 1
+    return unvisited
+
+
+def render_bases_status_board(df: pd.DataFrame, unit: str):
+    """לוח ירוק/צהוב/אדום לכל מוצב - פשוט ומהיר לקריאה"""
+    st.markdown("### 🗺️ לוח מצב מוצבים (רמזור)")
+    if df.empty or 'base' not in df.columns:
+        st.info("אין מוצבים רשומים בחטיבה")
+        return
+    
+    bases = df[df['unit'] == unit]['base'].unique() if unit else df['base'].unique()
+    cols = st.columns(min(len(bases), 3) if len(bases) > 0 else 1)
+    
+    for i, base in enumerate(bases):
+        base_df = df[df['base'] == base].sort_values('date', ascending=False)
+        latest = base_df.iloc[0] if not base_df.empty else None
+        if latest is None: continue
+            
+        try:
+            last_date = pd.to_datetime(latest['date'])
+            days_ago = (pd.Timestamp.now() - last_date).days
+        except Exception: days_ago = 99
+        
+        has_eruv_fail = latest.get('e_status') == 'פסול'
+        has_kashrut_fail = latest.get('k_cert') == 'לא'
+        is_old = days_ago > 7
+        
+        if has_eruv_fail or has_kashrut_fail:
+            border_color, status_icon, status_text, bg_color = "#dc2626", "🔴", "דורש טיפול", "#fee2e2"
+        elif is_old:
+            border_color, status_icon, status_text, bg_color = "#f59e0b", "🟡", f"לא בוקר {days_ago} ימים", "#fef3c7"
+        else:
+            border_color, status_icon, status_text, bg_color = "#10b981", "🟢", "תקין", "#d1fae5"
+        
+        with cols[i % 3]:
+            st.markdown(f"""
+            <div style='background:{bg_color};border-right:5px solid {border_color};
+                        padding:14px;border-radius:10px;margin-bottom:12px;min-height:120px;'>
+                <div style='font-size:18px;font-weight:800;'>{status_icon} {base}</div>
+                <div style='color:#374151;font-size:13px;margin-top:6px;'>
+                    📅 לפני {days_ago} ימים<br/>
+                    👤 {latest.get('inspector','?')}<br/>
+                    <b>{status_text}</b>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+
+def render_shabbat_preparation_assistant(unit: str, df: pd.DataFrame):
+    """עוזר הכנה לשבת (AI) - מייצר לו"ז משימות ליום שישי"""
+    import google.generativeai as genai
+    st.markdown("### 🕯️ עוזר הכנה לשבת (AI)")
+    
+    open_issues = []
+    if not df.empty:
+        latest_by_base = df[df['unit'] == unit].sort_values('date').groupby('base').tail(1)
+        for _, row in latest_by_base.iterrows():
+            if row.get('e_status') == 'פסול': open_issues.append(f"עירוב פסול ב{row['base']}")
+            if row.get('k_cert') == 'לא': open_issues.append(f"כשרות חסרה ב{row['base']}")
+
+    if st.button("⚡ ג'נרט רשימת משימות ליום שישי", type="primary", use_container_width=True):
+        with st.spinner("ה-AI בונה עבורך תכנית עבודה..."):
+            try:
+                genai.configure(api_key=st.secrets["gemini"]["api_key"])
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                context = f"רב חטמ״ר {unit}. בעיות: {', '.join(open_issues) if open_issues else 'אין'}"
+                response = model.generate_content(f"צור לו\"ז משימות צבאי ליום שישי לרב חטמ״ר: {context}. פורמט: שעה - משימה.")
+                st.info(response.text)
+            except Exception as e: st.error(f"שגיאה: {e}")
+
+
+def render_halachic_advisor():
+    """יועץ הלכתי מהיר (AI) לשאלות מהשטח"""
+    import google.generativeai as genai
+    st.markdown("### 📖 יועץ הלכתי מהיר (AI)")
+    q = st.text_input("שאלת הלכה מהשטח (לדוגמה: עירוב שנקרע בשישי):")
+    if q and st.button("💡 קבל מענה ראשוני"):
+        with st.spinner("מעיין במקורות..."):
+            try:
+                genai.configure(api_key=st.secrets["gemini"]["api_key"])
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                res = model.generate_content(f"ענה בקצרה כרב צבאי על שאלת הלכה: {q}. ציין מקור והדגש שזו תשובה ראשונית בלבד.")
+                st.success(res.text)
+            except Exception as e: st.error(f"שגיאה: {e}")
+
+
+def render_inspector_management(unit: str, df: pd.DataFrame):
+    """ניהול מבקרים ואמינות דוחות"""
+    st.markdown("### 👥 ניהול מבקרים ואמינות")
+    if df.empty: return
+    inspectors = df[df['unit'] == unit]['inspector'].unique() if unit else df['inspector'].unique()
+    
+    for insp in inspectors:
+        cred = calculate_inspector_credibility(insp, df)
+        st.write(f"**{insp}** | מדד אמינות: <span style='color:{cred['color']}'>{cred['score']}% ({cred['credibility']})</span>", unsafe_allow_html=True)
+
+
+def render_weekly_report_generator(unit: str, df: pd.DataFrame):
+    """מחולל דוח שבועי (AI) מוכן לשליחה לאוגדה"""
+    import google.generativeai as genai
+    st.markdown("### 📤 מחולל דוח שבועי לאוגדה")
+    if st.button("🤖 נסח דוח שבועי (שפה צבאית)", use_container_width=True):
+        with st.spinner("מנסח דוח רשמי..."):
+            try:
+                genai.configure(api_key=st.secrets["gemini"]["api_key"])
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                summary = df[df['unit'] == unit].tail(10).to_string() if not df.empty else "אין נתונים"
+                res = model.generate_content(f"כתוב דוח שבועי רשמי בשפה צבאית לרב האוגדה על חטיבת {unit} לפי הנתונים: {summary}")
+                st.code(res.text, language="markdown")
+            except Exception as e: st.error(f"שגיאה: {e}")
+
+
+def render_hatmar_rabbi_dashboard():
+    """דשבורד רב חטמ״ר - הכל במקום אחד (Mobile Friendly)"""
+    unit = st.session_state.selected_unit
+    role = st.session_state.role
+    accessible_units = get_accessible_units(unit, role)
+    raw_data = load_reports_cached(accessible_units)
+    df = pd.DataFrame(raw_data)
+
+    st.markdown(f"## 📱 דשבורד רב החטיבה - {unit}")
+    
+    t1, t2, t3, t4 = st.tabs(["🚦 סטטוס מוצבים", "🕯️ הכנה לשבת", "📖 הלכה", "📊 ניהול ודיווח"])
+    
+    with t1: render_bases_status_board(df, unit)
+    with t2: render_shabbat_preparation_assistant(unit, df)
+    with t3: render_halachic_advisor()
+    with t4:
+        render_inspector_management(unit, df)
+        st.divider()
+        render_weekly_report_generator(unit, df)
 
 
 def render_command_dashboard():
@@ -3212,9 +3593,9 @@ def render_command_dashboard():
 
     # טאבים לפי תפקיד
     if role == 'pikud':
-        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🎯 Risk Center", "🔍 אמינות מבקרים", "⚙️ ניהול", "🧠 מוח פיקודי", "💬 עוזר AI"])
+        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🎯 Risk Center", "🔍 אמינות מבקרים", "⚙️ ניהול", "🧠 מוח פיקודי", "📱 דשבורד חטמ״ר", "💬 עוזר AI"])
     else:
-        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🔍 אמינות מבקרים", "🧠 מוח פיקודי", "💬 עוזר AI"])
+        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🔍 אמינות מבקרים", "🧠 מוח פיקודי", "📱 דשבורד חטמ״ר", "💬 עוזר AI"])
     
     # ===== טאב 1: סקירה כללית =====
     with tabs[0]:
@@ -4423,13 +4804,20 @@ def render_command_dashboard():
     # ===== טאב 🧠 מוח פיקודי (AI Brain) =====
     if role == 'pikud':
         brain_tab_idx = 10
-        ai_chat_tab_idx = 11
+        hatmar_dash_tab_idx = 11
+        ai_chat_tab_idx = 12
     else:
         brain_tab_idx = 8
-        ai_chat_tab_idx = 9
+        hatmar_dash_tab_idx = 9
+        ai_chat_tab_idx = 10
     if len(tabs) > brain_tab_idx:
         with tabs[brain_tab_idx]:
             render_executive_ai_brief(df, accessible_units if isinstance(accessible_units, list) else list(accessible_units))
+
+    # ===== טאב 📱 דשבורד חטמ״ר =====
+    if len(tabs) > hatmar_dash_tab_idx:
+        with tabs[hatmar_dash_tab_idx]:
+            render_hatmar_rabbi_dashboard()
 
     # ===== טאב 💬 עוזר AI - האחרון =====
     if len(tabs) > ai_chat_tab_idx:
@@ -5277,6 +5665,16 @@ def render_unit_report():
     # TAB 1: כשרות (Kitchen, Pillbox, WeCook)
     # ===========================================
     with tab1:
+        # 🎤 דווח בקול (AI)
+        with st.expander("🎤 דווח בקול (AI Transcription)", expanded=False):
+            audio_file = st.file_uploader("העלה הקלטה קולית (mp3) לדיווח מהיר", type=['mp3'], key="voice_report")
+            if audio_file:
+                with st.spinner("מחלץ נתונים מהקול..."):
+                    voice_text = transcribe_voice_note(audio_file.getvalue())
+                    st.success("✅ תמלול בוצע!")
+                    st.info(voice_text)
+                    if st.button("📝 העתק להערות הכלליות"):
+                        st.session_state.voice_note_transcription = voice_text
         _show_pillbox = unit not in NO_LOUNGE_WECOOK_UNITS
         if _show_pillbox:
             st.markdown("#### 🏠 פילבוקס / הגנ״ש")
@@ -5724,6 +6122,20 @@ def render_unit_report():
         st.markdown("### 📸 צילומים וחתימה")
         photo = st.file_uploader("📸 תמונה כללית (חובה)", type=['jpg', 'png', 'jpeg'], key="main_report_photo")
         
+        # 🧠 ניתוח ראייה ממוחשבת (Vision AI)
+        if photo:
+            with st.spinner("🧠 המוח הפיקודי מנתח את התמונה..."):
+                vision_analysis = analyze_photo_with_vision(photo.getvalue())
+                if vision_analysis:
+                    st.markdown("##### 👓 ממצאי AI מהתמונה:")
+                    c_v1, c_v2 = st.columns(2)
+                    with c_v1:
+                        st.write(f"🧼 ניקיון מטבח: {vision_analysis.get('kitchen_cleanliness', '?')}/5")
+                        st.write(f"📜 מזוזות: {vision_analysis.get('mezuzot', 'לא אותר')}")
+                    with c_v2:
+                        st.write(f"🥩 כשרות: {vision_analysis.get('kashrut_issues', 'תקין')}")
+                        st.write(f"🔍 אמינות דיווח: {vision_analysis.get('reliability_score', '?')}")
+        
         # תמונות כשרות מועברות לטאב 1
         # k_issues_photo (Tab 1), k_shabbat_photo (Tab 1)
         # רק לוודא שהמשתנים מאותחלים
@@ -5839,7 +6251,8 @@ def render_unit_report():
                     "soldier_lesson_phone": soldier_lesson_phone,      # 🆕
                     "soldier_food": soldier_food,
                     "soldier_shabbat_training": soldier_shabbat_training, "soldier_knows_rabbi": soldier_knows_rabbi,
-                    "soldier_prayers": soldier_prayers, "soldier_talk_cmd": soldier_talk_cmd, "free_text": free_text,
+                    "soldier_prayers": soldier_prayers, "soldier_talk_cmd": soldier_talk_cmd, 
+                    "free_text": free_text + (f"\n[תמלול קולי]: {st.session_state.get('voice_note_transcription', '')}" if st.session_state.get('voice_note_transcription') else ""),
                     "time": str(time_v), "p_pakal": p_pakal, "missing_items": missing,
                     "r_mezuzot_missing": r_mezuzot_missing, "k_cook_type": k_cook_type,
                     "p_marked": p_marked, "p_mix": p_mix, "p_kasher": p_kasher,
@@ -5939,6 +6352,7 @@ def render_unit_report():
                     render_report_diff(data, unit, base)
                     
                     clear_cache()
+                    st.session_state.voice_note_transcription = None # 🧼 ניקוי תמלול
                     time.sleep(4)  # תוספת זמן לקריאת ה-Diff
                     st.rerun()
                 except Exception as e:
@@ -7916,3 +8330,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
