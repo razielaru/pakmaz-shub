@@ -12,3 +12,4 @@ jinja2
 openpyxl
 twilio
 streamlit-drawable-canvas
+google-generativeai==0.8.3
