@@ -5806,7 +5806,7 @@ def render_unit_report():
             w_private = w_kitchen_tools = w_procedure = w_guidelines = "לא רלוונטי"
 
         st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
-            <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[1].click()" 
+            <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[3].click()" 
                 style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
                 ⬅️ עבור לטאב הבא: 🕍 בית כנסת ועירוב
             </button></div>""", height=70)
@@ -5866,7 +5866,7 @@ def render_unit_report():
                 "האם יש שילוט על התקני שבת הזמינים?", "hq_sdb", col=c1)
 
         st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
-            <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[2].click()" 
+            <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[4].click()" 
                 style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
                 ⬅️ עבור לטאב הבא: 📜 נהלים ורוח
             </button></div>""", height=70)
@@ -5928,7 +5928,7 @@ def render_unit_report():
             soldier_talk_cmd = radio_with_explanation("האם יש שיח מפקדים?", "so6", col=c2)
 
         st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
-            <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[3].click()" 
+            <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[5].click()" 
                 style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
                 ⬅️ עבור לטאב הבא: 📖 שיחת חתך
             </button></div>""", height=70)
@@ -6088,7 +6088,7 @@ def render_unit_report():
         hq_vars['hq_alt_activity'] = radio_with_explanation("ישנה פעילות אלטרנטיבית לאוכלוסייה הדתית כשלא ניתן להשתתף בפעילות היחידה?", "hq95", col=c1)
         hq_vars['hq_cmd_sensitivity'] = radio_with_explanation("המפקדים רגישים לצרכים הדתיים (תפילות ועוד)?", "hq96", col=c2)
         st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
-            <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[4].click()" 
+            <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[6].click()" 
                 style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
                 ⬅️ עבור לטאב הבא: ⚠️ חוסרים ושליחה
             </button></div>""", height=70)
