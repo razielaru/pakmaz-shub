@@ -2876,11 +2876,13 @@ def _build_data_context(df: pd.DataFrame, accessible_units: list) -> str:
 
 
 def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
-    """צ'טבוט AI לשאלות על הנתונים - Claude Haiku"""
-    st.markdown("### 🤖 עוזר AI - שאל שאלות על הנתונים")
+    """צ'טבוט AI לשאלות על הנתונים - מבוסס מודל Gemini"""
+    st.markdown("### 🤖 עוזר פיקודי AI (Powered by Gemini)")
+
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
+    # תצוגת היסטוריית השיחה
     for msg in st.session_state.chat_history[-6:]:
         role_icon = "👤" if msg["role"] == "user" else "🤖"
         bg = "#f1f5f9" if msg["role"] == "user" else "#eff6ff"
@@ -2903,32 +2905,46 @@ def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
     if send_pressed and user_question:
         context = _build_data_context(df, accessible_units)
         try:
-            api_key = st.secrets["anthropic"]["api_key"]
-            import urllib.request as _ureq, json as _json
-            payload = {
-                "model": "claude-haiku-4-5-20251001",
-                "max_tokens": 600,
-                "system": f"אתה עוזר AI של מערכת רבנות פיקוד מרכז. ענה בעברית בלבד. היה תמציתי.\nנתונים:\n{context}",
-                "messages": [
-                    *[{"role": m["role"], "content": m["content"]} for m in st.session_state.chat_history[-4:]],
-                    {"role": "user", "content": user_question}
-                ]
-            }
-            req = _ureq.Request(
-                "https://api.anthropic.com/v1/messages",
-                data=_json.dumps(payload).encode(),
-                headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+            import google.generativeai as genai
+
+            # טעינת מפתח ה-API של גוגל
+            api_key = st.secrets["gemini"]["api_key"]
+            genai.configure(api_key=api_key)
+
+            # הגדרת תפקיד המערכת והזרקת הנתונים
+            system_instruction = (
+                f"אתה עוזר AI של מערכת רבנות פיקוד מרכז. "
+                f"ענה בעברית נקייה ומדויקת בלבד. הייה תמציתי, חכם ומקצועי. "
+                f"נתונים עדכניים מהשטח:\n{context}"
             )
-            with _ureq.urlopen(req, timeout=15) as resp:
-                result = _json.loads(resp.read())
-                answer = result['content'][0]['text']
+
+            # אתחול המודל
+            model = genai.GenerativeModel(
+                model_name="gemini-1.5-flash",
+                system_instruction=system_instruction
+            )
+
+            # המרת היסטוריית השיחה לפורמט שג'מיני דורש
+            gemini_history = []
+            for m in st.session_state.chat_history[-4:]:
+                role = "user" if m["role"] == "user" else "model"
+                gemini_history.append({"role": role, "parts": [m["content"]]})
+
+            # שליחת השאלה לג'מיני
+            chat = model.start_chat(history=gemini_history)
+            response = chat.send_message(user_question)
+
+            # שמירת התשובה ורענון
             st.session_state.chat_history.append({"role": "user", "content": user_question})
-            st.session_state.chat_history.append({"role": "assistant", "content": answer})
+            st.session_state.chat_history.append({"role": "assistant", "content": response.text})
             st.rerun()
+
         except KeyError:
-            st.warning("⚠️ הוסף anthropic.api_key ל-secrets.toml")
+            st.warning("⚠️ לא נמצא מפתח API של Gemini. הוסף [gemini] ו-api_key לקובץ הסודות (secrets.toml).")
+        except ImportError:
+            st.warning("⚠️ חסרה חבילת google-generativeai. הוסף אותה לקובץ requirements.txt")
         except Exception as e:
-            st.error(f"שגיאה: {e}")
+            st.error(f"❌ שגיאה בתקשורת עם שרתי גוגל: {e}")
 
 
 def render_command_dashboard():
@@ -5106,12 +5122,18 @@ def render_unit_report():
                 _mandatory_warnings.append("📷 חובה לצלם תמונה של תקלת כשרות לפני שליחה")
         k_shabbat_supervisor_name = ""
         k_shabbat_supervisor_phone = ""
+        k_shabbat_photo = None
         if k_shabbat_supervisor == "כן":
             with c2:
                 col_sup_name, col_sup_phone = st.columns(2)
                 k_shabbat_supervisor_name = col_sup_name.text_input("שם נאמן כשרות", key="k_sup_name")
                 k_shabbat_supervisor_phone = col_sup_phone.text_input("טלפון נאמן", key="k_sup_phone")
-        # (Photos moved to Tab 5)
+                current_day = datetime.datetime.now().weekday()
+                if current_day in [3, 4]:
+                    k_shabbat_photo = st.file_uploader("📷 תמונת נאמן ⚠️ (חובה בחמישי-שישי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo_tab1")
+                else:
+                    k_shabbat_photo = st.file_uploader("📷 תמונת נאמן (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo_tab1")
+        # (Photos in Tab 1)
 
         # רשימת שאלות כשרות לשאפל
         kashrut_questions = [
@@ -5170,14 +5192,11 @@ def render_unit_report():
             w_location = ""
             w_private = w_kitchen_tools = w_procedure = w_guidelines = "לא רלוונטי"
 
-        st.markdown("""
-        <div style='text-align:center;margin-top:16px;'>
-            <button onclick="(function(){var tabs=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(tabs[1])tabs[1].click();})()" 
-                style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);'>
-                עבור לטאב הבא: 🕍 בית כנסת ועירוב ⬅️
-            </button>
-        </div>
-        """, unsafe_allow_html=True)
+        st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
+            <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[1].click()" 
+                style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
+                ⬅️ עבור לטאב הבא: 🕍 בית כנסת ועירוב
+            </button></div>""", height=70)
 
     # ===========================================
     # TAB 2: בית כנסת ועירוב
@@ -5233,14 +5252,11 @@ def render_unit_report():
             hq_shabbat_device_board = radio_with_explanation(
                 "האם יש שילוט על התקני שבת הזמינים?", "hq_sdb", col=c1)
 
-        st.markdown("""
-        <div style='text-align:center;margin-top:16px;'>
-            <button onclick="(function(){var tabs=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(tabs[2])tabs[2].click();})()" 
-                style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);'>
-                עבור לטאב הבא: 📜 נהלים ורוח ⬅️
-            </button>
-        </div>
-        """, unsafe_allow_html=True)
+        st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
+            <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[2].click()" 
+                style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
+                ⬅️ עבור לטאב הבא: 📜 נהלים ורוח
+            </button></div>""", height=70)
 
     # ===========================================
     # TAB 3: נהלים ורוח (Procedures, Torah, Shichat Chetek)
@@ -5298,14 +5314,11 @@ def render_unit_report():
         else:
             soldier_talk_cmd = radio_with_explanation("האם יש שיח מפקדים?", "so6", col=c2)
 
-        st.markdown("""
-        <div style='text-align:center;margin-top:16px;'>
-            <button onclick="(function(){var tabs=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(tabs[3])tabs[3].click();})()" 
-                style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);'>
-                עבור לטאב הבא: 📖 שיחת חתך ⬅️
-            </button>
-        </div>
-        """, unsafe_allow_html=True)
+        st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
+            <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[3].click()" 
+                style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
+                ⬅️ עבור לטאב הבא: 📖 שיחת חתך
+            </button></div>""", height=70)
 
     # ===========================================
     # TAB 4: שיחת חתך (35/89/900 only)
@@ -5461,14 +5474,11 @@ def render_unit_report():
         c1, c2 = st.columns(2)
         hq_vars['hq_alt_activity'] = radio_with_explanation("ישנה פעילות אלטרנטיבית לאוכלוסייה הדתית כשלא ניתן להשתתף בפעילות היחידה?", "hq95", col=c1)
         hq_vars['hq_cmd_sensitivity'] = radio_with_explanation("המפקדים רגישים לצרכים הדתיים (תפילות ועוד)?", "hq96", col=c2)
-        st.markdown("""
-        <div style='text-align:center;margin-top:16px;'>
-            <button onclick="(function(){var tabs=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(tabs[4])tabs[4].click();})()" 
-                style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);'>
-                עבור לטאב הבא: ⚠️ חוסרים ושליחה ⬅️
-            </button>
-        </div>
-        """, unsafe_allow_html=True)
+        st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
+            <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[4].click()" 
+                style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
+                ⬅️ עבור לטאב הבא: ⚠️ חוסרים ושליחה
+            </button></div>""", height=70)
 
     # ===========================================
     # TAB 5: חוסרים ושליחה (Deficits + Submit)
@@ -5499,20 +5509,13 @@ def render_unit_report():
         st.markdown("### 📸 צילומים וחתימה")
         photo = st.file_uploader("📸 תמונה כללית (חובה)", type=['jpg', 'png', 'jpeg'], key="main_report_photo")
         
-        c1, c2 = st.columns(2)
-        k_issues_photo = None
-        if k_issues == "כן":
-            k_issues_photo = c1.file_uploader("📷 תמונת תקלה (אם יש)", type=['jpg', 'png', 'jpeg'], key="k_issues_photo_tab5")
-        
-        current_day = datetime.datetime.now().weekday()
-        k_shabbat_photo = None
-        if k_shabbat_supervisor == "כן":
-            if current_day in [3, 4]:
-                k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן ⚠️ (חובה בחמישי-שישי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo_tab5")
-            else:
-                k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo_tab5")
+        # תמונות כשרות מועברות לטאב 1
+        # k_issues_photo (Tab 1), k_shabbat_photo (Tab 1)
+        # רק לוודא שהמשתנים מאותחלים
+        if 'k_issues_photo' not in dir():
+            k_issues_photo = None
 
-        # חתימה דיגיטלית הוסרה לפי בקשת המשתמש
+
         sig_url = True  # מאפשר שליחה ללא חתימה
 
         
@@ -6819,9 +6822,9 @@ def update_weekly_insights_now():
                 try:
                     role = get_user_role(unit)
                     accessible = get_accessible_units(unit, role)
-                    insights_list = generate_weekly_questions(unit, accessible)
-                    # שמור כל insight ברשימה
-                    for insight_data in insights_list:
+                    insights_dict = generate_weekly_questions(unit, accessible)
+                    # שמור כל insight מהמילון
+                    for insight_data in insights_dict.values():
                         if isinstance(insight_data, dict) and 'question' in insight_data:
                             i_type = insight_data.get('type', 'general')
                             save_insight(unit, i_type, insight_data)
