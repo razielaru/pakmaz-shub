@@ -1,4 +1,3 @@
-
 import streamlit as st
 from supabase import create_client, Client
 import pandas as pd
@@ -193,11 +192,37 @@ def send_email_alerts(report_data: dict, unit: str):
         server.quit()
         
         st.toast(f"📧 התראה נשלחה בדוא\"ל ל-{len(recipients)} נמענים", icon="✅")
+        # שליחת WhatsApp במקביל
+        try:
+            send_whatsapp_alert("🚨 התראה - " + unit + ": " + " | ".join(alerts), unit)
+        except Exception:
+            pass
         log_audit_event("EMAIL_ALERT", unit,
                         details={"alerts": alerts, "recipients": recipients, "base": report_data.get("base")},
                         severity="warning")
     except Exception as e:
         print(f"⚠️ שגיאה בשליחת Email: {e}")
+
+
+def send_whatsapp_alert(message: str, unit: str):
+    """שולח WhatsApp לרבני חטמ״ר דרך CallMeBot - ללא Twilio, ללא עלות"""
+    try:
+        result = supabase.table("whatsapp_numbers")\
+            .select("phone,callmebot_key")\
+            .eq("unit", unit)\
+            .eq("active", True)\
+            .execute()
+        if not result.data:
+            return
+        import urllib.parse, urllib.request as _ureq
+        for row in result.data:
+            phone = row['phone']
+            key = row['callmebot_key']
+            encoded = urllib.parse.quote(message)
+            url = f"https://api.callmebot.com/whatsapp.php?phone={phone}&text={encoded}&apikey={key}"
+            _ureq.urlopen(url, timeout=5)
+    except Exception as e:
+        print(f"WhatsApp error: {e}")
 
 
 # ════════════════════════════════════════════════════════════
@@ -2749,6 +2774,162 @@ def get_stored_password_hash_dummy(unit):
     return "INVALID"
 
 # --- 9. Dashboards ---
+
+# ════════════════════════════════════════════════════════════
+# SLA Dashboard - מעקב זמן תגובה לחוסרים
+# ════════════════════════════════════════════════════════════
+def render_sla_dashboard(accessible_units_list: list):
+    """מציג progress bars לחוסרים עם מעקב SLA 7 ימים"""
+    try:
+        result = supabase.table("deficits").select("*")            .in_("unit", accessible_units_list)            .eq("status", "open")            .execute()
+        open_deficits = pd.DataFrame(result.data) if result.data else pd.DataFrame()
+    except Exception as e:
+        st.warning(f"⚠️ לא ניתן לטעון חוסרים: {e}")
+        return
+
+    if open_deficits.empty:
+        st.success("✅ אין חוסרים פתוחים כרגע")
+        return
+
+    open_deficits = open_deficits.copy()
+    open_deficits['days_open'] = (
+        pd.Timestamp.now() -
+        pd.to_datetime(open_deficits['detected_date'], errors='coerce').dt.tz_localize(None)
+    ).dt.days.fillna(0).astype(int)
+    open_deficits = open_deficits.sort_values('days_open', ascending=False)
+
+    st.markdown("#### ⏱️ מעקב SLA - זמן עד סגירה")
+    SLA_DAYS = 7
+    deficit_names = {
+        'mezuzot': '📜 מזוזות',
+        'eruv_kelim': '🔴 ערבוב כלים',
+        'kashrut_cert': '🍽️ כשרות',
+        'eruv_status': '🚧 עירוב פסול',
+        'shabbat_supervisor': '👤 נאמן שבת'
+    }
+
+    for _, deficit in open_deficits.iterrows():
+        days = int(deficit['days_open'])
+        pct = min(100, int((days / SLA_DAYS) * 100))
+        if days > SLA_DAYS:
+            bar_color = "#ef4444"
+            status = f"⚠️ עבר SLA ב-{days - SLA_DAYS} ימים!"
+        elif days >= SLA_DAYS - 1:
+            bar_color = "#f59e0b"
+            status = "⚡ נותרו פחות מיומיים"
+        else:
+            bar_color = "#10b981"
+            status = f"✅ {SLA_DAYS - days} ימים עד SLA"
+
+        type_label = deficit_names.get(deficit.get('deficit_type', ''), deficit.get('deficit_type', '?'))
+        col_info, col_close = st.columns([5, 1])
+        with col_info:
+            st.markdown(f"""
+            <div style='margin-bottom:12px;padding:10px;background:#f8fafc;
+                        border-radius:8px;border-right:4px solid {bar_color};'>
+                <div style='display:flex;justify-content:space-between;margin-bottom:6px;'>
+                    <span><b>{type_label}</b> — {deficit.get('base','?')} ({deficit.get('unit','?')})</span>
+                    <span style='color:{bar_color};font-weight:600;'>{status}</span>
+                </div>
+                <div style='background:#e2e8f0;height:10px;border-radius:5px;'>
+                    <div style='width:{pct}%;height:100%;background:{bar_color};
+                                border-radius:5px;'></div>
+                </div>
+                <div style='font-size:12px;color:#64748b;margin-top:4px;'>יום {days} מתוך {SLA_DAYS}</div>
+            </div>""", unsafe_allow_html=True)
+        with col_close:
+            deficit_id = deficit.get('id', '')
+            if deficit_id and st.button("✅", key=f"sla_{deficit_id}", use_container_width=True, help="סגור חוסר"):
+                try:
+                    supabase.table("deficits").update({"status": "closed"}).eq("id", deficit_id).execute()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"שגיאה: {e}")
+    st.markdown("---")
+
+
+# ════════════════════════════════════════════════════════════
+# AI Chatbot לשאילתות בעברית
+# ════════════════════════════════════════════════════════════
+def _build_data_context(df: pd.DataFrame, accessible_units: list) -> str:
+    """בונה context תמציתי מהנתונים לצ'טבוט"""
+    if df.empty:
+        return "אין נתונים זמינים"
+    lines = [f"סה\"כ דוחות: {len(df)}", f"יחידות פעילות: {df['unit'].nunique() if 'unit' in df.columns else '?'}"]
+    if 'e_status' in df.columns:
+        lines.append(f"עירובין פסולים: {len(df[df['e_status'] == 'פסול'])}")
+    if 'k_cert' in df.columns:
+        lines.append(f"ללא תעודת כשרות: {len(df[df['k_cert'] == 'לא'])}")
+    if 'r_mezuzot_missing' in df.columns:
+        mez = int(pd.to_numeric(df['r_mezuzot_missing'], errors='coerce').fillna(0).sum())
+        lines.append(f"מזוזות חסרות: {mez}")
+    for unit in (accessible_units or [])[:5]:
+        unit_df = df[df['unit'] == unit] if 'unit' in df.columns else pd.DataFrame()
+        if not unit_df.empty:
+            try:
+                score = calculate_unit_score(unit_df)
+                lines.append(f"{unit}: ציון {score:.0f}")
+            except Exception:
+                pass
+    return "\n".join(lines)
+
+
+def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
+    """צ'טבוט AI לשאלות על הנתונים - Claude Haiku"""
+    st.markdown("### 🤖 עוזר AI - שאל שאלות על הנתונים")
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    for msg in st.session_state.chat_history[-6:]:
+        role_icon = "👤" if msg["role"] == "user" else "🤖"
+        bg = "#f1f5f9" if msg["role"] == "user" else "#eff6ff"
+        st.markdown(f"""<div style='background:{bg};padding:10px;border-radius:8px;margin-bottom:6px;direction:rtl;'>
+            <b>{role_icon}</b> {msg["content"]}</div>""", unsafe_allow_html=True)
+
+    user_question = st.text_input(
+        "שאל שאלה על הנתונים...",
+        placeholder='לדוגמה: כמה מוצבים יש עם עירוב פסול? מה המגמה?',
+        key="ai_chat_input"
+    )
+    col_send, col_clear = st.columns([3, 1])
+    with col_send:
+        send_pressed = st.button("📤 שלח", key="ai_chat_send", use_container_width=True)
+    with col_clear:
+        if st.button("🗑️ נקה", key="ai_chat_clear", use_container_width=True):
+            st.session_state.chat_history = []
+            st.rerun()
+
+    if send_pressed and user_question:
+        context = _build_data_context(df, accessible_units)
+        try:
+            api_key = st.secrets["anthropic"]["api_key"]
+            import urllib.request as _ureq, json as _json
+            payload = {
+                "model": "claude-haiku-4-5-20251001",
+                "max_tokens": 600,
+                "system": f"אתה עוזר AI של מערכת רבנות פיקוד מרכז. ענה בעברית בלבד. היה תמציתי.\nנתונים:\n{context}",
+                "messages": [
+                    *[{"role": m["role"], "content": m["content"]} for m in st.session_state.chat_history[-4:]],
+                    {"role": "user", "content": user_question}
+                ]
+            }
+            req = _ureq.Request(
+                "https://api.anthropic.com/v1/messages",
+                data=_json.dumps(payload).encode(),
+                headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+            )
+            with _ureq.urlopen(req, timeout=15) as resp:
+                result = _json.loads(resp.read())
+                answer = result['content'][0]['text']
+            st.session_state.chat_history.append({"role": "user", "content": user_question})
+            st.session_state.chat_history.append({"role": "assistant", "content": answer})
+            st.rerun()
+        except KeyError:
+            st.warning("⚠️ הוסף anthropic.api_key ל-secrets.toml")
+        except Exception as e:
+            st.error(f"שגיאה: {e}")
+
+
 def render_command_dashboard():
     role = st.session_state.role
     unit = st.session_state.selected_unit
@@ -2806,9 +2987,9 @@ def render_command_dashboard():
 
     # טאבים לפי תפקיד
     if role == 'pikud':
-        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🎯 Risk Center", "🔍 אמינות מבקרים", "⚙️ ניהול"])
+        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🎯 Risk Center", "🔍 אמינות מבקרים", "⚙️ ניהול", "💬 עוזר AI"])
     else:
-        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🔍 אמינות מבקרים"])
+        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🔍 אמינות מבקרים", "💬 עוזר AI"])
     
     # ===== טאב 1: סקירה כללית =====
     with tabs[0]:
@@ -3644,9 +3825,9 @@ def render_command_dashboard():
     # ===== טאב 5: מעקב חוסרים - מתוקן =====
     with tabs[4]:
         st.markdown("### 📋 מעקב חוסרים פתוחים")
-        
-        # ✅ קבלת חוסרים פתוחים
         accessible_units_list = accessible_units if isinstance(accessible_units, list) else list(accessible_units)
+        render_sla_dashboard(accessible_units_list)
+
         deficits_df = get_open_deficits(accessible_units_list)
         
         # ✅ קבלת סטטיסטיקות מדויקות
@@ -4013,6 +4194,15 @@ def render_command_dashboard():
                             st.rerun()
                         else:
                             st.error("❌ שגיאה בהעלאת הלוגו")
+
+    # ===== טאב AI Chatbot - האחרון =====
+    if role == 'pikud':
+        ai_tab_idx = 10
+    else:
+        ai_tab_idx = 8
+    if len(tabs) > ai_tab_idx:
+        with tabs[ai_tab_idx]:
+            render_ai_chatbot(df, accessible_units if isinstance(accessible_units, list) else list(accessible_units))
 
 def create_enhanced_excel_report(df, unit_name=""):
     """
@@ -4864,7 +5054,7 @@ def render_unit_report():
             c1, c2 = st.columns(2)
             # שאלת קונטרול – מתחלפת כל 3 שבועות
             if _flip == 0:
-                p_mix = radio_with_explanation("האם זוהה ערבוב כלים? ✅[תשובה שלילית = תקין]", "p3", col=c1)
+                p_mix = radio_with_explanation("האם זוהה ערבוב כלים?", "p3", col=c1)
             else:
                 p_mix = radio_with_explanation("האם זוהה ערבוב כלים?", "p3", col=c1)
             p_kasher = radio_with_explanation("האם נדרשת הכשרה כלים?", "p4", col=c2)
@@ -4901,8 +5091,18 @@ def render_unit_report():
         k_issues = radio_with_explanation("יש תקלות כשרות?", "k_issues", col=c1)
         k_shabbat_supervisor = radio_with_explanation("יש נאמן כשרות בשבת?", "k_shabbat_sup", col=c2)
         k_issues_description = ""
+        k_issues_photo = None
         if k_issues == "כן":
             k_issues_description = st.text_area("פרט את תקלות הכשרות שנמצאו", key="k_issues_desc")
+            k_issues_photo = st.file_uploader(
+                "📷 צלם תמונה של תקלת הכשרות (חובה)", 
+                type=['jpg', 'png', 'jpeg'], 
+                key="k_issues_photo_upload",
+                help="חובה לצלם את התקלה לפני שליחת הדוח"
+            )
+            if not k_issues_photo:
+                st.warning("⚠️ נא לצלם תמונה של תקלת הכשרות לפני השליחה")
+                _mandatory_warnings.append("📷 חובה לצלם תמונה של תקלת כשרות לפני שליחה")
         k_shabbat_supervisor_name = ""
         k_shabbat_supervisor_phone = ""
         if k_shabbat_supervisor == "כן":
@@ -4973,7 +5173,7 @@ def render_unit_report():
         <div style='text-align:center;margin-top:16px;'>
             <button onclick="(function(){var tabs=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(tabs[1])tabs[1].click();})()" 
                 style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);'>
-                עבור לטאב הבא: 🕍 בית כנסת ועירוב ➡️
+                עבור לטאב הבא: 🕍 בית כנסת ועירוב ⬅️
             </button>
         </div>
         """, unsafe_allow_html=True)
@@ -5032,26 +5232,11 @@ def render_unit_report():
             hq_shabbat_device_board = radio_with_explanation(
                 "האם יש שילוט על התקני שבת הזמינים?", "hq_sdb", col=c1)
 
-        st.markdown("#### 🕌 בית הכנסת ופרסומים")
-        c1, c2 = st.columns(2)
-        hq_vars['hq_shul_mitzva_items'] = radio_with_explanation("יש פרסום על מקום תשמישי מצווה / קדושה (4 מינים, הבדלה וכד')?", "hq34", col=c1)
-        hq_vars['hq_shul_annex'] = radio_with_explanation("יש נספח הלכתי יחידתי בכל בית כנסת?", "hq35", col=c2)
-        hq_vars['hq_judaism_board'] = radio_with_explanation("לוח יהדות מתעדכן (זמני שבת, תפילות, שיעורים, דרכי תקשורת)?", "hq36")
-        hq_vars['hq_halacha_books'] = radio_with_explanation("קיימים ספרי תורת המחנה, חוברות הלכה, פרסומי \"והגית בו\" נגישים לחיילים?", "hq37")
-
-        st.markdown("#### 🔗 עירוב (חטיבתי)")
-        c1, c2 = st.columns(2)
-        hq_vars['hq_eruv_doc'] = radio_with_explanation("קיים תיעוד בדיקת עירוב?", "hq38", col=c1)
-        hq_vars['hq_eruv_valid'] = radio_with_explanation("העירוב תקין לכל אורכו ומקיף את כלל מסגרות היחידה?", "hq39", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_eruv_cert'] = radio_with_explanation("קיים בביהכ\"נ אישור תקינות עירוב ובדיקתו?", "hq40", col=c1)
-        hq_vars['hq_eruv_map'] = radio_with_explanation("קיים תצ\"א של העירוב עם פירוט ההסבר במשרד הרב?", "hq41", col=c2)
-
         st.markdown("""
         <div style='text-align:center;margin-top:16px;'>
             <button onclick="(function(){var tabs=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(tabs[2])tabs[2].click();})()" 
                 style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);'>
-                עבור לטאב הבא: 📜 נהלים ורוח ➡️
+                עבור לטאב הבא: 📜 נהלים ורוח ⬅️
             </button>
         </div>
         """, unsafe_allow_html=True)
@@ -5097,7 +5282,7 @@ def render_unit_report():
                 soldier_lesson_phone = st.text_input("טלפון מעביר השיעור", key="so_lesson_phone", placeholder="לדוגמה: 050-1234567")
 
         st.markdown("#### 💬 שיחת חתך חיילים")
-        st.caption("שאלות אלו מיועדות לשיחה ישירה עם חיילים בשטח")
+        # caption הוסר
         c1, c2 = st.columns(2)
         # שאלת קונטרול מתחלפת
         if _flip == 1:
@@ -5116,7 +5301,7 @@ def render_unit_report():
         <div style='text-align:center;margin-top:16px;'>
             <button onclick="(function(){var tabs=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(tabs[3])tabs[3].click();})()" 
                 style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);'>
-                עבור לטאב הבא: 📖 שיחת חתך ➡️
+                עבור לטאב הבא: 📖 שיחת חתך ⬅️
             </button>
         </div>
         """, unsafe_allow_html=True)
@@ -5279,7 +5464,7 @@ def render_unit_report():
         <div style='text-align:center;margin-top:16px;'>
             <button onclick="(function(){var tabs=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(tabs[4])tabs[4].click();})()" 
                 style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);'>
-                עבור לטאב הבא: ⚠️ חוסרים ושליחה ➡️
+                עבור לטאב הבא: ⚠️ חוסרים ושליחה ⬅️
             </button>
         </div>
         """, unsafe_allow_html=True)
