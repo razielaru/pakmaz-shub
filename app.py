@@ -2918,11 +2918,19 @@ def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
                 f"נתונים עדכניים מהשטח:\n{context}"
             )
 
-            # אתחול המודל
-            model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash-latest",
-                system_instruction=system_instruction
-            )
+            # אתחול המודל - עם fallback למודל גיבוי
+            for _model_name in ["gemini-1.5-flash", "gemini-1.5-flash-8b"]:
+                try:
+                    model = genai.GenerativeModel(
+                        model_name=_model_name,
+                        system_instruction=system_instruction
+                    )
+                    break
+                except Exception:
+                    continue
+            else:
+                st.error("❌ לא נמצא מודל Gemini זמין. נסה שוב מאוחר יותר.")
+                st.stop()
 
             # המרת היסטוריית השיחה לפורמט שג'מיני דורש
             gemini_history = []
