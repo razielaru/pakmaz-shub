@@ -2918,41 +2918,45 @@ def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
                 f"נתונים עדכניים מהשטח:\n{context}"
             )
 
-            # אתחול המודל - עם fallback למודל גיבוי
-            for _model_name in ["gemini-1.5-flash", "gemini-1.5-flash-8b"]:
-                try:
-                    model = genai.GenerativeModel(
-                        model_name=_model_name,
-                        system_instruction=system_instruction
-                    )
-                    break
-                except Exception:
-                    continue
-            else:
-                st.error("❌ לא נמצא מודל Gemini זמין. נסה שוב מאוחר יותר.")
-                st.stop()
-
             # המרת היסטוריית השיחה לפורמט שג'מיני דורש
             gemini_history = []
             for m in st.session_state.chat_history[-4:]:
                 role = "user" if m["role"] == "user" else "model"
                 gemini_history.append({"role": role, "parts": [m["content"]]})
 
-            # שליחת השאלה לג'מיני
-            chat = model.start_chat(history=gemini_history)
-            response = chat.send_message(user_question)
+            response = None
 
-            # שמירת התשובה ורענון
-            st.session_state.chat_history.append({"role": "user", "content": user_question})
-            st.session_state.chat_history.append({"role": "assistant", "content": response.text})
-            st.rerun()
+            # אתחול המודל - fallback אמיתי: השגיאה נתפסת ברגע השליחה עצמה
+            models_to_try = ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash"]
+
+            for _model_name in models_to_try:
+                try:
+                    model = genai.GenerativeModel(
+                        model_name=_model_name,
+                        system_instruction=system_instruction
+                    )
+                    chat = model.start_chat(history=gemini_history)
+                    # כאן מתבצעת התקשורת בפועל - כאן השגיאה תקפוץ אם המודל חסום
+                    response = chat.send_message(user_question)
+                    break  # הצלחה - יוצאים מהלולאה
+                except Exception as e:
+                    print(f"⚠️ דילוג על מודל {_model_name}: {e}")
+                    continue
+
+            if response is None:
+                st.error("❌ כל מודלי הגיבוי נכשלו. ייתכן וקיימת חסימת מכסה (Quota) בחשבון Google שלך.")
+            else:
+                st.session_state.chat_history.append({"role": "user", "content": user_question})
+                st.session_state.chat_history.append({"role": "assistant", "content": response.text})
+                st.rerun()
 
         except KeyError:
             st.warning("⚠️ לא נמצא מפתח API של Gemini. הוסף [gemini] ו-api_key לקובץ הסודות (secrets.toml).")
         except ImportError:
             st.warning("⚠️ חסרה חבילת google-generativeai. הוסף אותה לקובץ requirements.txt")
         except Exception as e:
-            st.error(f"❌ שגיאה בתקשורת עם שרתי גוגל: {e}")
+            st.error(f"❌ שגיאה: {e}")
+
 
 
 def render_command_dashboard():
