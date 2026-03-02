@@ -2920,7 +2920,7 @@ def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
 
             # אתחול המודל
             model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash",
+                model_name="gemini-2.0-flash",
                 system_instruction=system_instruction
             )
 
