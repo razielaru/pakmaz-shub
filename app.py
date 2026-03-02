@@ -826,6 +826,66 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ===== מצב לילה/יום – לאחר 17:00 רקע חום חמים וכתב שחור =====
+st.markdown("""
+<style>
+body.night-mode,
+body.night-mode .main,
+body.night-mode [data-testid="stAppViewContainer"],
+body.night-mode [data-testid="stApp"] {
+    background-color: #3D2B1F !important;
+    color: #0a0a0a !important;
+}
+body.night-mode h1, body.night-mode h2, body.night-mode h3,
+body.night-mode h4, body.night-mode h5, body.night-mode h6,
+body.night-mode p, body.night-mode span, body.night-mode div,
+body.night-mode label, body.night-mode .stMarkdown {
+    color: #0a0a0a !important;
+}
+body.night-mode .block-container {
+    background-color: #4A3328 !important;
+}
+body.night-mode input, body.night-mode textarea, body.night-mode select {
+    background-color: #5C3D2E !important;
+    color: #0a0a0a !important;
+    border-color: #7A5040 !important;
+}
+body.night-mode [data-baseweb="tab"] {
+    background-color: #5C3D2E !important;
+    color: #0a0a0a !important;
+}
+body.night-mode [data-baseweb="tab"][aria-selected="true"] {
+    background-color: #8B5E3C !important;
+    color: #000000 !important;
+}
+body.night-mode [data-testid="stAlert"] {
+    background-color: #5C3D2E !important;
+    color: #0a0a0a !important;
+}
+body.night-mode button {
+    background-color: #7A5040 !important;
+    color: #000000 !important;
+}
+body.night-mode [data-testid="stMetric"] {
+    background-color: #5C3D2E !important;
+}
+</style>
+<script>
+(function() {
+    function applyTheme() {
+        var hour = new Date().getHours();
+        if (hour >= 17 || hour < 6) {
+            document.body.classList.add('night-mode');
+        } else {
+            document.body.classList.remove('night-mode');
+        }
+    }
+    applyTheme();
+    setInterval(applyTheme, 60000);
+})();
+</script>
+""", unsafe_allow_html=True)
+
 
 # --- 2. חיבור ל-Supabase ---
 try:
@@ -4682,31 +4742,39 @@ def render_unit_report():
         with barcode_tab_cam:
             expected_barcode = BASE_BARCODES.get(base, "NONE")
             scanner_js = """
-            <div id='barcode-scanner-container'>
-                <video id='barcode-video' width='100%' style='max-height:260px;border-radius:8px;background:#000;'></video>
-                <div id='barcode-feedback' style='padding:10px; border-radius:8px; margin-top:8px; background:#f1f5f9;'>
-                    <p id='barcode-result' style='font-size:18px;font-weight:bold;color:#1e3a8a;margin:0;'>תוצאה: מחכה לסריקה...</p>
+            <div id='barcode-scanner-container' style='font-family:sans-serif;direction:rtl;'>
+                <button onclick='startCamera()' id='start-btn' style='padding:10px 20px;background:#1e3a8a;color:white;border:none;border-radius:8px;font-size:16px;cursor:pointer;margin-bottom:10px;'>
+                    📷 הפעל מצלמה לסריקה
+                </button>
+                <video id='barcode-video' width='100%' style='max-height:260px;border-radius:8px;background:#000;display:none;'></video>
+                <div id='barcode-feedback' style='padding:10px; border-radius:8px; margin-top:8px; background:#f1f5f9;display:none;'>
+                    <p id='barcode-result' style='font-size:18px;font-weight:bold;color:#1e3a8a;margin:0;'>🔍 מחפש ברקוד...</p>
                     <p id='verification-status' style='font-size:14px;margin:4px 0 0 0;color:#64748b;'>סטטוס אימות: טרם נסרק</p>
                 </div>
             </div>
             <script>
-            (function() {
-                const video = document.getElementById('barcode-video');
-                const resultEl = document.getElementById('barcode-result');
-                const statusEl = document.getElementById('verification-status');
-                const feedbackEl = document.getElementById('barcode-feedback');
-                const expected = "{{EXPECTED}}";
-                
-                if (!video) return;
+            var cameraStarted = false;
+            function startCamera() {
+                if (cameraStarted) return;
+                cameraStarted = true;
+                var btn = document.getElementById('start-btn');
+                var video = document.getElementById('barcode-video');
+                var resultEl = document.getElementById('barcode-result');
+                var statusEl = document.getElementById('verification-status');
+                var feedbackEl = document.getElementById('barcode-feedback');
+                var expected = "{{EXPECTED}}";
+                btn.style.display = 'none';
+                video.style.display = 'block';
+                feedbackEl.style.display = 'block';
                 if ('BarcodeDetector' in window) {
-                    const barcodeDetector = new BarcodeDetector({ formats: ['qr_code', 'data_matrix', 'pdf417', 'code_128', 'code_39', 'ean_13'] });
-                    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(stream => {
+                    var barcodeDetector = new BarcodeDetector({ formats: ['qr_code', 'data_matrix', 'pdf417', 'code_128', 'code_39', 'ean_13'] });
+                    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(function(stream) {
                         video.srcObject = stream;
                         video.play();
-                        const scan = () => {
-                            barcodeDetector.detect(video).then(barcodes => {
+                        function scan() {
+                            barcodeDetector.detect(video).then(function(barcodes) {
                                 if (barcodes.length > 0) {
-                                    const val = barcodes[0].rawValue;
+                                    var val = barcodes[0].rawValue;
                                     resultEl.textContent = '✅ נסרק: ' + val;
                                     if (expected !== "NONE") {
                                         if (val === expected) {
@@ -4721,25 +4789,33 @@ def render_unit_report():
                                     } else {
                                         statusEl.textContent = '⚠️ לא הוגדר ברקוד אימות למיקום זה';
                                     }
-                                    stream.getTracks().forEach(t => t.stop());
+                                    stream.getTracks().forEach(function(t) { t.stop(); });
+                                    btn.style.display = 'block';
+                                    btn.textContent = '🔄 סרוק שוב';
+                                    cameraStarted = false;
                                 } else {
                                     requestAnimationFrame(scan);
                                 }
-                            }).catch(() => requestAnimationFrame(scan));
-                        };
+                            }).catch(function() { requestAnimationFrame(scan); });
+                        }
                         scan();
-                    }).catch(err => {
+                    }).catch(function(err) {
                         resultEl.textContent = 'אין גישה למצלמה: ' + err.message;
                         resultEl.style.color = '#ef4444';
+                        btn.style.display = 'block';
+                        cameraStarted = false;
                     });
                 } else {
-                    resultEl.textContent = 'הדפדפן אינו תומך בסריקה. נסה Chrome.';
+                    resultEl.textContent = '⚠️ הדפדפן אינו תומך בסריקה אוטומטית. נסה Chrome עדכני.';
                     resultEl.style.color = '#f59e0b';
+                    btn.style.display = 'block';
+                    cameraStarted = false;
                 }
-            })();
+            }
             </script>
             """.replace("{{EXPECTED}}", expected_barcode)
-            st.markdown(scanner_js, unsafe_allow_html=True)
+            import streamlit.components.v1 as _components
+            _components.html(scanner_js, height=350)
             barcode_manual = st.text_input("📟 או הזן ברקוד ידנית", placeholder="לדוגמא: ABC-12345", key="barcode_manual_input")
             if barcode_manual:
                 st.success(f"📷 ברקוד: {barcode_manual}")
@@ -4765,6 +4841,7 @@ def render_unit_report():
     missing = ""
     free_text = ""
     _mandatory_warnings = []
+    hq_vars = {}  # Pre-initialize so Tab 2 can also populate it
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🍽️ כשרות",
@@ -4892,7 +4969,14 @@ def render_unit_report():
             w_location = ""
             w_private = w_kitchen_tools = w_procedure = w_guidelines = "לא רלוונטי"
 
-        st.info("🔜 יש לעבור לטאב הבא: 🕍 בית כנסת ועירוב")
+        st.markdown("""
+        <div style='text-align:center;margin-top:16px;'>
+            <button onclick="(function(){var tabs=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(tabs[1])tabs[1].click();})()" 
+                style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);'>
+                עבור לטאב הבא: 🕍 בית כנסת ועירוב ➡️
+            </button>
+        </div>
+        """, unsafe_allow_html=True)
 
     # ===========================================
     # TAB 2: בית כנסת ועירוב
@@ -4948,7 +5032,29 @@ def render_unit_report():
             hq_shabbat_device_board = radio_with_explanation(
                 "האם יש שילוט על התקני שבת הזמינים?", "hq_sdb", col=c1)
 
-        st.info("🔜 יש לעבור לטאב הבא: 📜 נהלים ורוח")
+        st.markdown("#### 🕌 בית הכנסת ופרסומים")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_shul_mitzva_items'] = radio_with_explanation("יש פרסום על מקום תשמישי מצווה / קדושה (4 מינים, הבדלה וכד')?", "hq34", col=c1)
+        hq_vars['hq_shul_annex'] = radio_with_explanation("יש נספח הלכתי יחידתי בכל בית כנסת?", "hq35", col=c2)
+        hq_vars['hq_judaism_board'] = radio_with_explanation("לוח יהדות מתעדכן (זמני שבת, תפילות, שיעורים, דרכי תקשורת)?", "hq36")
+        hq_vars['hq_halacha_books'] = radio_with_explanation("קיימים ספרי תורת המחנה, חוברות הלכה, פרסומי \"והגית בו\" נגישים לחיילים?", "hq37")
+
+        st.markdown("#### 🔗 עירוב (חטיבתי)")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_eruv_doc'] = radio_with_explanation("קיים תיעוד בדיקת עירוב?", "hq38", col=c1)
+        hq_vars['hq_eruv_valid'] = radio_with_explanation("העירוב תקין לכל אורכו ומקיף את כלל מסגרות היחידה?", "hq39", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_eruv_cert'] = radio_with_explanation("קיים בביהכ\"נ אישור תקינות עירוב ובדיקתו?", "hq40", col=c1)
+        hq_vars['hq_eruv_map'] = radio_with_explanation("קיים תצ\"א של העירוב עם פירוט ההסבר במשרד הרב?", "hq41", col=c2)
+
+        st.markdown("""
+        <div style='text-align:center;margin-top:16px;'>
+            <button onclick="(function(){var tabs=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(tabs[2])tabs[2].click();})()" 
+                style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);'>
+                עבור לטאב הבא: 📜 נהלים ורוח ➡️
+            </button>
+        </div>
+        """, unsafe_allow_html=True)
 
     # ===========================================
     # TAB 3: נהלים ורוח (Procedures, Torah, Shichat Chetek)
@@ -5006,14 +5112,21 @@ def render_unit_report():
         else:
             soldier_talk_cmd = radio_with_explanation("האם יש שיח מפקדים?", "so6", col=c2)
 
-        st.info("🔜 יש לעבור לטאב הבא: 📖 שיחת חתך (לחטיבות רלוונטיות) או ⚠️ חוסרים ושליחה")
+        st.markdown("""
+        <div style='text-align:center;margin-top:16px;'>
+            <button onclick="(function(){var tabs=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(tabs[3])tabs[3].click();})()" 
+                style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);'>
+                עבור לטאב הבא: 📖 שיחת חתך ➡️
+            </button>
+        </div>
+        """, unsafe_allow_html=True)
 
     # ===========================================
     # TAB 4: שיחת חתך (35/89/900 only)
     # ===========================================
     with tab4:
         _show_halacha = unit in NO_LOUNGE_WECOOK_UNITS
-        hq_vars = {}
+        # hq_vars was pre-initialized before tabs - do NOT reset here to preserve Tab 2 entries
         if not _show_halacha:
             st.info("📌 שיחת חתך   , ,  .")
         else:
@@ -5062,6 +5175,19 @@ def render_unit_report():
             hq_vars['hq_chanuka_lighting'] = radio_with_explanation("נערך טקס הדלקת נרות חנוכה ואפשרו לחיילים להשתתף?", "hq26", col=c1)
             hq_vars['hq_purim_megilla'] = radio_with_explanation("אפשרו לחיילים לשמוע קריאת מגילה בפורים?", "hq27", col=c2)
 
+        st.markdown("#### 👮 שאלון חיילים – רבנות היחידה ונושאים נוספים")
+
+        # צום ותפילות – מועבר מה-heading הנפרד
+        st.markdown("##### 🙏 תפילות")
+        c1, c2 = st.columns(2)
+        hq_vars['hq_prayer_times'] = radio_with_explanation("החיילים מקבלים זמני תפילות לפי פקודות?", "hq42", col=c1)
+        hq_vars['hq_pre_prayer_act'] = radio_with_explanation("עושים פעילות לפני זמן תפילת בוקר?", "hq43", col=c2)
+        c1, c2 = st.columns(2)
+        hq_vars['hq_post_prayer_meal'] = radio_with_explanation("החיילים מקבלים ארוחת בוקר לאחר תפילת הבוקר?", "hq44", col=c1)
+        hq_vars['hq_minyan'] = radio_with_explanation("מאפשרים לחיילים להתפלל במניין (ביחידה בה אפשרי)?", "hq45", col=c2)
+
+        st.markdown("##### 📅 צומות")
+        c1, c2 = st.columns(2)
         hq_vars['hq_rosh_shofar'] = radio_with_explanation("מאפשרים לכל חייל לשמוע קול שופר בראש השנה?", "hq28", col=c1)
         hq_vars['hq_fast_shoes'] = radio_with_explanation("אפשרו לצמים לנעול נעליים ללא עור ביו\"כ ות\"ב (מלבד פעילות מבצעית)?", "hq29", col=c2)
         c1, c2 = st.columns(2)
@@ -5071,30 +5197,8 @@ def render_unit_report():
         hq_vars['hq_tisha_bav_events'] = radio_with_explanation("התקיימו בתשעה באב פעילות בידור / הווי / תרבות?", "hq32", col=c1)
         hq_vars['hq_fast_exempt'] = radio_with_explanation("חיילים צמים שוחררו מפעילות (כולל הוראת קרפ\"ר) לפני ואחרי הצום?", "hq33", col=c2)
 
-        st.markdown("#### 🕌 בית הכנסת ופרסומים")
-        c1, c2 = st.columns(2)
-        hq_vars['hq_shul_mitzva_items'] = radio_with_explanation("יש פרסום על מקום תשמישי מצווה / קדושה (4 מינים, הבדלה וכד')?", "hq34", col=c1)
-        hq_vars['hq_shul_annex'] = radio_with_explanation("יש נספח הלכתי יחידתי בכל בית כנסת?", "hq35", col=c2)
-        hq_vars['hq_judaism_board'] = radio_with_explanation("לוח יהדות מתעדכן (זמני שבת, תפילות, שיעורים, דרכי תקשורת)?", "hq36")
-        hq_vars['hq_halacha_books'] = radio_with_explanation("קיימים ספרי תורת המחנה, חוברות הלכה, פרסומי \"והגית בו\" נגישים לחיילים?", "hq37")
+        st.markdown("##### 🧑‍💼 כשרות ויהדות")
 
-        st.markdown("#### 🔗 עירוב")
-        c1, c2 = st.columns(2)
-        hq_vars['hq_eruv_doc'] = radio_with_explanation("קיים תיעוד בדיקת עירוב?", "hq38", col=c1)
-        hq_vars['hq_eruv_valid'] = radio_with_explanation("העירוב תקין לכל אורכו ומקיף את כלל מסגרות היחידה?", "hq39", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_eruv_cert'] = radio_with_explanation("קיים בביהכ\"נ אישור תקינות עירוב ובדיקתו?", "hq40", col=c1)
-        hq_vars['hq_eruv_map'] = radio_with_explanation("קיים תצ\"א של העירוב עם פירוט ההסבר במשרד הרב?", "hq41", col=c2)
-
-        st.markdown("#### 🙏 תפילות")
-        c1, c2 = st.columns(2)
-        hq_vars['hq_prayer_times'] = radio_with_explanation("החיילים מקבלים זמני תפילות לפי פקודות?", "hq42", col=c1)
-        hq_vars['hq_pre_prayer_act'] = radio_with_explanation("עושים פעילות לפני זמן תפילת בוקר?", "hq43", col=c2)
-        c1, c2 = st.columns(2)
-        hq_vars['hq_post_prayer_meal'] = radio_with_explanation("החיילים מקבלים ארוחת בוקר לאחר תפילת הבוקר?", "hq44", col=c1)
-        hq_vars['hq_minyan'] = radio_with_explanation("מאפשרים לחיילים להתפלל במניין (ביחידה בה אפשרי)?", "hq45", col=c2)
-
-        st.markdown("#### 👮 שאלון חיילים – רבנות היחידה ונושאים נוספים")
         c1, c2 = st.columns(2)
         hq_vars['hq_know_rabbi'] = radio_with_explanation("מכירים את סגל הדת ביחידה (רב / נגד רבנות)?", "hq46", col=c1)
         hq_vars['hq_kashrut_gaps'] = radio_with_explanation("ישנם פערי כשרות ביחידה בשגרה?", "hq47", col=c2)
@@ -5171,7 +5275,14 @@ def render_unit_report():
         c1, c2 = st.columns(2)
         hq_vars['hq_alt_activity'] = radio_with_explanation("ישנה פעילות אלטרנטיבית לאוכלוסייה הדתית כשלא ניתן להשתתף בפעילות היחידה?", "hq95", col=c1)
         hq_vars['hq_cmd_sensitivity'] = radio_with_explanation("המפקדים רגישים לצרכים הדתיים (תפילות ועוד)?", "hq96", col=c2)
-        st.info("🔜 יש לעבור לטאב הבא: ⚠️ חוסרים ושליחה")
+        st.markdown("""
+        <div style='text-align:center;margin-top:16px;'>
+            <button onclick="(function(){var tabs=window.parent.document.querySelectorAll('[data-baseweb=tab]');if(tabs[4])tabs[4].click();})()" 
+                style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);'>
+                עבור לטאב הבא: ⚠️ חוסרים ושליחה ➡️
+            </button>
+        </div>
+        """, unsafe_allow_html=True)
 
     # ===========================================
     # TAB 5: חוסרים ושליחה (Deficits + Submit)
@@ -5215,18 +5326,9 @@ def render_unit_report():
             else:
                 k_shabbat_photo = c2.file_uploader("📷 תמונת נאמן (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo_tab5")
 
-        # חתימה דיגיטלית - תמיד מוצג, אבל שליחה חסומה אם אין חתימה או שיש אזהרות
-        st.markdown("---")
-        st.markdown("### ✍️ חתימת המבקר")
-        sig_url = render_signature_pad()
+        # חתימה דיגיטלית הוסרה לפי בקשת המשתמש
+        sig_url = True  # מאפשר שליחה ללא חתימה
 
-        if _mandatory_warnings:
-            for w in _mandatory_warnings:
-                st.warning(w)
-            st.error("🔴 יש לחזור ולמלא את הטאבים החסרים לפני השליחה.")
-        else:
-            if not sig_url:
-                st.warning("⚠️ חובה לחתום לפני השליחה")
         
         # כפתורי שליחה וטיוטה - תמיד מוצגים (השליחה תהיה חסומה אם יש בעיה)
         st.markdown("---")
