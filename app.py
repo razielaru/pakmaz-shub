@@ -2958,6 +2958,202 @@ def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
             st.error(f"❌ שגיאה: {e}")
 
 
+def calculate_mri(df: pd.DataFrame) -> pd.DataFrame:
+    """חישוב מדד מוכנות מבצעית-רוחנית (MRI) לכל יחידה"""
+    if df.empty or 'unit' not in df.columns:
+        return pd.DataFrame()
+
+    mri_data = []
+    for unit in df['unit'].unique():
+        u = df[df['unit'] == unit].copy()
+        total = len(u)
+
+        # כשרות: תקלות אינן + תעודות
+        k_issues_count = (u.get('k_issues', pd.Series()) == 'כן').sum() if 'k_issues' in u.columns else 0
+        k_cert_fail   = (u.get('k_cert',   pd.Series()) == 'לא').sum()  if 'k_cert'   in u.columns else 0
+
+        # עירוב: סטטוס פסול
+        eruv_fail = (u.get('e_status', pd.Series()) == 'פסול').sum() if 'e_status' in u.columns else 0
+
+        # סטייט סיכון
+        eruv_open = int(u.get('e_check', pd.Series()).isin(['לא']).sum()) if 'e_check' in u.columns else 0
+
+        # חישוב MRI
+        penalty = (k_issues_count * 8) + (k_cert_fail * 6) + (eruv_fail * 10) + (eruv_open * 4)
+        score = max(35, 100 - penalty)
+
+        # מגמה לפי זמן
+        trend = "יציב ➡️"
+        if 'date' in u.columns:
+            u['date'] = pd.to_datetime(u['date'], errors='coerce')
+            recent   = u[u['date'] >= pd.Timestamp.now() - pd.Timedelta(days=7)]
+            previous = u[(u['date'] >= pd.Timestamp.now() - pd.Timedelta(days=14)) &
+                         (u['date'] <  pd.Timestamp.now() - pd.Timedelta(days=7))]
+            if not recent.empty and not previous.empty:
+                r_score = max(35, 100 - int((recent.get('k_issues', pd.Series()) == 'כן').sum() * 8))
+                p_score = max(35, 100 - int((previous.get('k_issues', pd.Series()) == 'כן').sum() * 8))
+                if r_score > p_score + 5:  trend = "עלייה ⬆️"
+                elif r_score < p_score - 5: trend = "ירידה ⬇️"
+
+        # אזור סיכון
+        risk = "🟢 תקין" if score >= 80 else ("🟡 מעקב" if score >= 60 else "🔴 סיכון")
+
+        mri_data.append({
+            "יחידה": unit,
+            "ציון MRI": score,
+            "מדד %": f"{score}%",
+            "סטטוס": risk,
+            "מגמה": trend,
+            "תקלות כשרות": int(k_issues_count),
+            "עירוב פסול": int(eruv_fail),
+            "דוחות": int(total),
+        })
+
+    mri_df = pd.DataFrame(mri_data)
+    if not mri_df.empty:
+        mri_df = mri_df.sort_values("ציון MRI").reset_index(drop=True)
+    return mri_df
+
+
+def render_executive_ai_brief(df: pd.DataFrame, accessible_units: list):
+    """🧠 מוח פיקודי - MRI + AI Decision Brief"""
+
+    # הזרתת סיכון פועמת לימי חמישי/שישי (CSS Injection)
+    current_day = datetime.datetime.now().weekday()
+    is_shabbat_risk = current_day in [3, 4]
+    if is_shabbat_risk:
+        st.markdown("""
+        <style>
+        @keyframes pulseRed { 0% {box-shadow:0 0 0 0 rgba(220,38,38,.5);} 70% {box-shadow:0 0 0 10px rgba(220,38,38,0);} 100% {box-shadow:0 0 0 0 rgba(220,38,38,0);}}
+        .shabbat-alert { animation: pulseRed 2s infinite; border:2px solid #dc2626; border-radius:10px; padding:12px; background:#fef2f2; }
+        </style>
+        <div class='shabbat-alert'>
+        ⚠️ <b>התראה שבתית פעילה</b> אותר במצב מוניתו מורמ — בדוק העירוב ונאמני כשרות לפני שבת!
+        </div>
+        """, unsafe_allow_html=True)
+        st.markdown("")
+
+    st.markdown("### 🧠 מוח פיקודי — AI Decision Brief")
+
+    # טבלת MRI
+    mri_df = calculate_mri(df)
+    if mri_df.empty:
+        st.info("💭 אין נתונים מספיקים לחישוב MRI.")
+        return
+
+    st.markdown("#### 📊 מדד מוכנות מבצעית-רוחנית (MRI)")
+    display_cols = ["יחידה", "מדד %", "סטטוס", "מגמה", "תקלות כשרות", "עירוב פסול", "דוחות"]
+    st.dataframe(
+        mri_df[display_cols],
+        use_container_width=True,
+        column_config={
+            "מדד %": st.column_config.TextColumn("ציון MRI"),
+            "סטטוס": st.column_config.TextColumn("סטטוס סיכון"),
+        },
+        hide_index=True,
+    )
+
+    # כפתור להפקת טקציר דיון
+    st.markdown("---")
+    if st.button("⚡ הפק פקודת יום (AI Executive Brief)", use_container_width=True, type="primary", key="exec_brief_btn"):
+        with st.spinner("המוח הפיקודי מנתח את נתוני הגזרה..."):
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=st.secrets["gemini"]["api_key"])
+
+                context = mri_df[['יחידה', 'מדד %', 'סטטוס', 'מגמה', 'תקלות כשרות', 'עירוב פסול']].to_string(index=False)
+
+                prompt = f"""
+אתה מערכת השו"ב של רבנות פיקוד מרכז. לפניך מדדי מוכנות (MRI) של יחידות:
+
+{context}
+
+הפק “תקציר החלטות מנהלים” קצר, חד, צבאי וממוקד פעולה בדיוק במבנה הבא:
+
+🎯 לרב חטמ"ר (3 פעולות מידיות לביצוע):
+1. []
+2. []
+3. []
+
+🎯 לרב אוגדה (2 מוקדי סיכון אזוריים):
+1. []
+2. []
+
+🎯 לרב פיקוד (מגמה אסטרטגית אחת הדורשת הקצאת משאבים):
+1. []
+כתוב בשפה צבאית-עניינית, ללא הקדמות, והתבסס אך ורק על חומרת הנתונים.
+"""
+                response = None
+                for _m in ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash"]:
+                    try:
+                        model = genai.GenerativeModel(_m)
+                        response = model.generate_content(prompt)
+                        break
+                    except Exception:
+                        continue
+
+                if response:
+                    st.success("פקודת יום מוכנה:")
+                    st.markdown(response.text)
+                else:
+                    st.error("כל מודלי Gemini נכשלו. בדוק מפתח API.")
+
+            except KeyError:
+                st.warning("⚠️ חסר מפתח Gemini ב-secrets.toml")
+            except ImportError:
+                st.warning("⚠️ חסרה חבילת google-generativeai")
+            except Exception as e:
+                st.error(f"❌ שגיאה: {e}")
+
+
+
+def analyze_report_with_ai(base_name: str, report_data: dict) -> dict:
+    """המוח הפיקודי: מנתח דיווחי שטח בזמן אמת ומחזיר סיווג AI"""
+    # בנה סיכום קריא מהנתונים
+    parts = []
+    field_labels = {
+        "k_issues": "תקלות כשרות", "k_issues_description": "תיאור תקלה",
+        "e_status": "סטטוס עירוב", "e_check": "בדיקת עירוב",
+        "s_status": "מצב חשמל שבת", "missing_items": "חוסרים",
+        "notes": "הערות", "general_notes": "הערות כלליות",
+    }
+    for key, label in field_labels.items():
+        val = report_data.get(key)
+        if val and str(val).strip() and str(val) not in ("None", "תקין", "כן"):
+            parts.append(f"{label}: {val}")
+    report_text = "; ".join(parts) if parts else "לא צוינו ליקויים"
+
+    prompt = f"""אתה מערכת שו"ב חכמה של רבנות פיקוד מרכז.
+התקבל דיווח מהשטח (מוצב/בסיס: {base_name}):
+"{report_text}"
+
+נתח את הדיווח והחזר JSON חוקי בלבד עם 3 שדות:
+1. "risk_level": חומרת התקלה (נמוכה / בינונית / גבוהה)
+2. "sla": זמן יעד לטיפול (72 שעות / 48 שעות / מיידי)
+3. "recommended_action": משפט אחד קצר ותכליתי של פעולה מומלצת
+
+החזר רק JSON נקי, ללא טקסט לפני או אחריו."""
+
+    try:
+        import google.generativeai as genai
+        import json as _json
+        genai.configure(api_key=st.secrets["gemini"]["api_key"])
+        response = None
+        for _m in ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash"]:
+            try:
+                model = genai.GenerativeModel(_m)
+                response = model.generate_content(prompt)
+                break
+            except Exception:
+                continue
+        if response:
+            clean = response.text.strip().replace("```json", "").replace("```", "").strip()
+            return _json.loads(clean)
+    except Exception:
+        pass
+    # ברירת מחדל בטוחה — אף פעם לא חוסם שמירה
+    return {"risk_level": "לא סווג", "sla": "טרם נקבע", "recommended_action": "נדרשת בחינה ידנית"}
+
 
 def render_command_dashboard():
     role = st.session_state.role
@@ -3016,9 +3212,9 @@ def render_command_dashboard():
 
     # טאבים לפי תפקיד
     if role == 'pikud':
-        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🎯 Risk Center", "🔍 אמינות מבקרים", "⚙️ ניהול", "💬 עוזר AI"])
+        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🎯 Risk Center", "🔍 אמינות מבקרים", "⚙️ ניהול", "🧠 מוח פיקודי", "💬 עוזר AI"])
     else:
-        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🔍 אמינות מבקרים", "💬 עוזר AI"])
+        tabs = st.tabs(["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🔍 אמינות מבקרים", "🧠 מוח פיקודי", "💬 עוזר AI"])
     
     # ===== טאב 1: סקירה כללית =====
     with tabs[0]:
@@ -4224,13 +4420,20 @@ def render_command_dashboard():
                         else:
                             st.error("❌ שגיאה בהעלאת הלוגו")
 
-    # ===== טאב AI Chatbot - האחרון =====
+    # ===== טאב 🧠 מוח פיקודי (AI Brain) =====
     if role == 'pikud':
-        ai_tab_idx = 10
+        brain_tab_idx = 10
+        ai_chat_tab_idx = 11
     else:
-        ai_tab_idx = 8
-    if len(tabs) > ai_tab_idx:
-        with tabs[ai_tab_idx]:
+        brain_tab_idx = 8
+        ai_chat_tab_idx = 9
+    if len(tabs) > brain_tab_idx:
+        with tabs[brain_tab_idx]:
+            render_executive_ai_brief(df, accessible_units if isinstance(accessible_units, list) else list(accessible_units))
+
+    # ===== טאב 💬 עוזר AI - האחרון =====
+    if len(tabs) > ai_chat_tab_idx:
+        with tabs[ai_chat_tab_idx]:
             render_ai_chatbot(df, accessible_units if isinstance(accessible_units, list) else list(accessible_units))
 
 def create_enhanced_excel_report(df, unit_name=""):
@@ -5682,7 +5885,18 @@ def render_unit_report():
                         print(f"💾 שומר למסד נתונים: lat={lat_with_offset:.6f}, lon={lon_with_offset:.6f}")
                     else:
                         st.warning("⚠️ המיקום לא נשמר כי הוא מחוץ לגבולות ישראל")
-                
+
+                # ===== מוח פיקודי: ניתוח AI לפני השמירה =====
+                ai_insight = {}
+                try:
+                    with st.spinner("🧠 המוח הפיקודי מסווג את הדיווח..."):
+                        ai_insight = analyze_report_with_ai(base, data)
+                    data["ai_risk_level"]     = ai_insight.get("risk_level", "לא סווג")
+                    data["ai_sla"]            = ai_insight.get("sla", "טרם נקבע")
+                    data["ai_action"]         = ai_insight.get("recommended_action", "נדרשת בחינה ידנית")
+                except Exception:
+                    pass  # אף פעם לא חוסם שמירה
+
                 try:
                     # ניסיון לשמור את הדוח
                     try:
@@ -5693,18 +5907,20 @@ def render_unit_report():
                             # ניסיון חוזר ללא השדות החדשים (שמירה שקטה של בסיס הדוח)
                             # רשימת כל השדות החדשים שאולי חסרים
                             new_fields = [
-                                "k_issues", "k_issues_description", "k_shabbat_supervisor", 
+                                "k_issues", "k_issues_description", "k_shabbat_supervisor",
                                 "k_shabbat_supervisor_name", "k_shabbat_supervisor_phone",
                                 "k_issues_photo_url", "k_shabbat_photo_url",
                                 "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone",
-                                "report_duration", "barcode_verified", "signature_url"
+                                "report_duration", "barcode_verified", "signature_url",
+                                "ai_risk_level", "ai_sla", "ai_action",
                             ]
                             for field in new_fields:
                                 data.pop(field, None)
                             result = supabase.table("reports").insert(data).execute()
                         else:
                             raise e
-                    
+
+
                     # מעקב אוטומטי אחר חוסרים
                     if result.data and len(result.data) > 0:
                         report_id = result.data[0].get('id')
