@@ -642,6 +642,32 @@ st.markdown("""
         text-align: right !important;
     }
 
+    /* כפיית כיווניות עברית על כל רכיבי הטקסט */
+    .stMarkdown, .stText, [data-testid="stMarkdownContainer"] {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+    
+    /* סידור רשימות (Bullets) בצד ימין */
+    [data-testid="stMarkdownContainer"] ul {
+        direction: rtl !important;
+        text-align: right !important;
+        padding-right: 1.8rem !important;
+        padding-left: 0 !important;
+        list-style-position: inside !important;
+    }
+    
+    [data-testid="stMarkdownContainer"] li {
+        direction: rtl !important;
+        text-align: right !important;
+        margin-bottom: 5px !important;
+    }
+
+    /* מניעת היפוך מספרים וסימנים מיוחדים */
+    span, p, li {
+        unicode-bidi: plaintext !important;
+    }
+
     /* RTL for st.expander */
     [data-testid="stExpander"], .streamlit-expanderHeader,
     .streamlit-expanderContent {
@@ -1596,89 +1622,55 @@ def count_silent_units(df: pd.DataFrame) -> int:
 
 # ===== Inspector Credibility =====
 
-def calculate_inspector_credibility(inspector_name: str, df: pd.DataFrame) -> dict:
+def calculate_inspector_credibility(inspector: str, df: pd.DataFrame) -> dict:
     """
-    🔍 דירוג אמינות מבקר (0-100)
-    • % ביקורות עם ליקויים (אמור להיות 15-60%)
-    • שגרתיות/שונות בין ביקורות
+    🔍 מדד אמינות מתקדם: 
+    1. הצלבה מול היסטוריית בסיס (2-3 דוחות אחרונים).
+    2. השוואת התנהגות המבקר במוצבים שונים (Cross-location).
+    3. ניתוח דפוסי 'סימון וי' (Variance check).
     """
-    inspector_df = df[df['inspector'] == inspector_name] if 'inspector' in df.columns else pd.DataFrame()
-    if len(inspector_df) < 3:
-        return {"credibility": "אין מספיק נתונים", "score": 0, "color": "#94a3b8",
-                "defect_rate": 0, "consistency": 0}
+    if df.empty: return {"score": 50, "credibility": "אין נתונים", "color": "#64748b", "defect_rate": 0}
+    
+    insp_df = df[df['inspector'] == inspector]
+    if insp_df.empty: return {"score": 50, "credibility": "אין נתונים", "color": "#64748b", "defect_rate": 0}
 
-    # 1. אחוז עם ליקויים
-    conditions = []
-    if 'e_status' in inspector_df.columns:
-        conditions.append(inspector_df['e_status'] == 'פסול')
-    if 'k_cert' in inspector_df.columns:
-        conditions.append(inspector_df['k_cert'] == 'לא')
-    if 'r_mezuzot_missing' in inspector_df.columns:
-        conditions.append(pd.to_numeric(inspector_df['r_mezuzot_missing'], errors='coerce').fillna(0) > 0)
+    # 1. מדד זמן מילוי (משקל: 25%)
+    avg_duration = insp_df['report_duration'].mean() if 'report_duration' in insp_df.columns else 180
+    duration_score = 100 if avg_duration >= 180 else (0 if avg_duration < 45 else 50)
 
-    if conditions:
-        import functools
-        combined = functools.reduce(lambda a, b: a | b, conditions)
-        defect_pct = (combined.sum() / len(inspector_df)) * 100
+    # 2. ניתוח חריגות מול היסטוריית הבסיס (משקל: 35%)
+    base_consistency_penalty = 0
+    for base in insp_df['base'].unique():
+        report_at_base = insp_df[insp_df['base'] == base].iloc[0]
+        # שליפת 3 דוחות קודמים של אחרים באותו בסיס
+        others_at_base = df[(df['base'] == base) & (df['inspector'] != inspector)].sort_values('date', ascending=False).head(3)
+        
+        if not others_at_base.empty:
+            avg_others_defects = others_at_base.apply(lambda r: 1 if r.get('e_status') == 'פסול' or r.get('k_cert') == 'לא' else 0, axis=1).mean()
+            current_defect = 1 if report_at_base.get('e_status') == 'פסול' or report_at_base.get('k_cert') == 'לא' else 0
+            
+            # אם כולם רואים 'תקין' והוא פתאום רואה '100% פסול' (או הפוך) ללא פירוט - זו חריגה
+            if abs(current_defect - avg_others_defects) > 0.8:
+                base_consistency_penalty += 15
+
+    # 3. מדד 'טביעת אצבע' של המבקר (משקל: 30%)
+    defect_rates_per_base = insp_df.apply(lambda r: 1 if r.get('e_status') == 'פסול' or r.get('k_cert') == 'לא' else 0, axis=1)
+    if len(insp_df) >= 3 and defect_rates_per_base.std() == 0:
+        pattern_score = 20 # חשד כבד לטייס אוטומטי
     else:
-        defect_pct = 50.0
+        pattern_score = 100
 
-    if defect_pct == 0 or defect_pct == 100:
-        defect_score = 20
-    elif 15 <= defect_pct <= 60:
-        defect_score = 100
-    else:
-        defect_score = 50
-
-    # 2. שונות תזמון
-    variance_score = 50
-    if 'date' in inspector_df.columns:
-        try:
-            dates = pd.to_datetime(inspector_df['date'], errors='coerce').dropna().sort_values()
-            intervals = dates.diff().dt.days.dropna()
-            if len(intervals) > 0:
-                mean_i = intervals.mean()
-                std_i = intervals.std()
-                cv = (std_i / mean_i) if mean_i > 0 else 0
-                variance_score = max(0, 100 - min(50, cv * 100))
-        except Exception:
-            pass
-
-    # 3. משך הדיווח (חדש!)
-    duration_score = 70  # ברירת מחדל אם אין נתונים
-    if 'report_duration' in inspector_df.columns:
-        mean_duration = pd.to_numeric(inspector_df['report_duration'], errors='coerce').mean()
-        if not pd.isna(mean_duration):
-            if mean_duration < 45:    # מהיר מדי (חשוד כשיטחי)
-                duration_score = 10
-            elif mean_duration < 90:  # מהיר (סביר אבל גבולי)
-                duration_score = 50
-            elif mean_duration < 600: # טווח אופטימלי (1.5-10 דקות)
-                duration_score = 100
-            else:                     # איטי מאוד (אולי פער טכני או מילוי לא רציף)
-                duration_score = 80
-
-    # 4. אימות ברקוד (חדש! - 25% מהציון)
-    barcode_score = 0
-    if 'barcode_verified' in inspector_df.columns:
-        verified_rate = inspector_df['barcode_verified'].astype(bool).mean() * 100
-        barcode_score = verified_rate
-    else:
-        # אם אין נתוני אימות, ניתן ציון ניטרלי כדי לא לפגוע
-        barcode_score = 50
-
-    # שקלול סופי: 40% אחוז ליקויים, 20% שונות תזמון, 15% משך הדיווח, 25% אימות ברקוד
-    final_score = round(defect_score * 0.4 + variance_score * 0.2 + duration_score * 0.15 + barcode_score * 0.25, 1)
-
-    if final_score >= 80:
-        credibility, color = "✅ גבוהה", "#10b981"
-    elif final_score >= 60:
-        credibility, color = "👍 בינונית", "#f59e0b"
-    else:
-        credibility, color = "⚠️ נמוכה — שקול ביקורת", "#ef4444"
-
-    return {"credibility": credibility, "score": final_score, "color": color,
-            "defect_rate": round(defect_pct, 1), "consistency": round(variance_score, 1)}
+    # חישוב סופי
+    final_score = (duration_score * 0.25) + (pattern_score * 0.4) + (max(0, 35 - base_consistency_penalty))
+    
+    # קביעת סטטוס
+    if final_score >= 85: res = {"credibility": "מבקר אמין ויסודי", "color": "#10b981"}
+    elif final_score >= 65: res = {"credibility": "אמינות טובה", "color": "#3b82f6"}
+    elif final_score >= 45: res = {"credibility": "חשד למילוי שטחי / סימון וי", "color": "#f59e0b"}
+    else: res = {"credibility": "חשד גבוה לדיווח פיקטיבי", "color": "#ef4444"}
+    
+    res.update({"score": final_score, "defect_rate": defect_rates_per_base.mean() * 100})
+    return res
 
 
 # ===== QR Scanner =====
@@ -2921,116 +2913,50 @@ def render_sla_dashboard(accessible_units_list: list):
 # AI Chatbot לשאילתות בעברית
 # ════════════════════════════════════════════════════════════
 def _build_data_context(df: pd.DataFrame, accessible_units: list) -> str:
-    """בונה context מקיף וחכם ל-AI - כולל שמות מוצבים, זמני טיפול, ומניעת כפילויות"""
-    if df.empty:
-        return "אין נתונים זמינים"
+    """בונה context מקיף ל-AI - כולל הכל ללא כפילויות, ואמינות מוצלבת"""
+    if df.empty: return "אין נתונים"
         
-    lines = [f"סה\"כ דוחות היסטוריים במערכת: {len(df)}", f"יחידות פעילות: {df['unit'].nunique() if 'unit' in df.columns else '?'}"]
+    # דוח אחרון לכל מוצב - מונע כפילויות בשיעורים, בתי כנסת וכו'
+    latest_reports = df.sort_values('date').groupby('base').tail(1)
     
-    # --- 1. סטטוס מעודכן במוצבים (מונע כפילויות ומפרט שמות מוצבים) ---
-    if 'base' in df.columns and 'date' in df.columns:
-        latest_reports = df.sort_values('date').groupby('base').tail(1)
-        lines.append("\n--- 📊 סטטוס עדכני במוצבים (מבוסס על הדיווח האחרון מכל מוצב) ---")
-        
-        if 'k_cert' in latest_reports.columns:
-            no_cert = latest_reports[latest_reports['k_cert'] == 'לא']
-            if not no_cert.empty:
-                lines.append(f"מוצבים ללא תעודת כשרות בתוקף: {len(no_cert)} (במוצבים: {', '.join(no_cert['base'])})")
-                
-        if 'k_issues' in latest_reports.columns:
-            issues = latest_reports[latest_reports['k_issues'] == 'כן']
-            if not issues.empty:
-                lines.append(f"מוצבים עם תקלות כשרות במטבח: {len(issues)} (במוצבים: {', '.join(issues['base'])})")
-                
-        if 'e_status' in latest_reports.columns:
-            eruv_fail = latest_reports[latest_reports['e_status'] == 'פסול']
-            if not eruv_fail.empty:
-                lines.append(f"מוצבים עם עירוב פסול: {len(eruv_fail)} (במוצבים: {', '.join(eruv_fail['base'])})")
-                
-        if 's_clean' in latest_reports.columns:
-            not_clean = latest_reports[~latest_reports['s_clean'].isin(['מצוין', 'טוב'])]
-            if not not_clean.empty:
-                lines.append(f"בתי כנסת שדורשים שיפור בניקיון: {len(not_clean)} (במוצבים: {', '.join(not_clean['base'])})")
-                
-        if 's_smartbis' in latest_reports.columns:
-            need_repair = latest_reports[latest_reports['s_smartbis'] == 'כן']
-            if not need_repair.empty:
-                lines.append(f"מוצבים עם תקלות בינוי (סמארטביס) שדורשים תיקון: {len(need_repair)} (במוצבים: {', '.join(need_repair['base'])})")
-                
-        if 'soldier_want_lesson' in latest_reports.columns and 'soldier_has_lesson' in latest_reports.columns:
-            want_no_lesson = latest_reports[(latest_reports['soldier_want_lesson'] == 'כן') & (latest_reports['soldier_has_lesson'] == 'לא')]
-            if not want_no_lesson.empty:
-                lines.append(f"פער שיעורי תורה - מוצבים שמעוניינים בשיעור אך אין להם: {len(want_no_lesson)} (במוצבים: {', '.join(want_no_lesson['base'])})")
+    lines = [
+        f"סה\"כ דוחות היסטוריים: {len(df)}",
+        f"מספר מוצבים ייחודיים שדווחו: {len(latest_reports)}",
+        "\n--- 📊 סטטוס עדכני במוצבים (לפי דיווח אחרון) ---"
+    ]
+    
+    # בתי כנסת ובינוי
+    if 's_clean' in latest_reports.columns:
+        not_clean = len(latest_reports[~latest_reports['s_clean'].isin(['מצוין', 'טוב'])])
+        lines.append(f"בתי כנסת שדורשים ניקיון: {not_clean}")
+    
+    if 's_smartbis' in latest_reports.columns:
+        need_repair = len(latest_reports[latest_reports['s_smartbis'] == 'כן'])
+        lines.append(f"מוצבים עם תקלות בינוי (סמארטביס) בביכ\"נ: {need_repair}")
+    
+    # שיעורי תורה
+    if 'soldier_want_lesson' in latest_reports.columns and 'soldier_has_lesson' in latest_reports.columns:
+        want_lesson = len(latest_reports[latest_reports['soldier_want_lesson'] == 'כן'])
+        has_lesson = len(latest_reports[latest_reports['soldier_has_lesson'] == 'כן'])
+        lines.append(f"ביקוש לשיעורי תורה (מוצבים): {want_lesson} | יש בפועל: {has_lesson}")
 
-    # --- 2. חוסרים קריטיים וזמני טיפול (SLA) ---
-    lines.append("\n--- 🔴 חוסרים וליקויים פתוחים (מערכת כרטיסים) וזמני השלמה ---")
-    try:
-        # סטטיסטיקות זמני סגירה
-        try:
-            stats = get_deficit_statistics(accessible_units)
-            lines.append(f"סה\"כ ליקויים שנסגרו והושלמו בגזרה: {stats['total_closed']}")
-            lines.append(f"זמן ממוצע לפתרון וסגירת ליקוי: {stats['avg_resolution_days']:.1f} ימים")
-        except Exception:
-            pass  # אם הפונקציה לא קיימת, ממשיכים
+    # חוסרים בטיפול (מערכת הכרטיסים)
+    lines.append("\n--- 🔴 חוסרים פתוחים בטיפול (מתוך מערכת הכרטיסים) ---")
+    open_deficits = get_open_deficits(accessible_units)
+    if not open_deficits.empty:
+        for dt, label in [('mezuzot', 'מזוזות'), ('eruv_status', 'עירוב פסול'), ('kashrut_cert', 'תעודת כשרות')]:
+            count = len(open_deficits[open_deficits['deficit_type'] == dt])
+            lines.append(f"{label}: {count} מקרים פתוחים")
 
-        open_deficits_df = get_open_deficits(accessible_units)
-        if not open_deficits_df.empty:
-            mezuzot_df = open_deficits_df[open_deficits_df['deficit_type'] == 'mezuzot']
-            mezuzot_missing = int(pd.to_numeric(mezuzot_df['deficit_count'], errors='coerce').fillna(0).sum())
-            if mezuzot_missing > 0:
-                bases_list = ', '.join(mezuzot_df['base'].unique()) if 'base' in mezuzot_df.columns else 'לא ידוע'
-                lines.append(f"סך הכל מזוזות חסרות שטרם הושלמו: {mezuzot_missing} (במוצבים: {bases_list})")
-            
-            for dt, label in [('eruv_status', 'עירוב פסול'), ('kashrut_cert', 'תעודת כשרות חסרה'), ('eruv_kelim', 'ערבוב כלים')]:
-                specific_defs = open_deficits_df[open_deficits_df['deficit_type'] == dt]
-                count = len(specific_defs)
-                if count > 0:
-                    bases_list = ', '.join(specific_defs['base'].unique()) if 'base' in specific_defs.columns else 'לא ידוע'
-                    lines.append(f"כרטיסי טיפול פתוחים על {label}: {count} (במוצבים: {bases_list})")
+    # אמינות מבקרים - ניתוח השוואתי ופורנזי
+    lines.append("\n--- ניתוח אמינות השוואתי (מבקר מול היסטוריה ומול עצמו) ---")
+    for insp in df['inspector'].dropna().unique():
+        cred = calculate_inspector_credibility(insp, df)
+        # זיהוי תבניות למען ה-AI
+        if cred['score'] < 50:
+            lines.append(f"⚠️ התראה: המבקר {insp} מציג דפוס חשוד. הוא מדווח נתונים דומים מדי בכל המוצבים או סותר קיצונית את היסטוריית הבסיס ללא הסבר.")
         else:
-            lines.append("אין ליקויים או חוסרים פתוחים כרגע במערכת - הכל תקין!")
-    except Exception:
-        lines.append("לא ניתן היה לטעון חוסרים וזמני טיפול כעת.")
-
-    # --- 3. ציוני יחידות ---
-    lines.append("\n--- 🏆 ציוני כשירות יחידות (0-100) ---")
-    for unit in (accessible_units or [])[:5]:
-        unit_df = df[df['unit'] == unit] if 'unit' in df.columns else pd.DataFrame()
-        if not unit_df.empty:
-            try:
-                score = calculate_unit_score(unit_df)
-                lines.append(f"{unit}: ציון {score:.0f}")
-            except Exception:
-                pass
-
-    # --- 4. נתוני אמינות חיילים ומבקרים ---
-    if 'inspector' in df.columns:
-        lines.append("\n--- 👥 נתוני מבקרים/חיילים (לאיתור המצטיין, האיכותי והאמין ביותר) ---")
-        inspectors = df['inspector'].dropna().unique()
-        best_inspector = None
-        best_score = -1
-        
-        for insp in inspectors:
-            insp_df = df[df['inspector'] == insp]
-            report_count = len(insp_df)
-            
-            if report_count < 2:
-                continue
-                
-            credibility_data = calculate_inspector_credibility(insp, df)
-            cred_score = credibility_data.get('score', 0)
-            defect_rate = credibility_data.get('defect_rate', 0)
-            
-            weighted_score = (cred_score * 0.7) + (min(report_count * 5, 30))
-            
-            lines.append(f"חייל/מבקר: {insp} | מילא {report_count} דוחות | ציון איכות ואמינות: {cred_score} | אחוז ליקויים שאיתר: {defect_rate:.1f}%")
-            
-            if weighted_score > best_score and cred_score > 70:
-                best_score = weighted_score
-                best_inspector = insp
-                
-        if best_inspector:
-            lines.append(f"**החייל המצטיין והאמין ביותר שממלא דוחות בתקופה זו: {best_inspector}**")
+            lines.append(f"חייל: {insp} | ציון אמינות משוקלל: {cred['score']:.0f} | רמת פירוט: {'גבוהה' if cred['score'] > 80 else 'בינונית'}")
 
     return "\n".join(lines)
 
@@ -3073,13 +2999,13 @@ def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
 
             # הגדרת תפקיד המערכת והזרקת הנתונים
             system_instruction = (
-                f"אתה עוזר AI קמב\"ץ של מערכת רבנות פיקוד מרכז. "
-                f"ענה בעברית צבאית, נקייה, ממוקדת ומדויקת. עיצוב הטקסט חייב להיות מותאם לקריאה מימין לשמאל (RTL). "
-                f"חוקים למענה על שאלות:\n"
-                f"1. שאלות על חוסרים (מזוזות, עירוב פסול, כשרות): ענה אך ורק מהפסקה 'חוסרים וליקויים פתוחים בטיפול' כדי לשקף מצב אמת ולא כפילויות.\n"
-                f"2. שאלות על סטטוס מוצבים (שיעורי תורה, ניקיון בית כנסת, תקלות בינוי/סמארטביס): ענה מתוך 'סטטוס עדכני במוצבים', המשקף את הדיווח האחרון מכל מוצב.\n"
-                f"3. שאלות על החייל/המבקר המצטיין והאמין: הסבר למפקד שאחוז ליקויים גבוה (למשל 85%) הוא סימן חיובי המעיד על מבקר יסודי שלא 'מחפף', אלא מוצא את הבעיות הקטנות. הסבר שזה לא סותר ציון חטמ\"ר גבוה (למשל 87/100), מכיוון שליקוי קטן (כמו מזוזה חסרה) מוריד מעט נקודות מהציון הכולל של הבסיס, אך נספר כ'מציאת ליקוי' עבור אמינות המבקר. נתח לפי הנתונים והסבר אותם בהיגיון.\n"
-                f"נתונים עדכניים מהשטח:\n{context}"
+                f"אתה עוזר AI קמב\"ץ רבנות. תפקידך לזהות מי ממלא כדי 'לסמן וי' ומי ממלא כי אכפת לו.\n"
+                f"חוקים לניתוח אמינות:\n"
+                f"1. השוואה היסטורית: אם חייל מדווח על מוצב מסוים כ'מושלם' בזמן ש-3 דוחות קודמים של מבקרים אחרים הצביעו על ליקויים חמורים - ציין זאת כחשד לחוסר אמינות.\n"
+                f"2. השוואה רוחבית: אם חייל מדווח את אותן תוצאות בדיוק (למשל 100% תקין או 100% פסול) ב-5 מוצבים שונים - הוא נחשב למי שעובד על 'טייס אוטומטי' ואינו אמין.\n"
+                f"3. סנכרון זמן ואיכות: חייל אמין הוא כזה שזמן המילוי שלו סביר, מצא ליקויים שמתכתבים עם היסטוריית המקום, וכתב הערות מפורטות.\n"
+                f"4. ענה תמיד בעברית מיושרת לימין והסבר את העומק של הניתוח למפקד.\n"
+                f"נתונים:\n{context}"
             )
 
             # המרת היסטוריית השיחה לפורמט שג'מיני דורש
@@ -3522,35 +3448,7 @@ def generate_smart_priority_queue(df: pd.DataFrame, accessible_units: list) -> l
         return [{"priority": i+1, "issue": iss} for i, iss in enumerate(issues[:5])]
 
 
-def calculate_inspector_credibility(inspector: str, df: pd.DataFrame) -> dict:
-    """חישוב ציון אמינות למבקר לפי רמת הפירוט והליקויים שנמצאו"""
-    insp_df = df[df['inspector'] == inspector]
-    if insp_df.empty:
-        return {"score": 50, "credibility": "אין נתונים", "color": "#64748b", "defect_rate": 0}
-    
-    # 1. אחוז ליקויים (מבקר שמוצא 0 ליקויים ב-100% מהמקרים הוא חשוד)
-    defect_cols = ['k_issues', 'e_status', 'r_mezuzot_missing']
-    found_defects = 0
-    for _, row in insp_df.iterrows():
-        if row.get('k_issues') == 'כן' or row.get('e_status') == 'פסול' or (row.get('r_mezuzot_missing', 0) or 0) > 0:
-            found_defects += 1
-    
-    defect_rate = (found_defects / len(insp_df)) * 100
-    
-    # 2. רמת פירוט (הערות חופשיות)
-    notes_len = insp_df['notes'].fillna('').apply(len).mean() if 'notes' in insp_df.columns else 0
-    
-    # חישוב ציון (פירמידה: מעט מדי ליקויים = חשוד, המון ליקויים = חשוד/שטח בעייתי, פירוט גבוה = אמין)
-    score = 70 # בסיס
-    if defect_rate < 5: score -= 30 # חשד ל"כיסוי ראש" (הכל תקין תמיד)
-    if notes_len > 50: score += 20 # פירוט גבוה
-    if notes_len < 10: score -= 10 # פירוט נמוך
-    
-    score = max(0, min(100, score))
-    
-    if score >= 80: return {"score": score, "credibility": "אמינות גבוהה", "color": "#10b981", "defect_rate": defect_rate}
-    if score >= 50: return {"score": score, "credibility": "אמינות בינונית", "color": "#f59e0b", "defect_rate": defect_rate}
-    return {"score": score, "credibility": "חשד לחוסר אמינות", "color": "#ef4444", "defect_rate": defect_rate}
+# Consolidated with logic at line 1599
 
 
 def count_unvisited_bases_this_week(df: pd.DataFrame, unit: str) -> int:
@@ -3657,14 +3555,24 @@ def render_halachic_advisor():
 
 
 def render_inspector_management(unit: str, df: pd.DataFrame):
-    """ניהול מבקרים ואמינות דוחות"""
+    """ניהול מבקרים ואמינות דוחות - תצוגה משופרת"""
     st.markdown("### 👥 ניהול מבקרים ואמינות")
     if df.empty: return
+    
     inspectors = df[df['unit'] == unit]['inspector'].unique() if unit else df['inspector'].unique()
     
-    for insp in inspectors:
+    for insp in sorted(inspectors):
         cred = calculate_inspector_credibility(insp, df)
-        st.write(f"**{insp}** | מדד אמינות: <span style='color:{cred['color']}'>{cred['score']}% ({cred['credibility']})</span>", unsafe_allow_html=True)
+        col1, col2, col3, col4 = st.columns([2, 1, 1, 3])
+        with col1:
+            st.write(f"**{insp}**")
+        with col2:
+            st.metric("ציון", f"{cred['score']:.0f}")
+        with col3:
+            st.write(f"{cred['defect_rate']:.0f}% ליקויים")
+        with col4:
+            st.markdown(f"<span style='color:{cred['color']}; font-weight:bold;'>{cred['credibility']}</span>", unsafe_allow_html=True)
+        st.divider()
 
 
 def render_weekly_report_generator(unit: str, df: pd.DataFrame):
@@ -5005,7 +4913,7 @@ def render_command_dashboard():
                 if len(inspectors) > 0:
                     for inspector in sorted(inspectors):
                         cred = calculate_inspector_credibility(inspector, df)
-                        col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
+                        col1, col2, col3, col4 = st.columns([2, 1, 1, 3])
                         with col1:
                             st.markdown(f"**{inspector}**")
                         with col2:
@@ -5014,7 +4922,7 @@ def render_command_dashboard():
                             st.metric("% ליקויים", f"{cred['defect_rate']:.0f}%")
                         with col4:
                             st.markdown(
-                                f"<span style='color:{cred['color']}'>{cred['credibility']}</span>",
+                                f"<span style='color:{cred['color']}; font-weight:bold;'>{cred['credibility']}</span>",
                                 unsafe_allow_html=True
                             )
                         st.divider()
@@ -5572,7 +5480,7 @@ def render_unit_report():
                     if len(inspectors) > 0:
                         for inspector in sorted(inspectors):
                             cred = calculate_inspector_credibility(inspector, unit_df)
-                            col1, col2, col3, col4 = st.columns([2, 1, 1, 2])
+                            col1, col2, col3, col4 = st.columns([2, 1, 1, 3])
                             with col1:
                                 st.markdown(f"**{inspector}**")
                             with col2:
@@ -5581,7 +5489,7 @@ def render_unit_report():
                                 st.metric("% ליקויים", f"{cred['defect_rate']:.0f}%")
                             with col4:
                                 st.markdown(
-                                    f"<span style='color:{cred['color']}'>{cred['credibility']}</span>",
+                                    f"<span style='color:{cred['color']}; font-weight:bold;'>{cred['credibility']}</span>",
                                     unsafe_allow_html=True
                                 )
                             st.divider()
