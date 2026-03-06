@@ -2914,8 +2914,8 @@ def render_sla_dashboard(accessible_units_list: list):
 # ════════════════════════════════════════════════════════════
 def _build_data_context(df: pd.DataFrame, accessible_units: list) -> str:
     """
-    🧠 המוח של המערכת: בונה תמונת מצב מלאה ל-AI על בסיס כל עמודות הדיווח המפורטות.
-    הפונקציה סורקת חריגות בכשרות, טרקלין, שיעורי תורה ותשתיות.
+    🧠 המוח של המערכת (גרסת דיוק כמותי): 
+    בונה תמונת מצב מלאה ל-AI תוך הפרדה מבנית בין חוסרים כמותיים לנתונים מזהים.
     """
     if df.empty: return "אין נתונים זמינים במערכת."
         
@@ -2923,65 +2923,72 @@ def _build_data_context(df: pd.DataFrame, accessible_units: list) -> str:
     latest = df.sort_values('date').groupby('base').tail(1)
     
     lines = [
-        f"--- 📊 תמונת מצב גזרתית עדכנית (מבוסס על {len(latest)} מוצבים) ---",
+        f"--- 📊 תמונת מצב גזרתית כמותית (מבוסס על {len(latest)} מוצבים) ---",
         f"סה\"כ דוחות במאגר: {len(df)}"
     ]
     
-    # 1. עולם הכשרות והמטבח (כולל ערבוב כלים ובישול ישראל)
-    lines.append("\n🍴 [מדור כשרות - חריגות ודיווחים]:")
+    # 1. דוח חוסרי מזוזות (דיוק כמותי)
+    lines.append("\n📜 [חוסרי מזוזות - פירוט ממוקד]:")
+    total_mezuzot: int = 0
+    mez_lines = []
+    if 'r_mezuzot_missing' in latest.columns:
+        for _, row in latest.iterrows():
+            val = row.get('r_mezuzot_missing', 0)
+            try:
+                count = int(pd.to_numeric(val, errors='coerce')) if pd.notna(val) else 0
+            except: count = 0
+            
+            if count > 0:
+                base_name = row.get('base', 'לא ידוע')
+                mez_lines.append(f"- מוצב {base_name}: חסרות {count} מזוזות")
+                total_mezuzot += count
+    
+    lines.extend(mez_lines if mez_lines else ["- אין מזוזות חסרות מדווחות."])
+    lines.append(f"💰 סך הכל מזוזות חסרות בכל הגזרה: {total_mezuzot}")
+
+    # 🍴 2. עולם הכשרות והמטבח
+    lines.append("\n🍴 [כשרות וטרקלין - חריגות]:")
     k_lines = []
     for _, row in latest.iterrows():
         issues = []
+        # כשרות
         if row.get('k_cert') == 'לא': issues.append("חסרה תעודת כשרות")
-        if row.get('p_mix') == 'כן': issues.append("זוהה ערבוב כלים")
+        if row.get('p_mix') == 'כן': issues.append("ערבוב כלים")
         if row.get('k_bishul') == 'לא': issues.append("בעיה בבישול ישראל")
-        if row.get('k_issues') == 'כן': 
-            det = f"תקלה מפורטת: {row.get('k_issues_description', 'לא פורט')}"
-            issues.append(det)
+        # טרקלין
+        if row.get('t_friday') == 'לא': issues.append("טרקלין פתוח בשבת")
+        if row.get('t_kitchen_tools') == 'לא': issues.append("תקלה בכלי מטבח")
         
         if issues:
             k_lines.append(f"- מוצב {row.get('base', 'לא ידוע')}: {', '.join(issues)}")
-    lines.extend(k_lines if k_lines else ["- אין חריגות כשרות מדווחות."])
+    lines.extend(k_lines if k_lines else ["- הכל תקין בתחומי הכשרות והטרקלין."])
 
-    # 2. עולם הטרקלין (Traklin)
-    lines.append("\n🍷 [מדור טרקלין - תקלות מפורטות]:")
-    t_lines = []
-    for _, row in latest.iterrows():
-        t_issues = []
-        if row.get('t_friday') == 'לא': t_issues.append("לא היה סגור בשבת/שישי")
-        if row.get('t_kitchen_tools') == 'לא': t_issues.append("בעיה בכלי מטבח")
-        if row.get('t_procedure') == 'לא': t_issues.append("לא עובד לפי פקודה")
-        
-        if t_issues:
-            t_lines.append(f"- מוצב {row.get('base', 'לא ידוע')}: {', '.join(t_issues)}")
-    lines.extend(t_lines if t_lines else ["- כל הטרקלינים המדווחים תקינים."])
-
-    # 3. עולם הרוח ושיעורי תורה
+    # 📖 3. שיעורי תורה וקשר למרצים
     lines.append("\n📖 [מדור רוח ושיעורי תורה]:")
     for _, row in latest.iterrows():
         if row.get('soldier_has_lesson') == 'כן':
-            instructor = row.get('soldier_lesson_teacher', 'לא ידוע')
+            instructor = row.get('soldier_lesson_teacher', 'לא צוין')
             phone = row.get('soldier_lesson_phone', 'אין טלפון')
-            lines.append(f"- במוצב {row.get('base', 'לא ידוע')} מתקיים שיעור ע\"י {instructor} ({phone}).")
+            lines.append(f"- מוצב {row.get('base', 'לא ידוע')}: מעביר {instructor}, טל': {phone}")
         elif row.get('soldier_want_lesson') == 'כן':
-            lines.append(f"- ⚠️ מוצב {row.get('base', 'לא ידוע')} מעוניין בשיעור וטרם קיבל מענה.")
+            lines.append(f"- 💡 מוצב {row.get('base', 'לא ידוע')} מעוניין בשיעור.")
 
-    # 4. חוסרים קריטיים (מערכת הכרטיסים הפתוחים)
-    lines.append("\n🔴 [חוסרים פתוחים בטיפול - מצב אמת]:")
+    # 🔴 4. חוסרים פתוחים (כרטיסי טיפול)
+    lines.append("\n🔴 [משימות פתוחות בטיפול]:")
     try:
         open_defs = get_open_deficits(accessible_units)
         if not open_defs.empty:
             for _, row in open_defs.iterrows():
                 lines.append(f"- {row.get('base', 'לא ידוע')}: {row.get('deficit_type', 'חוסר')} (סטטוס: פתוח)")
         else:
-            lines.append("- אין חוסרים פתוחים.")
+            lines.append("- אין משימות פתוחות.")
     except: pass
 
-    # 5. אמינות מבקרים
-    lines.append("\n👥 [ניתוח אמינות ואיכות מילוי]:")
+    # 👥 5. אמינות מבקרים
+    lines.append("\n👥 [ניתוח אמינות]:")
     for insp in df['inspector'].dropna().unique():
         cred = calculate_inspector_credibility(insp, df)
-        lines.append(f"- {insp}: ציון {cred['score']:.0f} | סטטוס: {cred['credibility']}")
+        lines.append(f"- {insp}: ציון {cred['score']:.0f} ({cred['credibility']})")
 
     return "\u200f" + "\n".join(lines)
 
