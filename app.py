@@ -906,8 +906,8 @@ st.markdown("""
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
     
-    /* RTL support */
-    .main {
+    /* RTL for all Alerts */
+    [data-testid="stAlert"], .stAlert {
         direction: rtl !important;
         text-align: right !important;
     }
@@ -3189,7 +3189,7 @@ def render_executive_ai_brief(df: pd.DataFrame, accessible_units: list):
         .shabbat-alert { animation: pulseRed 2s infinite; border:2px solid #dc2626; border-radius:10px; padding:12px; background:#fef2f2; }
         </style>
         <div class='shabbat-alert'>
-        ⚠️ <b>התראה שבתית פעילה</b> אותר במצב מוניתו מורמ — בדוק העירוב ונאמני כשרות לפני שבת!
+        ⚠️ <b>התראה שבתית פעילה</b> אותר במצב מוכנות מוגברת — בדוק העירוב ונאמני כשרות לפני שבת!
         </div>
         """, unsafe_allow_html=True)
         st.markdown("")
