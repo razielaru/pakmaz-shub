@@ -2922,6 +2922,15 @@ def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
     """צ'טבוט AI לשאלות על הנתונים - מבוסס מודל Gemini"""
     st.markdown("### 🤖 עוזר פיקודי AI (Powered by Gemini)")
 
+    with st.expander("🔍 בדיקת מודלים שזמינים בחשבון שלי"):
+        if st.button("לחץ כאן כדי לראות את הרשימה המדויקת", key="list_models_btn"):
+            import google.generativeai as genai
+            genai.configure(api_key=st.secrets["gemini"]["api_key"])
+            st.write("המודלים שפתוחים עבורך הם:")
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    st.code(m.name.replace('models/', ''))
+
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
