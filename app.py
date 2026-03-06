@@ -1639,7 +1639,7 @@ def calculate_inspector_credibility(inspector: str, df: pd.DataFrame) -> dict:
     duration_score = 100 if avg_duration >= 180 else (0 if avg_duration < 45 else 50)
 
     # 2. ניתוח חריגות מול היסטוריית הבסיס (משקל: 35%)
-    base_consistency_penalty = 0
+    base_consistency_penalty: float = 0
     for base in insp_df['base'].unique():
         report_at_base = insp_df[insp_df['base'] == base].iloc[0]
         # שליפת 3 דוחות קודמים של אחרים באותו בסיס
@@ -1669,7 +1669,7 @@ def calculate_inspector_credibility(inspector: str, df: pd.DataFrame) -> dict:
     elif final_score >= 45: res = {"credibility": "חשד למילוי שטחי / סימון וי", "color": "#f59e0b"}
     else: res = {"credibility": "חשד גבוה לדיווח פיקטיבי", "color": "#ef4444"}
     
-    res.update({"score": final_score, "defect_rate": defect_rates_per_base.mean() * 100})
+    res.update({"score": float(final_score), "defect_rate": float(defect_rates_per_base.mean() * 100)})
     return res
 
 
@@ -2913,52 +2913,77 @@ def render_sla_dashboard(accessible_units_list: list):
 # AI Chatbot לשאילתות בעברית
 # ════════════════════════════════════════════════════════════
 def _build_data_context(df: pd.DataFrame, accessible_units: list) -> str:
-    """בונה context מקיף ל-AI - כולל הכל ללא כפילויות, ואמינות מוצלבת"""
-    if df.empty: return "אין נתונים"
+    """
+    🧠 המוח של המערכת: בונה תמונת מצב מלאה ל-AI על בסיס כל עמודות הדיווח המפורטות.
+    הפונקציה סורקת חריגות בכשרות, טרקלין, שיעורי תורה ותשתיות.
+    """
+    if df.empty: return "אין נתונים זמינים במערכת."
         
-    # דוח אחרון לכל מוצב - מונע כפילויות בשיעורים, בתי כנסת וכו'
-    latest_reports = df.sort_values('date').groupby('base').tail(1)
+    # שליפת הדיווח האחרון מכל מוצב למניעת כפילויות מידע
+    latest = df.sort_values('date').groupby('base').tail(1)
     
     lines = [
-        f"סה\"כ דוחות היסטוריים: {len(df)}",
-        f"מספר מוצבים ייחודיים שדווחו: {len(latest_reports)}",
-        "\n--- 📊 סטטוס עדכני במוצבים (לפי דיווח אחרון) ---"
+        f"--- 📊 תמונת מצב גזרתית עדכנית (מבוסס על {len(latest)} מוצבים) ---",
+        f"סה\"כ דוחות במאגר: {len(df)}"
     ]
     
-    # בתי כנסת ובינוי
-    if 's_clean' in latest_reports.columns:
-        not_clean = len(latest_reports[~latest_reports['s_clean'].isin(['מצוין', 'טוב'])])
-        lines.append(f"בתי כנסת שדורשים ניקיון: {not_clean}")
-    
-    if 's_smartbis' in latest_reports.columns:
-        need_repair = len(latest_reports[latest_reports['s_smartbis'] == 'כן'])
-        lines.append(f"מוצבים עם תקלות בינוי (סמארטביס) בביכ\"נ: {need_repair}")
-    
-    # שיעורי תורה
-    if 'soldier_want_lesson' in latest_reports.columns and 'soldier_has_lesson' in latest_reports.columns:
-        want_lesson = len(latest_reports[latest_reports['soldier_want_lesson'] == 'כן'])
-        has_lesson = len(latest_reports[latest_reports['soldier_has_lesson'] == 'כן'])
-        lines.append(f"ביקוש לשיעורי תורה (מוצבים): {want_lesson} | יש בפועל: {has_lesson}")
+    # 1. עולם הכשרות והמטבח (כולל ערבוב כלים ובישול ישראל)
+    lines.append("\n🍴 [מדור כשרות - חריגות ודיווחים]:")
+    k_lines = []
+    for _, row in latest.iterrows():
+        issues = []
+        if row.get('k_cert') == 'לא': issues.append("חסרה תעודת כשרות")
+        if row.get('p_mix') == 'כן': issues.append("זוהה ערבוב כלים")
+        if row.get('k_bishul') == 'לא': issues.append("בעיה בבישול ישראל")
+        if row.get('k_issues') == 'כן': 
+            det = f"תקלה מפורטת: {row.get('k_issues_description', 'לא פורט')}"
+            issues.append(det)
+        
+        if issues:
+            k_lines.append(f"- מוצב {row.get('base', 'לא ידוע')}: {', '.join(issues)}")
+    lines.extend(k_lines if k_lines else ["- אין חריגות כשרות מדווחות."])
 
-    # חוסרים בטיפול (מערכת הכרטיסים)
-    lines.append("\n--- 🔴 חוסרים פתוחים בטיפול (מתוך מערכת הכרטיסים) ---")
-    open_deficits = get_open_deficits(accessible_units)
-    if not open_deficits.empty:
-        for dt, label in [('mezuzot', 'מזוזות'), ('eruv_status', 'עירוב פסול'), ('kashrut_cert', 'תעודת כשרות')]:
-            count = len(open_deficits[open_deficits['deficit_type'] == dt])
-            lines.append(f"{label}: {count} מקרים פתוחים")
+    # 2. עולם הטרקלין (Traklin)
+    lines.append("\n🍷 [מדור טרקלין - תקלות מפורטות]:")
+    t_lines = []
+    for _, row in latest.iterrows():
+        t_issues = []
+        if row.get('t_friday') == 'לא': t_issues.append("לא היה סגור בשבת/שישי")
+        if row.get('t_kitchen_tools') == 'לא': t_issues.append("בעיה בכלי מטבח")
+        if row.get('t_procedure') == 'לא': t_issues.append("לא עובד לפי פקודה")
+        
+        if t_issues:
+            t_lines.append(f"- מוצב {row.get('base', 'לא ידוע')}: {', '.join(t_issues)}")
+    lines.extend(t_lines if t_lines else ["- כל הטרקלינים המדווחים תקינים."])
 
-    # אמינות מבקרים - ניתוח השוואתי ופורנזי
-    lines.append("\n--- ניתוח אמינות השוואתי (מבקר מול היסטוריה ומול עצמו) ---")
+    # 3. עולם הרוח ושיעורי תורה
+    lines.append("\n📖 [מדור רוח ושיעורי תורה]:")
+    for _, row in latest.iterrows():
+        if row.get('soldier_has_lesson') == 'כן':
+            instructor = row.get('soldier_lesson_teacher', 'לא ידוע')
+            phone = row.get('soldier_lesson_phone', 'אין טלפון')
+            lines.append(f"- במוצב {row.get('base', 'לא ידוע')} מתקיים שיעור ע\"י {instructor} ({phone}).")
+        elif row.get('soldier_want_lesson') == 'כן':
+            lines.append(f"- ⚠️ מוצב {row.get('base', 'לא ידוע')} מעוניין בשיעור וטרם קיבל מענה.")
+
+    # 4. חוסרים קריטיים (מערכת הכרטיסים הפתוחים)
+    lines.append("\n🔴 [חוסרים פתוחים בטיפול - מצב אמת]:")
+    try:
+        open_defs = get_open_deficits(accessible_units)
+        if not open_defs.empty:
+            for _, row in open_defs.iterrows():
+                lines.append(f"- {row.get('base', 'לא ידוע')}: {row.get('deficit_type', 'חוסר')} (סטטוס: פתוח)")
+        else:
+            lines.append("- אין חוסרים פתוחים.")
+    except: pass
+
+    # 5. אמינות מבקרים
+    lines.append("\n👥 [ניתוח אמינות ואיכות מילוי]:")
     for insp in df['inspector'].dropna().unique():
         cred = calculate_inspector_credibility(insp, df)
-        # זיהוי תבניות למען ה-AI
-        if cred['score'] < 50:
-            lines.append(f"⚠️ התראה: המבקר {insp} מציג דפוס חשוד. הוא מדווח נתונים דומים מדי בכל המוצבים או סותר קיצונית את היסטוריית הבסיס ללא הסבר.")
-        else:
-            lines.append(f"חייל: {insp} | ציון אמינות משוקלל: {cred['score']:.0f} | רמת פירוט: {'גבוהה' if cred['score'] > 80 else 'בינונית'}")
+        lines.append(f"- {insp}: ציון {cred['score']:.0f} | סטטוס: {cred['credibility']}")
 
-    return "\n".join(lines)
+    return "\u200f" + "\n".join(lines)
 
 
 def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
@@ -2999,13 +3024,16 @@ def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
 
             # הגדרת תפקיד המערכת והזרקת הנתונים
             system_instruction = (
-                f"אתה עוזר AI קמב\"ץ רבנות. תפקידך לזהות מי ממלא כדי 'לסמן וי' ומי ממלא כי אכפת לו.\n"
+                f"אתה עוזר AI קמב\"ץ רבנות וחוקר נתונים פורנזי. תפקידך לנתח את המידע ולהצביע על כשלים עמוקים.\n"
+                f"יש לך גישה לפרטים מזהים כמו שמות מעבירי שיעורים וטלפונים - השתמש בהם כדי לעזור למפקד לסגור מעגלים.\n"
                 f"חוקים לניתוח אמינות:\n"
                 f"1. השוואה היסטורית: אם חייל מדווח על מוצב מסוים כ'מושלם' בזמן ש-3 דוחות קודמים של מבקרים אחרים הצביעו על ליקויים חמורים - ציין זאת כחשד לחוסר אמינות.\n"
                 f"2. השוואה רוחבית: אם חייל מדווח את אותן תוצאות בדיוק (למשל 100% תקין או 100% פסול) ב-5 מוצבים שונים - הוא נחשב למי שעובד על 'טייס אוטומטי' ואינו אמין.\n"
-                f"3. סנכרון זמן ואיכות: חייל אמין הוא כזה שזמן המילוי שלו סביר, מצא ליקויים שמתכתבים עם היסטוריית המקום, וכתב הערות מפורטות.\n"
-                f"4. ענה תמיד בעברית מיושרת לימין והסבר את העומק של הניתוח למפקד.\n"
-                f"נתונים:\n{context}"
+                f"3. ניתוח יסודיות: חייל אמין הוא כזה שזמן המילוי שלו סביר והוא מפרט הערות חופשיות במקרה של תקלות.\n"
+                f"4. כשרות וטרקלין: שים לב במיוחד לערבוב כלים, בישול ישראל, וסגירת טרקלין בשבת.\n"
+                f"5. שיעורי תורה: ציין שמות של מרצים וטלפונים אם הם מופיעים בנתונים, כדי להקל על התיאום.\n"
+                f"\nהמטרה שלך היא לענות בעברית תמציתית, צבאית ומדויקת. אל תסכם מה שהמשתמש רואה בעיניים - תן לו תובנות (Insights) שהוא לא יכול לראות לבד.\n"
+                f"\n--- DATA CONTEXT ---\n{context}"
             )
 
             # המרת היסטוריית השיחה לפורמט שג'מיני דורש
