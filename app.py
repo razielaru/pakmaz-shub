@@ -2915,58 +2915,76 @@ def render_sla_dashboard(accessible_units_list: list):
 # AI Chatbot לשאילתות בעברית
 # ════════════════════════════════════════════════════════════
 def _build_data_context(df: pd.DataFrame, accessible_units: list) -> str:
-    """בונה context מקיף וחכם ל-AI - כולל את כל תחומי הביקורת ללא כפילויות, ואמינות מבקרים"""
+    """בונה context מקיף וחכם ל-AI - כולל שמות מוצבים, זמני טיפול, ומניעת כפילויות"""
     if df.empty:
         return "אין נתונים זמינים"
         
     lines = [f"סה\"כ דוחות היסטוריים במערכת: {len(df)}", f"יחידות פעילות: {df['unit'].nunique() if 'unit' in df.columns else '?'}"]
     
-    # --- 1. סטטוס מעודכן במוצבים (הדוח האחרון בלבד לכל מוצב - מונע כפילויות בכל הנושאים!) ---
+    # --- 1. סטטוס מעודכן במוצבים (מונע כפילויות ומפרט שמות מוצבים) ---
     if 'base' in df.columns and 'date' in df.columns:
         latest_reports = df.sort_values('date').groupby('base').tail(1)
-        lines.append("\n--- 📊 סטטוס עדכני במוצבים (מבוסס על הדיווח האחרון מכל מוצב בלבד) ---")
+        lines.append("\n--- 📊 סטטוס עדכני במוצבים (מבוסס על הדיווח האחרון מכל מוצב) ---")
         
-        # כשרות ועירוב
         if 'k_cert' in latest_reports.columns:
-            lines.append(f"מוצבים ללא תעודת כשרות בתוקף: {len(latest_reports[latest_reports['k_cert'] == 'לא'])}")
+            no_cert = latest_reports[latest_reports['k_cert'] == 'לא']
+            if not no_cert.empty:
+                lines.append(f"מוצבים ללא תעודת כשרות בתוקף: {len(no_cert)} (במוצבים: {', '.join(no_cert['base'])})")
+                
         if 'k_issues' in latest_reports.columns:
-            lines.append(f"מוצבים עם תקלות כשרות במטבח: {len(latest_reports[latest_reports['k_issues'] == 'כן'])}")
+            issues = latest_reports[latest_reports['k_issues'] == 'כן']
+            if not issues.empty:
+                lines.append(f"מוצבים עם תקלות כשרות במטבח: {len(issues)} (במוצבים: {', '.join(issues['base'])})")
+                
         if 'e_status' in latest_reports.columns:
-            lines.append(f"מוצבים עם עירוב פסול: {len(latest_reports[latest_reports['e_status'] == 'פסול'])}")
-            
-        # בתי כנסת ותקלות בינוי
+            eruv_fail = latest_reports[latest_reports['e_status'] == 'פסול']
+            if not eruv_fail.empty:
+                lines.append(f"מוצבים עם עירוב פסול: {len(eruv_fail)} (במוצבים: {', '.join(eruv_fail['base'])})")
+                
         if 's_clean' in latest_reports.columns:
-            not_clean = len(latest_reports[~latest_reports['s_clean'].isin(['מצוין', 'טוב'])])
-            lines.append(f"בתי כנסת שדורשים שיפור בניקיון: {not_clean}")
+            not_clean = latest_reports[~latest_reports['s_clean'].isin(['מצוין', 'טוב'])]
+            if not not_clean.empty:
+                lines.append(f"בתי כנסת שדורשים שיפור בניקיון: {len(not_clean)} (במוצבים: {', '.join(not_clean['base'])})")
+                
         if 's_smartbis' in latest_reports.columns:
-            need_repair = len(latest_reports[latest_reports['s_smartbis'] == 'כן'])
-            lines.append(f"מוצבים עם תקלות בינוי (סמארטביס) בבית הכנסת שדורשים תיקון: {need_repair}")
-            
-        # שיעורי תורה ורוח
-        if 'soldier_want_lesson' in latest_reports.columns:
-            want_lesson = len(latest_reports[latest_reports['soldier_want_lesson'] == 'כן'])
-            has_lesson = len(latest_reports[latest_reports['soldier_has_lesson'] == 'כן']) if 'soldier_has_lesson' in latest_reports.columns else 0
-            lines.append(f"מוצבים שמעוניינים בשיעור תורה (יש ביקוש): {want_lesson}")
-            lines.append(f"מוצבים שיש בהם בפועל שיעור תורה: {has_lesson}")
-            lines.append(f"פער שיעורי תורה (מעוניינים אך אין להם): {max(0, want_lesson - has_lesson)}")
+            need_repair = latest_reports[latest_reports['s_smartbis'] == 'כן']
+            if not need_repair.empty:
+                lines.append(f"מוצבים עם תקלות בינוי (סמארטביס) שדורשים תיקון: {len(need_repair)} (במוצבים: {', '.join(need_repair['base'])})")
+                
+        if 'soldier_want_lesson' in latest_reports.columns and 'soldier_has_lesson' in latest_reports.columns:
+            want_no_lesson = latest_reports[(latest_reports['soldier_want_lesson'] == 'כן') & (latest_reports['soldier_has_lesson'] == 'לא')]
+            if not want_no_lesson.empty:
+                lines.append(f"פער שיעורי תורה - מוצבים שמעוניינים בשיעור אך אין להם: {len(want_no_lesson)} (במוצבים: {', '.join(want_no_lesson['base'])})")
 
-    # --- 2. חוסרים קריטיים (מתוך מערכת ניהול החוסרים - SLA) ---
-    lines.append("\n--- 🔴 חוסרים וליקויים פתוחים בטיפול (מתוך מערכת הכרטיסים) ---")
+    # --- 2. חוסרים קריטיים וזמני טיפול (SLA) ---
+    lines.append("\n--- 🔴 חוסרים וליקויים פתוחים (מערכת כרטיסים) וזמני השלמה ---")
     try:
+        # סטטיסטיקות זמני סגירה
+        try:
+            stats = get_deficit_statistics(accessible_units)
+            lines.append(f"סה\"כ ליקויים שנסגרו והושלמו בגזרה: {stats['total_closed']}")
+            lines.append(f"זמן ממוצע לפתרון וסגירת ליקוי: {stats['avg_resolution_days']:.1f} ימים")
+        except Exception:
+            pass  # אם הפונקציה לא קיימת, ממשיכים
+
         open_deficits_df = get_open_deficits(accessible_units)
         if not open_deficits_df.empty:
             mezuzot_df = open_deficits_df[open_deficits_df['deficit_type'] == 'mezuzot']
             mezuzot_missing = int(pd.to_numeric(mezuzot_df['deficit_count'], errors='coerce').fillna(0).sum())
-            lines.append(f"סך הכל מזוזות חסרות בגזרה שטרם הושלמו: {mezuzot_missing}")
+            if mezuzot_missing > 0:
+                bases_list = ', '.join(mezuzot_df['base'].unique()) if 'base' in mezuzot_df.columns else 'לא ידוע'
+                lines.append(f"סך הכל מזוזות חסרות שטרם הושלמו: {mezuzot_missing} (במוצבים: {bases_list})")
             
             for dt, label in [('eruv_status', 'עירוב פסול'), ('kashrut_cert', 'תעודת כשרות חסרה'), ('eruv_kelim', 'ערבוב כלים')]:
-                count = len(open_deficits_df[open_deficits_df['deficit_type'] == dt])
+                specific_defs = open_deficits_df[open_deficits_df['deficit_type'] == dt]
+                count = len(specific_defs)
                 if count > 0:
-                    lines.append(f"כרטיסי טיפול פתוחים על {label}: {count}")
+                    bases_list = ', '.join(specific_defs['base'].unique()) if 'base' in specific_defs.columns else 'לא ידוע'
+                    lines.append(f"כרטיסי טיפול פתוחים על {label}: {count} (במוצבים: {bases_list})")
         else:
             lines.append("אין ליקויים או חוסרים פתוחים כרגע במערכת - הכל תקין!")
     except Exception:
-        lines.append("לא ניתן היה לטעון חוסרים כעת.")
+        lines.append("לא ניתן היה לטעון חוסרים וזמני טיפול כעת.")
 
     # --- 3. ציוני יחידות ---
     lines.append("\n--- 🏆 ציוני כשירות יחידות (0-100) ---")
@@ -2999,7 +3017,7 @@ def _build_data_context(df: pd.DataFrame, accessible_units: list) -> str:
             
             weighted_score = (cred_score * 0.7) + (min(report_count * 5, 30))
             
-            lines.append(f"חייל/מבקר: {insp} | מילא {report_count} דוחות | ציון איכות ואמינות: {cred_score} | אחוז ליקויים שאיתר (לא 'חיפף'): {defect_rate}%")
+            lines.append(f"חייל/מבקר: {insp} | מילא {report_count} דוחות | ציון איכות ואמינות: {cred_score} | אחוז ליקויים שאיתר: {defect_rate:.1f}%")
             
             if weighted_score > best_score and cred_score > 70:
                 best_score = weighted_score
@@ -4193,17 +4211,18 @@ def render_command_dashboard():
                     st.metric("סה״כ דוחות", len(unit_df))
                 with col3:
                     st.markdown(f"<div style='background:{color}; color:white; padding:15px; border-radius:10px; text-align:center; font-weight:700; font-size:1.1rem;'>{badge}</div>", unsafe_allow_html=True)
-                    st.markdown("---")
+                
+                st.markdown("---")
             
-                    # פרטי שאלון מפורטים
-                    st.markdown("### 📋 פירוט שאלון ביקורת")
-                    
-                    # קבלת הדוח האחרון והקודם לו למעקב שינויים
-                    latest_report = unit_df.sort_values('date', ascending=False).iloc[0] if len(unit_df) > 0 else None
-                    previous_report = unit_df.sort_values('date', ascending=False).iloc[1] if len(unit_df) > 1 else None
-                    
-                    # טאבים לקטגוריות שונות
-                    detail_tabs = st.tabs(["🔴 חוסרים ובעיות", "🍴 עירוב וכשרות", "🏗️ תשתיות ויומן ביקורת", "📊 סיכום כללי"])
+                # פרטי שאלון מפורטים
+                st.markdown("### 📋 פירוט שאלון ביקורת")
+                
+                # קבלת הדוח האחרון והקודם לו למעקב שינויים
+                latest_report = unit_df.sort_values('date', ascending=False).iloc[0] if len(unit_df) > 0 else None
+                previous_report = unit_df.sort_values('date', ascending=False).iloc[1] if len(unit_df) > 1 else None
+                
+                # טאבים לקטגוריות שונות
+                detail_tabs = st.tabs(["🔴 חוסרים ובעיות", "🍴 עירוב וכשרות", "🏗️ תשתיות ויומן ביקורת", "📊 סיכום כללי"])
                 
                 with detail_tabs[0]:  # חוסרים
                     st.markdown("#### חוסרים שדווחו")
