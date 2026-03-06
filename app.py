@@ -2896,17 +2896,61 @@ def render_sla_dashboard(accessible_units_list: list):
 # AI Chatbot לשאילתות בעברית
 # ════════════════════════════════════════════════════════════
 def _build_data_context(df: pd.DataFrame, accessible_units: list) -> str:
-    """בונה context תמציתי מהנתונים לצ'טבוט"""
+    """בונה context מקיף וחכם ל-AI - כולל את כל תחומי הביקורת ללא כפילויות, ואמינות מבקרים"""
     if df.empty:
         return "אין נתונים זמינים"
-    lines = [f"סה\"כ דוחות: {len(df)}", f"יחידות פעילות: {df['unit'].nunique() if 'unit' in df.columns else '?'}"]
-    if 'e_status' in df.columns:
-        lines.append(f"עירובין פסולים: {len(df[df['e_status'] == 'פסול'])}")
-    if 'k_cert' in df.columns:
-        lines.append(f"ללא תעודת כשרות: {len(df[df['k_cert'] == 'לא'])}")
-    if 'r_mezuzot_missing' in df.columns:
-        mez = int(pd.to_numeric(df['r_mezuzot_missing'], errors='coerce').fillna(0).sum())
-        lines.append(f"מזוזות חסרות: {mez}")
+        
+    lines = [f"סה\"כ דוחות היסטוריים במערכת: {len(df)}", f"יחידות פעילות: {df['unit'].nunique() if 'unit' in df.columns else '?'}"]
+    
+    # --- 1. סטטוס מעודכן במוצבים (הדוח האחרון בלבד לכל מוצב - מונע כפילויות בכל הנושאים!) ---
+    if 'base' in df.columns and 'date' in df.columns:
+        latest_reports = df.sort_values('date').groupby('base').tail(1)
+        lines.append("\n--- 📊 סטטוס עדכני במוצבים (מבוסס על הדיווח האחרון מכל מוצב בלבד) ---")
+        
+        # כשרות ועירוב
+        if 'k_cert' in latest_reports.columns:
+            lines.append(f"מוצבים ללא תעודת כשרות בתוקף: {len(latest_reports[latest_reports['k_cert'] == 'לא'])}")
+        if 'k_issues' in latest_reports.columns:
+            lines.append(f"מוצבים עם תקלות כשרות במטבח: {len(latest_reports[latest_reports['k_issues'] == 'כן'])}")
+        if 'e_status' in latest_reports.columns:
+            lines.append(f"מוצבים עם עירוב פסול: {len(latest_reports[latest_reports['e_status'] == 'פסול'])}")
+            
+        # בתי כנסת ותקלות בינוי
+        if 's_clean' in latest_reports.columns:
+            not_clean = len(latest_reports[~latest_reports['s_clean'].isin(['מצוין', 'טוב'])])
+            lines.append(f"בתי כנסת שדורשים שיפור בניקיון: {not_clean}")
+        if 's_smartbis' in latest_reports.columns:
+            need_repair = len(latest_reports[latest_reports['s_smartbis'] == 'כן'])
+            lines.append(f"מוצבים עם תקלות בינוי (סמארטביס) בבית הכנסת שדורשים תיקון: {need_repair}")
+            
+        # שיעורי תורה ורוח
+        if 'soldier_want_lesson' in latest_reports.columns:
+            want_lesson = len(latest_reports[latest_reports['soldier_want_lesson'] == 'כן'])
+            has_lesson = len(latest_reports[latest_reports['soldier_has_lesson'] == 'כן']) if 'soldier_has_lesson' in latest_reports.columns else 0
+            lines.append(f"מוצבים שמעוניינים בשיעור תורה (יש ביקוש): {want_lesson}")
+            lines.append(f"מוצבים שיש בהם בפועל שיעור תורה: {has_lesson}")
+            lines.append(f"פער שיעורי תורה (מעוניינים אך אין להם): {max(0, want_lesson - has_lesson)}")
+
+    # --- 2. חוסרים קריטיים (מתוך מערכת ניהול החוסרים - SLA) ---
+    lines.append("\n--- 🔴 חוסרים וליקויים פתוחים בטיפול (מתוך מערכת הכרטיסים) ---")
+    try:
+        open_deficits_df = get_open_deficits(accessible_units)
+        if not open_deficits_df.empty:
+            mezuzot_df = open_deficits_df[open_deficits_df['deficit_type'] == 'mezuzot']
+            mezuzot_missing = int(pd.to_numeric(mezuzot_df['deficit_count'], errors='coerce').fillna(0).sum())
+            lines.append(f"סך הכל מזוזות חסרות בגזרה שטרם הושלמו: {mezuzot_missing}")
+            
+            for dt, label in [('eruv_status', 'עירוב פסול'), ('kashrut_cert', 'תעודת כשרות חסרה'), ('eruv_kelim', 'ערבוב כלים')]:
+                count = len(open_deficits_df[open_deficits_df['deficit_type'] == dt])
+                if count > 0:
+                    lines.append(f"כרטיסי טיפול פתוחים על {label}: {count}")
+        else:
+            lines.append("אין ליקויים או חוסרים פתוחים כרגע במערכת - הכל תקין!")
+    except Exception:
+        lines.append("לא ניתן היה לטעון חוסרים כעת.")
+
+    # --- 3. ציוני יחידות ---
+    lines.append("\n--- 🏆 ציוני כשירות יחידות (0-100) ---")
     for unit in (accessible_units or [])[:5]:
         unit_df = df[df['unit'] == unit] if 'unit' in df.columns else pd.DataFrame()
         if not unit_df.empty:
@@ -2915,6 +2959,36 @@ def _build_data_context(df: pd.DataFrame, accessible_units: list) -> str:
                 lines.append(f"{unit}: ציון {score:.0f}")
             except Exception:
                 pass
+
+    # --- 4. נתוני אמינות חיילים ומבקרים ---
+    if 'inspector' in df.columns:
+        lines.append("\n--- 👥 נתוני מבקרים/חיילים (לאיתור המצטיין, האיכותי והאמין ביותר) ---")
+        inspectors = df['inspector'].dropna().unique()
+        best_inspector = None
+        best_score = -1
+        
+        for insp in inspectors:
+            insp_df = df[df['inspector'] == insp]
+            report_count = len(insp_df)
+            
+            if report_count < 2:
+                continue
+                
+            credibility_data = calculate_inspector_credibility(insp, df)
+            cred_score = credibility_data.get('score', 0)
+            defect_rate = credibility_data.get('defect_rate', 0)
+            
+            weighted_score = (cred_score * 0.7) + (min(report_count * 5, 30))
+            
+            lines.append(f"חייל/מבקר: {insp} | מילא {report_count} דוחות | ציון איכות ואמינות: {cred_score} | אחוז ליקויים שאיתר (לא 'חיפף'): {defect_rate}%")
+            
+            if weighted_score > best_score and cred_score > 70:
+                best_score = weighted_score
+                best_inspector = insp
+                
+        if best_inspector:
+            lines.append(f"**החייל המצטיין והאמין ביותר שממלא דוחות בתקופה זו: {best_inspector}**")
+
     return "\n".join(lines)
 
 
@@ -2956,8 +3030,12 @@ def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
 
             # הגדרת תפקיד המערכת והזרקת הנתונים
             system_instruction = (
-                f"אתה עוזר AI של מערכת רבנות פיקוד מרכז. "
-                f"ענה בעברית נקייה ומדויקת בלבד. הייה תמציתי, חכם ומקצועי. "
+                f"אתה עוזר AI קמב\"ץ של מערכת רבנות פיקוד מרכז. "
+                f"ענה בעברית צבאית, נקייה, ממוקדת ומדויקת. "
+                f"חוקים למענה על שאלות:\n"
+                f"1. שאלות על חוסרים (מזוזות, עירוב פסול, כשרות): ענה אך ורק מהפסקה 'חוסרים וליקויים פתוחים בטיפול' כדי לשקף מצב אמת ולא כפילויות.\n"
+                f"2. שאלות על סטטוס מוצבים (שיעורי תורה, ניקיון בית כנסת, תקלות בינוי/סמארטביס): ענה מתוך 'סטטוס עדכני במוצבים', המשקף את הדיווח האחרון מכל מוצב.\n"
+                f"3. שאלות על החייל/המבקר המצטיין: אל תבחר רק לפי כמות הדוחות. הסתכל בפסקה 'נתוני מבקרים/חיילים' והסבר את בחירתך לפי שקלול של כמות הדוחות, 'ציון איכות ואמינות' (שמשקף זמן מילוי ורצינות), ואחוז הליקויים (חייל שמוצא 0 ליקויים נחשד כמי שמחפף). ציין את שמו של המצטיין.\n"
                 f"נתונים עדכניים מהשטח:\n{context}"
             )
 
