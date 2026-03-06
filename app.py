@@ -663,9 +663,28 @@ st.markdown("""
         text-align: right !important;
     }
 
-    /* RTL for all markdown paragraphs */
+    /* RTL for all markdown paragraphs and lists */
     [data-testid="stMarkdown"] p, [data-testid="stMarkdown"] li,
     [data-testid="stMarkdown"] ul, [data-testid="stMarkdown"] ol {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+
+    /* נקודות רשימה - הזזה לימין */
+    .stMarkdown ul, .stMarkdown ol {
+        direction: rtl !important;
+        text-align: right !important;
+        padding-right: 2rem !important;
+        padding-left: 0 !important;
+    }
+
+    .stMarkdown li {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+
+    /* כל תוכן Markdown Container מיושר לימין */
+    div[data-testid="stMarkdownContainer"] {
         direction: rtl !important;
         text-align: right !important;
     }
@@ -3031,11 +3050,11 @@ def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
             # הגדרת תפקיד המערכת והזרקת הנתונים
             system_instruction = (
                 f"אתה עוזר AI קמב\"ץ של מערכת רבנות פיקוד מרכז. "
-                f"ענה בעברית צבאית, נקייה, ממוקדת ומדויקת. "
+                f"ענה בעברית צבאית, נקייה, ממוקדת ומדויקת. עיצוב הטקסט חייב להיות מותאם לקריאה מימין לשמאל (RTL). "
                 f"חוקים למענה על שאלות:\n"
                 f"1. שאלות על חוסרים (מזוזות, עירוב פסול, כשרות): ענה אך ורק מהפסקה 'חוסרים וליקויים פתוחים בטיפול' כדי לשקף מצב אמת ולא כפילויות.\n"
                 f"2. שאלות על סטטוס מוצבים (שיעורי תורה, ניקיון בית כנסת, תקלות בינוי/סמארטביס): ענה מתוך 'סטטוס עדכני במוצבים', המשקף את הדיווח האחרון מכל מוצב.\n"
-                f"3. שאלות על החייל/המבקר המצטיין: אל תבחר רק לפי כמות הדוחות. הסתכל בפסקה 'נתוני מבקרים/חיילים' והסבר את בחירתך לפי שקלול של כמות הדוחות, 'ציון איכות ואמינות' (שמשקף זמן מילוי ורצינות), ואחוז הליקויים (חייל שמוצא 0 ליקויים נחשד כמי שמחפף). ציין את שמו של המצטיין.\n"
+                f"3. שאלות על החייל/המבקר המצטיין והאמין: הסבר למפקד שאחוז ליקויים גבוה (למשל 85%) הוא סימן חיובי המעיד על מבקר יסודי שלא 'מחפף', אלא מוצא את הבעיות הקטנות. הסבר שזה לא סותר ציון חטמ\"ר גבוה (למשל 87/100), מכיוון שליקוי קטן (כמו מזוזה חסרה) מוריד מעט נקודות מהציון הכולל של הבסיס, אך נספר כ'מציאת ליקוי' עבור אמינות המבקר. נתח לפי הנתונים והסבר אותם בהיגיון.\n"
                 f"נתונים עדכניים מהשטח:\n{context}"
             )
 
