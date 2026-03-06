@@ -2844,7 +2844,7 @@ def get_stored_password_hash_dummy(unit):
 def render_sla_dashboard(accessible_units_list: list):
     """מציג progress bars לחוסרים עם מעקב SLA 7 ימים"""
     try:
-        result = supabase.table("deficits").select("*")            .in_("unit", accessible_units_list)            .eq("status", "open")            .execute()
+        result = supabase.table("deficit_tracking").select("*")            .in_("unit", accessible_units_list)            .eq("status", "open")            .execute()
         open_deficits = pd.DataFrame(result.data) if result.data else pd.DataFrame()
     except Exception as e:
         st.warning(f"⚠️ לא ניתן לטעון חוסרים: {e}")
@@ -2904,7 +2904,7 @@ def render_sla_dashboard(accessible_units_list: list):
             deficit_id = deficit.get('id', '')
             if deficit_id and st.button("✅", key=f"sla_{deficit_id}", use_container_width=True, help="סגור חוסר"):
                 try:
-                    supabase.table("deficits").update({"status": "closed"}).eq("id", deficit_id).execute()
+                    supabase.table("deficit_tracking").update({"status": "closed"}).eq("id", deficit_id).execute()
                     st.rerun()
                 except Exception as e:
                     st.error(f"שגיאה: {e}")
@@ -4420,7 +4420,7 @@ def render_command_dashboard():
                 st.markdown("### 📋 פירוט דוחות")
                 
                 # אפשרות מחיקה למנהלים בלבד
-                if role in ['pikud', 'ogda']:
+                if role in ['pikud', 'ugda']:
                     st.markdown("#### 🗑️ ניהול דוחות (מנהלים בלבד)")
                     
                     if not unit_df.empty and 'id' in unit_df.columns:
