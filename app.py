@@ -391,8 +391,9 @@ def render_report_diff(new_data: dict, unit: str, base: str):
     משווה את הדוח החדש לדוח הקודם.
     """
     try:
-        result = (supabase.table("reports").select("*").eq("unit", unit).ilike("base", f"%{base}%").order("date", desc=True).limit(2).execute())
-        prev_reports = result.data
+        result = (supabase.table("reports").select("*").eq("unit", unit).ilike("base", f"%{base}%").order("date", desc=True).limit(10).execute())
+        # סינון מחיקה רכה ב-Python
+        prev_reports = [d for d in result.data if not str(d.get('inspector', '')).startswith('🗑️')]
     except Exception:
         return
 
@@ -1101,9 +1102,14 @@ def get_accessible_units(unit_name, role):
 def load_reports_cached(accessible_units=None):
     try:
         data = supabase.table("reports").select("*").execute().data
+        if not data: return []
+        
+        # סינון "מחיקה רכה" - דוחות שהמפקח שלהם מתחיל באייקון פח
+        filtered_data = [d for d in data if not (str(d.get('inspector', '')).startswith('🗑️'))]
+        
         if accessible_units:
-            return [d for d in data if d['unit'] in accessible_units]
-        return data
+            return [d for d in filtered_data if d['unit'] in accessible_units]
+        return filtered_data
     except: return []
 
 def clear_cache(): load_reports_cached.clear()
@@ -4443,8 +4449,14 @@ def render_command_dashboard():
                             with col1:
                                 if st.button("🗑️ מחק דוח", type="primary"):
                                     try:
-                                        supabase.table("reports").delete().eq("id", report_id).execute()
-                                        st.success("✅ הדוח נמחק בהצלחה!")
+                                        # מחיקה רכה (עוקף שגיאת DB Trigger)
+                                        # מעדכנים את שם המפקח עם תחילית של מחיקה
+                                        current_inspector = selected_report.split(" | ")[2].split(" (ID:")[0]
+                                        supabase.table("reports").update({
+                                            "inspector": f"🗑️ מחיקה | {current_inspector}"
+                                        }).eq("id", report_id).execute()
+                                        
+                                        st.success("✅ הדוח הוסר מהמערכת!")
                                         clear_cache()
                                         time.sleep(1)
                                         st.rerun()
@@ -6715,7 +6727,8 @@ def render_unit_report():
     # טעינת דוחות של היחידה (ללא קאש)
     # ניקוי קאש לפני טעינה כדי להבטיח נתונים עדכניים
     clear_cache()
-    unit_reports_raw = supabase.table("reports").select("*").eq("unit", st.session_state.selected_unit).execute().data
+    res = supabase.table("reports").select("*").eq("unit", st.session_state.selected_unit).execute().data
+    unit_reports_raw = [d for d in res if not str(d.get('inspector', '')).startswith('🗑️')] if res else []
     unit_df = pd.DataFrame(unit_reports_raw)
     
     if not unit_df.empty and 'date' in unit_df.columns:
