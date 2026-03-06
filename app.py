@@ -2922,14 +2922,6 @@ def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
     """צ'טבוט AI לשאלות על הנתונים - מבוסס מודל Gemini"""
     st.markdown("### 🤖 עוזר פיקודי AI (Powered by Gemini)")
 
-    import google.generativeai as genai
-    genai.configure(api_key=st.secrets["gemini"]["api_key"])
-    st.warning("🔍 המודלים שפתוחים כרגע בחשבון שלך הם:")
-    for m in genai.list_models():
-        if 'generateContent' in m.supported_generation_methods:
-            st.code(m.name.replace('models/', ''))
-    st.stop()
-
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
@@ -2978,7 +2970,7 @@ def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
             response = None
 
             # אתחול המודל - fallback אמיתי: השגיאה נתפסת ברגע השליחה עצמה
-            models_to_try = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
+            models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash"]
 
             last_error = ""  # שמירת השגיאה האחרונה מגוגל
 
@@ -3138,7 +3130,7 @@ def render_executive_ai_brief(df: pd.DataFrame, accessible_units: list):
 כתוב בשפה צבאית-עניינית, ללא הקדמות, והתבסס אך ורק על חומרת הנתונים.
 """
                 response = None
-                for _m in ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]:
+                for _m in ["gemini-2.5-flash", "gemini-2.0-flash"]:
                     try:
                         model = genai.GenerativeModel(_m)
                         response = model.generate_content(prompt)
@@ -3223,7 +3215,7 @@ def analyze_report_with_ai(base_name: str, report_data: dict) -> dict:
         import json as _json
         genai.configure(api_key=st.secrets["gemini"]["api_key"])
         response = None
-        for _m in ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]:
+        for _m in ["gemini-2.5-flash", "gemini-2.0-flash"]:
             try:
                 model = genai.GenerativeModel(_m)
                 response = model.generate_content(prompt)
@@ -3247,7 +3239,7 @@ def analyze_photo_with_vision(image_bytes: bytes) -> dict:
 
     try:
         genai.configure(api_key=st.secrets["gemini"]["api_key"])
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.5-flash")
         image_data = base64.b64encode(image_bytes).decode()
 
         prompt = """
@@ -3278,7 +3270,7 @@ def transcribe_voice_note(audio_bytes: bytes) -> str:
 
     try:
         genai.configure(api_key=st.secrets["gemini"]["api_key"])
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.5-flash")
         audio_b64 = base64.b64encode(audio_bytes).decode()
 
         response = model.generate_content([
@@ -3338,7 +3330,7 @@ def semantic_search_reports(query: str, df: pd.DataFrame) -> pd.DataFrame:
         ענה בפורמט JSON בלבד: {{"relevant_indices": [0, 5, 23]}}
         """
 
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.5-flash")
         response = model.generate_content(prompt)
         clean = response.text.strip().replace("```json", "").replace("```", "").strip()
         result = _json.loads(clean)
@@ -3397,7 +3389,7 @@ def generate_smart_priority_queue(df: pd.DataFrame, accessible_units: list) -> l
 
     try:
         genai.configure(api_key=st.secrets["gemini"]["api_key"])
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.5-flash")
         prompt = f"""דרג את רשימת הליקויים הבאה לפי דחיפות טיפול (1 - הכי דחוף).
         שקול: השפעה על כשרות החיילים והלכה. החזר JSON: [{{"priority": 1, "issue": "...", "reason": "..."}}]
         ליקויים: {chr(10).join(issues[:10])}"""
@@ -3521,7 +3513,7 @@ def render_shabbat_preparation_assistant(unit: str, df: pd.DataFrame):
         with st.spinner("ה-AI בונה עבורך תכנית עבודה..."):
             try:
                 genai.configure(api_key=st.secrets["gemini"]["api_key"])
-                model = genai.GenerativeModel("gemini-1.5-flash")
+                model = genai.GenerativeModel("gemini-2.5-flash")
                 context = f"רב חטמ״ר {unit}. בעיות: {', '.join(open_issues) if open_issues else 'אין'}"
                 response = model.generate_content(f"צור לו\"ז משימות צבאי ליום שישי לרב חטמ״ר: {context}. פורמט: שעה - משימה.")
                 st.info(response.text)
@@ -3537,7 +3529,7 @@ def render_halachic_advisor():
         with st.spinner("מעיין במקורות..."):
             try:
                 genai.configure(api_key=st.secrets["gemini"]["api_key"])
-                model = genai.GenerativeModel("gemini-1.5-flash")
+                model = genai.GenerativeModel("gemini-2.5-flash")
                 res = model.generate_content(f"ענה בקצרה כרב צבאי על שאלת הלכה: {q}. ציין מקור והדגש שזו תשובה ראשונית בלבד.")
                 st.success(res.text)
             except Exception as e: st.error(f"שגיאה: {e}")
