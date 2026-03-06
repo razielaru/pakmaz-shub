@@ -626,6 +626,49 @@ st.markdown("""
         direction: rtl !important;
         text-align: right !important;
     }
+
+    /* RTL for st.info / st.warning / st.success / st.error */
+    [data-testid="stAlert"], [data-testid="stAlertContainer"],
+    div[class*="stAlert"] {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+
+    /* RTL for st.metric */
+    [data-testid="stMetric"], [data-testid="stMetricLabel"],
+    [data-testid="stMetricValue"], [data-testid="stMetricDelta"] {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+
+    /* RTL for st.expander */
+    [data-testid="stExpander"], .streamlit-expanderHeader,
+    .streamlit-expanderContent {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+
+    /* RTL for st.tabs */
+    [data-testid="stTabs"], [data-testid="stTabContent"],
+    [data-baseweb="tab-list"], [data-baseweb="tab-panel"] {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+
+    /* RTL for st.selectbox / st.text_input labels */
+    [data-testid="stSelectbox"] label, [data-testid="stTextInput"] label,
+    [data-testid="stTextArea"] label, [data-testid="stCheckbox"] label,
+    [data-testid="stRadio"] label {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+
+    /* RTL for all markdown paragraphs */
+    [data-testid="stMarkdown"] p, [data-testid="stMarkdown"] li,
+    [data-testid="stMarkdown"] ul, [data-testid="stMarkdown"] ol {
+        direction: rtl !important;
+        text-align: right !important;
+    }
     
     /* כותרות - יישור לימין */
     h1, h2, h3, h4, h5, h6 {
@@ -2927,7 +2970,7 @@ def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
             response = None
 
             # אתחול המודל - fallback אמיתי: השגיאה נתפסת ברגע השליחה עצמה
-            models_to_try = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash"]
+            models_to_try = ["gemini-1.5-flash"]
 
             last_error = ""  # שמירת השגיאה האחרונה מגוגל
 
@@ -3087,7 +3130,7 @@ def render_executive_ai_brief(df: pd.DataFrame, accessible_units: list):
 כתוב בשפה צבאית-עניינית, ללא הקדמות, והתבסס אך ורק על חומרת הנתונים.
 """
                 response = None
-                for _m in ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash"]:
+                for _m in ["gemini-1.5-flash"]:
                     try:
                         model = genai.GenerativeModel(_m)
                         response = model.generate_content(prompt)
@@ -3172,7 +3215,7 @@ def analyze_report_with_ai(base_name: str, report_data: dict) -> dict:
         import json as _json
         genai.configure(api_key=st.secrets["gemini"]["api_key"])
         response = None
-        for _m in ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash"]:
+        for _m in ["gemini-1.5-flash"]:
             try:
                 model = genai.GenerativeModel(_m)
                 response = model.generate_content(prompt)
@@ -3962,21 +4005,21 @@ def render_command_dashboard():
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
-        
-        # גרף השוואתי
-        st.markdown("---")
-        st.markdown("### 📊 השוואת ציונים")
-        fig = px.bar(
-            league_df, 
-            x='יחידה', 
-            y='ציון',
-            color='ציון',
-            color_continuous_scale=['#ef4444', '#f59e0b', '#10b981'],
-            range_color=[0, 100],
-            labels={'ציון': 'ציון (0-100)'}
-        )
-        fig.update_layout(height=400, xaxis_tickangle=-45)
-        st.plotly_chart(fig, use_container_width=True)
+            
+            # גרף השוואתי
+            st.markdown("---")
+            st.markdown("### 📊 השוואת ציונים")
+            fig = px.bar(
+                league_df, 
+                x='יחידה', 
+                y='ציון',
+                color='ציון',
+                color_continuous_scale=['#ef4444', '#f59e0b', '#10b981'],
+                range_color=[0, 100],
+                labels={'ציון': 'ציון (0-100)'}
+            )
+            fig.update_layout(height=400, xaxis_tickangle=-45)
+            st.plotly_chart(fig, use_container_width=True)
     
     # ===== טאב 3: תובנות AI =====
     if "🤖 תובנות AI" in t_map:
