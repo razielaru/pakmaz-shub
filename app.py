@@ -4264,6 +4264,583 @@ def render_unit_map(df, unit):
         st.warning("⚠️ לא נמצאו נתוני מיקום ליחידה זו.")
 
 
+def render_hatmar_management_tab(df: pd.DataFrame, unit: str):
+    """
+    טאב ניהול מרכזי לרב חטמ"ר — 4 חלקים:
+    1. KPI שבועי
+    2. תור עבודה (מה בוער)
+    3. כרטיסי מבקרים
+    4. מעקב סגירת ממצאים
+    """
+
+    # ══════════════════════════════════════════
+    # חלק 1 — KPI שבועי (4 מספרים בולטים)
+    # ══════════════════════════════════════════
+
+    st.markdown("### 📊 מצב שבועי")
+
+    today = pd.Timestamp.now()
+    week_ago = today - pd.Timedelta(days=7)
+    two_weeks_ago = today - pd.Timedelta(days=14)
+
+    df["date_dt"] = pd.to_datetime(df["date"], errors="coerce")
+
+    df_unit = df[df["unit"] == unit].copy()
+    total_bases = df_unit["base"].nunique()
+    visited_this_week = df_unit[df_unit["date_dt"] >= week_ago]["base"].nunique()
+    not_visited_14d = df_unit.groupby("base")["date_dt"].max()
+    overdue_bases = (not_visited_14d < two_weeks_ago).sum()
+    avg_reliability = df_unit["reliability_score"].mean() if "reliability_score" in df_unit.columns else None
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    with c1:
+        pct = int(visited_this_week / total_bases * 100) if total_bases else 0
+        color = "#10b981" if pct >= 80 else "#f59e0b" if pct >= 50 else "#ef4444"
+        st.markdown(f"""
+        <div style='background:white; border-radius:12px; padding:16px; text-align:center;
+                    border-top:4px solid {color}; box-shadow:0 2px 8px rgba(0,0,0,0.08);'>
+            <div style='font-size:36px; font-weight:800; color:{color};'>{pct}%</div>
+            <div style='font-size:13px; color:#64748b; margin-top:4px;'>כיסוי שבועי</div>
+            <div style='font-size:11px; color:#94a3b8;'>{visited_this_week}/{total_bases} מוצבים</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c2:
+        color = "#ef4444" if overdue_bases > 0 else "#10b981"
+        st.markdown(f"""
+        <div style='background:white; border-radius:12px; padding:16px; text-align:center;
+                    border-top:4px solid {color}; box-shadow:0 2px 8px rgba(0,0,0,0.08);'>
+            <div style='font-size:36px; font-weight:800; color:{color};'>{overdue_bases}</div>
+            <div style='font-size:13px; color:#64748b; margin-top:4px;'>מוצבים פגי תוקף</div>
+            <div style='font-size:11px; color:#94a3b8;'>לא בוקרו 14+ יום</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c3:
+        open_findings = len(df_unit[
+            (df_unit.get("e_status", pd.Series()) == "פסול") |
+            (df_unit.get("k_cert", pd.Series()) == "לא")
+        ]) if not df_unit.empty else 0
+        color = "#ef4444" if open_findings > 3 else "#f59e0b" if open_findings > 0 else "#10b981"
+        st.markdown(f"""
+        <div style='background:white; border-radius:12px; padding:16px; text-align:center;
+                    border-top:4px solid {color}; box-shadow:0 2px 8px rgba(0,0,0,0.08);'>
+            <div style='font-size:36px; font-weight:800; color:{color};'>{open_findings}</div>
+            <div style='font-size:13px; color:#64748b; margin-top:4px;'>ממצאים פתוחים</div>
+            <div style='font-size:11px; color:#94a3b8;'>עירוב/כשרות חריג</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c4:
+        rel = f"{avg_reliability:.0f}" if avg_reliability else "—"
+        color = "#10b981" if avg_reliability and avg_reliability >= 75 else "#f59e0b" if avg_reliability and avg_reliability >= 50 else "#ef4444"
+        st.markdown(f"""
+        <div style='background:white; border-radius:12px; padding:16px; text-align:center;
+                    border-top:4px solid {color}; box-shadow:0 2px 8px rgba(0,0,0,0.08);'>
+            <div style='font-size:36px; font-weight:800; color:{color};'>{rel}</div>
+            <div style='font-size:13px; color:#64748b; margin-top:4px;'>ממוצע אמינות</div>
+            <div style='font-size:11px; color:#94a3b8;'>כל המבקרים</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════
+    # חלק 2 — תור עבודה (מה בוער)
+    # ══════════════════════════════════════════
+
+    st.markdown("### 🔥 תור עבודה — ממוין לפי דחיפות")
+
+    # בניית רשימת פריטים שדורשים טיפול
+    work_items = []
+
+    # מוצבים שלא בוקרו
+    for base, last_date in not_visited_14d.items():
+        days_overdue = (today - last_date).days
+        if days_overdue > 14:
+            work_items.append({
+                "סוג": "⏰ לא בוקר",
+                "מוצב": base,
+                "פירוט": f"לא בוקר {days_overdue} יום",
+                "דחיפות": days_overdue,
+                "צבע": "#ef4444" if days_overdue > 21 else "#f59e0b"
+            })
+
+    # ממצאי עירוב פסול
+    latest_per_base = df_unit.sort_values("date_dt").groupby("base").last()
+    for base, row in latest_per_base.iterrows():
+        if row.get("e_status") == "פסול":
+            days = (today - row["date_dt"]).days
+            work_items.append({
+                "סוג": "🔴 עירוב פסול",
+                "מוצב": base,
+                "פירוט": f"פסול כבר {days} ימים",
+                "דחיפות": days + 50,  # עירוב תמיד דחוף יותר
+                "צבע": "#dc2626"
+            })
+        if row.get("k_cert") == "לא":
+            days = (today - row["date_dt"]).days
+            work_items.append({
+                "סוג": "🟡 כשרות",
+                "מוצב": base,
+                "פירוט": f"אין תעודה — {days} ימים",
+                "דחיפות": days + 30,
+                "צבע": "#d97706"
+            })
+
+    if work_items:
+        work_items.sort(key=lambda x: x["דחיפות"], reverse=True)
+        for item in list(work_items)[0:10]:  # מציג עד 10 הדחופים
+            col_info, col_btn = st.columns([5, 1])
+            with col_info:
+                st.markdown(f"""
+                <div style='background:white; border-right:4px solid {item["צבע"]};
+                            border-radius:8px; padding:10px 14px; margin:4px 0;
+                            box-shadow:0 1px 4px rgba(0,0,0,0.06);'>
+                    <span style='font-weight:700; color:{item["צבע"]};'>{item["סוג"]}</span>
+                    <span style='margin-right:10px; color:#1e3a8a; font-weight:600;'>{item["מוצב"]}</span>
+                    <span style='color:#64748b; font-size:13px;'>{item["פירוט"]}</span>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_btn:
+                if st.button("✅ טופל", key=f"handled_{item['מוצב']}_{item['סוג']}", use_container_width=True):
+                    # שמירה ב-Supabase כממצא שטופל
+                    try:
+                        supabase.table("handled_findings").insert({
+                            "base": item["מוצב"],
+                            "finding_type": item["סוג"],
+                            "unit": unit,
+                            "handled_by": st.session_state.get("inspector", "רב חטמ״ר"),
+                            "handled_at": datetime.datetime.now().isoformat()
+                        }).execute()
+                        st.toast(f"✅ {item['מוצב']} — סומן כטופל", icon="✅")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"שגיאה: {e}")
+    else:
+        st.success("✅ אין פריטים פתוחים — הכל מטופל!", icon="🎉")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════
+    # חלק 3 — כרטיסי מבקרים
+    # ══════════════════════════════════════════
+
+    st.markdown("### 👤 מבקרים — מי עובד, מי מחפף")
+
+    inspectors = df_unit["inspector"].dropna().unique()
+
+    cols = st.columns(min(len(inspectors), 3))
+    for idx, inspector in enumerate(inspectors):
+        df_insp = df_unit[df_unit["inspector"] == inspector]
+        visits_total = len(df_insp)
+        visits_month = len(df_insp[df_insp["date_dt"] >= today - pd.Timedelta(days=30)])
+        avg_rel = df_insp["reliability_score"].mean() if "reliability_score" in df_insp.columns else None
+        is_p1 = (df_insp["e_status"] == "תקין") if "e_status" in df_insp.columns else pd.Series([True]*len(df_insp))
+        is_p2 = (df_insp["k_cert"] == "כן") if "k_cert" in df_insp.columns else pd.Series([True]*len(df_insp))
+        is_p3 = (df_insp["k_issues"] == "לא") if "k_issues" in df_insp.columns else pd.Series([True]*len(df_insp))
+        
+        all_perfect = False
+        if len(df_insp) >= 3:
+            try:
+                all_perfect = bool((is_p1 & is_p2 & is_p3).all())
+            except:
+                all_perfect = False
+        last_visit = df_insp["date_dt"].max()
+        days_since = (today - last_visit).days if pd.notna(last_visit) else 999
+
+        # צבע כרטיס לפי מצב
+        if avg_rel and avg_rel < 50:
+            card_color = "#fef2f2"
+            border_color = "#ef4444"
+            status_label = "⚠️ חשוד בחיפוף"
+            status_color = "#ef4444"
+        elif all_perfect:
+            card_color = "#fff7ed"
+            border_color = "#f97316"
+            status_label = "🟠 הכל תקין תמיד — לבדוק"
+            status_color = "#f97316"
+        elif days_since > 14:
+            card_color = "#fafafa"
+            border_color = "#94a3b8"
+            status_label = f"💤 לא יצא {days_since} ימים"
+            status_color = "#94a3b8"
+        else:
+            card_color = "#f0fdf4"
+            border_color = "#10b981"
+            status_label = "✅ פעיל ותקין"
+            status_color = "#10b981"
+
+        with cols[idx % 3]:
+            st.markdown(f"""
+            <div style='background:{card_color}; border:1px solid {border_color};
+                        border-radius:12px; padding:14px; margin:6px 0;'>
+                <div style='font-weight:700; font-size:15px; color:#1e3a8a;'>👤 {inspector}</div>
+                <div style='font-size:12px; color:{status_color}; font-weight:600; margin:4px 0;'>{status_label}</div>
+                <div style='font-size:12px; color:#64748b;'>
+                    📋 {visits_month} ביקורות החודש ({visits_total} סה״כ)<br/>
+                    🛡️ אמינות ממוצעת: {f"{avg_rel:.0f}" if avg_rel else "—"}<br/>
+                    📅 ביקור אחרון: לפני {days_since} ימים
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ══════════════════════════════════════════
+    # חלק 4 — מעקב סגירת ממצאים (Ticket System)
+    # ══════════════════════════════════════════
+
+    st.markdown("### 🎫 מעקב ממצאים פתוחים")
+
+    try:
+        handled = supabase.table("handled_findings") \
+            .select("*") \
+            .eq("unit", unit) \
+            .is_("handled_at", "null") \
+            .execute()
+        open_tickets = handled.data or []
+    except Exception:
+        open_tickets = []
+
+    if open_tickets:
+        for ticket in open_tickets:
+            age_days = (today - pd.Timestamp(ticket["created_at"])).days if ticket.get("created_at") else "?"
+            st.markdown(f"""
+            <div style='background:#fefce8; border-right:3px solid #eab308;
+                        border-radius:8px; padding:10px 14px; margin:4px 0; font-size:13px;'>
+                🎫 <b>{ticket.get("base","?")}</b> —
+                {ticket.get("finding_type","?")} —
+                <span style='color:#92400e;'>פתוח {age_days} ימים</span>
+                <span style='color:#64748b; font-size:11px;'> | נפתח ע״י {ticket.get("opened_by","?")}</span>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info("אין ממצאים פתוחים לטיפול כרגע")
+
+# ══════════════════════════════════════════════════════
+# 1. בריפינג בוקר — מסך פתיחה לרב חטמ"ר
+# ══════════════════════════════════════════════════════
+
+def render_morning_briefing(df: pd.DataFrame, unit: str):
+    """
+    נטען לפני כל הטאבים — 3 שורות, 30 שניות, תמונה מלאה.
+    """
+    today = pd.Timestamp.now()
+    df_unit = df[df["unit"] == unit].copy()
+    df_unit["date_dt"] = pd.to_datetime(df_unit["date"], errors="coerce")
+
+    # --- חישובים ---
+    # מה בוער
+    latest = df_unit.sort_values("date_dt").groupby("base").last()
+    eruv_fail = [b for b, r in latest.iterrows() if r.get("e_status") == "פסול"]
+    no_cert   = [b for b, r in latest.iterrows() if r.get("k_cert") == "לא"]
+    overdue   = [
+        b for b, r in latest.iterrows()
+        if pd.notna(r["date_dt"]) and (today - r["date_dt"]).days > 14
+    ]
+
+    # מי לא דיווח השבוע
+    week_ago = today - pd.Timedelta(days=7)
+    all_inspectors = df_unit["inspector"].dropna().unique()
+    inactive = [
+        i for i in all_inspectors
+        if df_unit[
+            (df_unit["inspector"] == i) &
+            (df_unit["date_dt"] >= week_ago)
+        ].empty
+    ]
+
+    # כמה שאלות הלכתיות פתוחות (אם יש טבלה)
+    try:
+        halachic_q = supabase.table("halachic_questions") \
+            .select("id") \
+            .eq("unit", unit) \
+            .is_("answered_at", "null") \
+            .execute()
+        open_questions = len(halachic_q.data or [])
+    except Exception:
+        open_questions = 0
+
+    # --- תצוגה ---
+    greeting_hour = today.hour
+    greeting = "בוקר טוב" if greeting_hour < 12 else "צהריים טובים" if greeting_hour < 17 else "ערב טוב"
+
+    st.markdown(f"""
+    <div style='background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%);
+                border-radius: 16px; padding: 20px 24px; margin-bottom: 20px;
+                color: white;'>
+        <div style='font-size: 13px; opacity: 0.8; margin-bottom: 4px;'>
+            {today.strftime("%A, %d/%m/%Y")} · {greeting}
+        </div>
+        <div style='font-size: 22px; font-weight: 800; margin-bottom: 16px;'>
+            📋 בריפינג יומי — {unit}
+        </div>
+        <div style='display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;'>
+
+            <div style='background: rgba(255,255,255,0.12); border-radius: 10px; padding: 12px;'>
+                <div style='font-size: 11px; opacity: 0.75; margin-bottom: 6px;'>🔥 דורש טיפול מיידי</div>
+                {"".join(f"<div style='font-size:13px;'>🔴 עירוב פסול — {b}</div>" for b in list(eruv_fail)) or
+                 "".join(f"<div style='font-size:13px;'>🟡 אין תעודה — {b}</div>" for b in list(no_cert)) or
+                 "".join(f"<div style='font-size:13px;'>⏰ לא בוקר — {b}</div>" for b in list(overdue)[0:3]) or
+                 "<div style='font-size:13px; opacity:0.8;'>✅ הכל תקין</div>"}
+            </div>
+
+            <div style='background: rgba(255,255,255,0.12); border-radius: 10px; padding: 12px;'>
+                <div style='font-size: 11px; opacity: 0.75; margin-bottom: 6px;'>👤 לא דיווחו השבוע</div>
+                {"".join(f"<div style='font-size:13px;'>• {i}</div>" for i in list(inactive)[0:4]) or
+                 "<div style='font-size:13px; opacity:0.8;'>✅ כולם פעילים</div>"}
+            </div>
+
+            <div style='background: rgba(255,255,255,0.12); border-radius: 10px; padding: 12px;'>
+                <div style='font-size: 11px; opacity: 0.75; margin-bottom: 6px;'>📖 שאלות הלכה פתוחות</div>
+                <div style='font-size: 28px; font-weight: 800;'>{open_questions}</div>
+                <div style='font-size: 11px; opacity: 0.7;'>ממתינות לתשובה</div>
+            </div>
+
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════
+# 2. תכנון מסלול + Waze
+# ══════════════════════════════════════════════════════
+
+def render_route_planner(df: pd.DataFrame, unit: str):
+    """
+    בוחר אוטומטית את 3 המוצבים הדחופים ביותר ומציג כפתורי Waze.
+    """
+    st.markdown("### 🛣️ מסלול הסיור הקרוב")
+
+    today = pd.Timestamp.now()
+    df_unit = df[df["unit"] == unit].copy()
+    df_unit["date_dt"] = pd.to_datetime(df_unit["date"], errors="coerce")
+    latest = df_unit.sort_values("date_dt").groupby("base").last().reset_index()
+
+    # חישוב ציון דחיפות לכל מוצב
+    def urgency_score(row):
+        score = 0
+        days_since = (today - row["date_dt"]).days if pd.notna(row["date_dt"]) else 30
+        score += min(days_since * 2, 60)          # עד 60 נק' על ימים
+        if row.get("e_status") == "פסול":  score += 50
+        if row.get("k_cert") == "לא":      score += 30
+        mezuzot = int(row.get("r_mezuzot_missing") or 0)
+        score += min(mezuzot * 3, 20)
+        return score
+
+    latest["urgency"] = latest.apply(urgency_score, axis=1)
+    top3 = latest.nlargest(3, "urgency")
+
+    if top3.empty:
+        st.info("אין מוצבים שדורשים ביקור דחוף כרגע")
+        return
+
+    st.markdown("""
+    <div style='background:#f0f9ff; border-right:4px solid #0ea5e9;
+                border-radius:10px; padding:12px 16px; margin-bottom:16px; font-size:13px; color:#0c4a6e;'>
+        🤖 המערכת בחרה את 3 המוצבים הדחופים ביותר לסיור הקרוב — לפי גיל ביקור, עירוב, כשרות ומזוזות.
+    </div>
+    """, unsafe_allow_html=True)
+
+    priority_labels = ["🥇 עדיפות ראשונה", "🥈 עדיפות שנייה", "🥉 עדיפות שלישית"]
+
+    for idx, (_, row) in enumerate(top3.iterrows()):
+        base_name = row["base"]
+        coords = BASE_COORDINATES.get(base_name)
+        days_since = (today - row["date_dt"]).days if pd.notna(row["date_dt"]) else "?"
+
+        # בניית רשימת ממצאים קיימים
+        issues = []
+        if row.get("e_status") == "פסול":           issues.append("🔴 עירוב פסול")
+        if row.get("k_cert") == "לא":               issues.append("🟡 אין תעודת כשרות")
+        mezuzot = int(row.get("r_mezuzot_missing") or 0)
+        if mezuzot > 0:                              issues.append(f"🔵 {mezuzot} מזוזות חסרות")
+        if not issues:                               issues.append(f"⏰ לא בוקר {days_since} ימים")
+
+        col_info, col_waze = st.columns([4, 1])
+
+        with col_info:
+            issues_html = " · ".join(issues)
+            st.markdown(f"""
+            <div style='background:white; border-radius:10px; padding:14px 16px;
+                        margin:6px 0; box-shadow:0 2px 6px rgba(0,0,0,0.07);
+                        border-right:4px solid {"#ef4444" if idx==0 else "#f59e0b" if idx==1 else "#3b82f6"};'>
+                <div style='font-size:11px; color:#64748b; margin-bottom:2px;'>{priority_labels[idx]}</div>
+                <div style='font-size:16px; font-weight:700; color:#1e3a8a;'>📍 {base_name}</div>
+                <div style='font-size:12px; color:#475569; margin-top:4px;'>{issues_html}</div>
+                <div style='font-size:11px; color:#94a3b8; margin-top:4px;'>
+                    ביקור אחרון: {row["date_dt"].strftime("%d/%m/%Y") if pd.notna(row["date_dt"]) else "לא ידוע"}
+                    · מבקר: {row.get("inspector","?")}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col_waze:
+            if coords:
+                lat, lon = coords
+                waze_url = f"https://waze.com/ul?ll={lat},{lon}&navigate=yes"
+                st.link_button("🗺️ Waze", waze_url, use_container_width=True)
+            else:
+                st.caption("אין\nקואורדינטות")
+
+    # כפתור שיתוף המסלול בוואטסאפ
+    st.markdown("<br>", unsafe_allow_html=True)
+    bases_list = " ← ".join(top3["base"].tolist())
+    whatsapp_text = f"מסלול סיור רבנות: {bases_list}"
+    wa_url = f"https://wa.me/?text={whatsapp_text.replace(' ', '%20')}"
+    st.link_button("📤 שתף מסלול בוואטסאפ", wa_url, use_container_width=True)
+
+
+# ══════════════════════════════════════════════════════
+# 3. הודעת שבת אוטומטית לוואטסאפ
+# ══════════════════════════════════════════════════════
+
+def render_shabbat_whatsapp_generator(df: pd.DataFrame, unit: str):
+    """
+    מייצר הודעת שבת מותאמת אישית לפי נתוני השבוע — לשליחה למפקדים.
+    """
+    st.markdown("### 📱 הודעת שבת אוטומטית למפקדים")
+
+    today = pd.Timestamp.now()
+    df_unit = df[df["unit"] == unit].copy()
+    df_unit["date_dt"] = pd.to_datetime(df_unit["date"], errors="coerce")
+
+    # נתוני השבוע האחרון
+    week_ago = today - pd.Timedelta(days=7)
+    latest = df_unit.sort_values("date_dt").groupby("base").last()
+
+    # בניית סיכום לכל מוצב
+    base_summaries = []
+    for base, row in latest.iterrows():
+        issues = []
+        if row.get("e_status") == "פסול":
+            issues.append("העירוב פסול")
+        if row.get("k_cert") == "לא":
+            issues.append("אין תעודת כשרות")
+        mezuzot = int(row.get("r_mezuzot_missing") or 0)
+        if mezuzot > 0:
+            issues.append(f"חסרות {mezuzot} מזוזות")
+        if row.get("p_mix") == "כן":
+            issues.append("ערבוב כלים")
+
+        base_summaries.append({
+            "base": base,
+            "issues": issues,
+            "status": "בעיות" if issues else "תקין",
+            "inspector": row.get("inspector", ""),
+        })
+
+    # בניית הודעה
+    shabbat_times = {
+        "ירושלים": "16:45", "תל אביב": "17:10",
+        "חיפה": "17:00", "באר שבע": "17:15",
+    }
+
+    col_settings, col_preview = st.columns([1, 2])
+
+    with col_settings:
+        rabbi_name = st.text_input("שם הרב:", value="רב החטיבה", key="wa_rabbi_name")
+        region = st.selectbox("עיר לזמן שבת:", list(shabbat_times.keys()), key="wa_region")
+        include_issues_only = st.checkbox("כלול רק מוצבים עם בעיות", value=False, key="wa_issues_only")
+        custom_note = st.text_area("הערה אישית (רשות):", key="wa_custom", height=80)
+
+    with col_preview:
+        shabbat_time = shabbat_times[region]
+        next_friday = today + pd.Timedelta(days=(4 - today.dayofweek) % 7)
+        date_str = next_friday.strftime("%d/%m/%Y")
+
+        # בניית גוף ההודעה
+        lines = [
+            f"*מפקדים, שבת שלום!* 🕯️",
+            f"להלן עדכון רבנות לשבת {date_str}:",
+            f"כניסת שבת {region}: *{shabbat_time}*",
+            "",
+        ]
+
+        shown_bases = [b for b in base_summaries if not include_issues_only or b["issues"]]
+
+        for b in shown_bases:
+            if b["issues"]:
+                issues_str = " | ".join(b["issues"])
+                lines.append(f"📍 *{b['base']}*: ⚠️ {issues_str}")
+            else:
+                lines.append(f"📍 *{b['base']}*: ✅ תקין")
+
+        lines.append("")
+        if custom_note.strip():
+            lines.append(f"📝 {custom_note.strip()}")
+            lines.append("")
+        lines.append(f"זמין לכל שאלה. שבת שקטה,")
+        lines.append(f"*{rabbi_name}*")
+
+        message_text = "\n".join(lines)
+
+        # תצוגה מקדימה
+        st.markdown("""
+        <div style='background:#e8f5e9; border-radius:12px; padding:4px 8px 2px 8px;
+                    margin-bottom:8px; font-size:11px; color:#2e7d32;'>📱 תצוגה מקדימה</div>
+        """, unsafe_allow_html=True)
+
+        preview_html = message_text.replace("\n", "<br>").replace("*", "<b>").replace("</b><b>", "")
+        # תיקון bold — החלף זוגות של ** ב-<b>...</b>
+        import re
+        preview_html = re.sub(r'\*([^*]+)\*', r'<b>\1</b>', message_text.replace("\n", "<br>"))
+
+        st.markdown(f"""
+        <div style='background:white; border-radius:12px; padding:14px 16px;
+                    font-size:13px; line-height:1.7; color:#1a1a1a;
+                    box-shadow:0 2px 8px rgba(0,0,0,0.08); direction:rtl;'>
+            {preview_html}
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    col_copy, col_wa, col_send = st.columns(3)
+
+    with col_copy:
+        if st.button("📋 העתק הודעה", use_container_width=True):
+            st.code(message_text, language=None)
+
+    with col_wa:
+        encoded = message_text.replace("\n", "%0A").replace(" ", "%20").replace("*", "")
+        wa_url = f"https://wa.me/?text={encoded}"
+        st.link_button("💬 פתח בוואטסאפ", wa_url, use_container_width=True)
+
+    with col_send:
+        if st.button("📤 שלח לכל מפקדי הגזרה", use_container_width=True, type="primary"):
+            # שליחה אוטומטית לכל המספרים הרשומים
+            try:
+                commanders = supabase.table("whatsapp_numbers") \
+                    .select("phone,callmebot_key,name") \
+                    .eq("unit", unit) \
+                    .eq("role", "commander") \
+                    .eq("active", True) \
+                    .execute()
+
+                sent_count = 0
+                for c in (commanders.data or []):
+                    try:
+                        import urllib.parse, urllib.request
+                        encoded_msg = urllib.parse.quote(message_text.replace("*", ""))
+                        url = (f"https://api.callmebot.com/whatsapp.php"
+                               f"?phone={c['phone']}&text={encoded_msg}&apikey={c['callmebot_key']}")
+                        urllib.request.urlopen(url, timeout=5)
+                        sent_count += 1
+                    except Exception:
+                        pass
+
+                if sent_count > 0:
+                    st.success(f"✅ הודעה נשלחה ל-{sent_count} מפקדים!")
+                    log_audit_event("SHABBAT_MESSAGE_SENT", unit,
+                                    details={"recipients": sent_count}, severity="info")
+                else:
+                    st.warning("לא נמצאו מפקדים רשומים — העתק ושלח ידנית")
+            except Exception as e:
+                st.error(f"שגיאה: {e}")
+
+
 def render_hatmar_rabbi_dashboard():
     """דשבורד רב חטמ״ר - הכל במקום אחד (Mobile Friendly)"""
     unit = st.session_state.selected_unit
@@ -4272,12 +4849,26 @@ def render_hatmar_rabbi_dashboard():
     raw_data = load_reports_cached(accessible_units)
     df = pd.DataFrame(raw_data)
 
-    st.markdown(f"## 📱 אור אישי לדרג הפיקודי - {unit}")
-    
-    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["🚦 סטטוס מוצבים", "🕯️ הכנה לשבת", "📖 הלכה", "📊 ניהול ודיווח", "🎯 ניתוח יחידה", "📜 היסטוריית דוחות", "🗺️ מפה"])
-    
+    # ← בריפינג בוקר תמיד מוצג בראש, לפני הטאבים (Wave 2.7)
+    render_morning_briefing(df, unit)
+
+    t1, t2, t3, t4, t5, t6, t7, t8, t9 = st.tabs([
+        "🚦 סטטוס מוצבים",
+        "🕯️ הכנה לשבת",
+        "📖 הלכה",
+        "📊 ניהול ודיווח",
+        "🎯 ניתוח יחידה",
+        "📜 היסטוריית דוחות",
+        "🗺️ מפה",
+        "🛣️ תכנון מסלול",
+        "⚙️ ניהול מתקדם"
+    ])
+
     with t1: render_bases_status_board(df, unit)
-    with t2: render_shabbat_preparation_assistant(unit, df)
+    with t2:
+        render_shabbat_preparation_assistant(unit, df)
+        st.divider()
+        render_shabbat_whatsapp_generator(df, unit)  # (Wave 2.7)
     with t3: render_halachic_advisor()
     with t4:
         render_inspector_management(unit, df)
@@ -4320,8 +4911,8 @@ def render_hatmar_rabbi_dashboard():
         column_mapping = {
             'date': 'תאריך', 'base': 'מוצב', 'inspector': 'מבקר', 'reliability_score': '🛡️ אמינות',
             'e_status': 'סטטוס עירוב', 'k_cert': 'תעודת כשרות', 'k_issues': 'תקלות כשרות',
-            'soldier_want_lesson': 'שיעור תורה', 'free_text': 'הערות'
-            # (שאר המיפוי קיים במערכת)
+            'k_separation': 'הפרדת כלים', 'p_mix': 'ערבוב כלים', 'k_products': 'רכש חוץ',
+            'k_bishul': 'בישול ישראל', 'soldier_want_lesson': 'שיעור תורה', 'free_text': 'הערות'
         }
         display_df.rename(columns=column_mapping, inplace=True)
         st.dataframe(display_df, use_container_width=True, hide_index=True)
@@ -4330,6 +4921,14 @@ def render_hatmar_rabbi_dashboard():
         # מפה
         st.markdown(f"### 🗺️ מפה מפורטת - {unit}")
         render_unit_map(df, unit)
+
+    with t8:
+        # תכנון מסלול (Wave 2.7)
+        render_route_planner(df, unit)
+
+    with t9:
+        # ניהול מתקדם (Wave 2.7)
+        render_hatmar_management_tab(df, unit)
 
 
 def render_command_dashboard():
