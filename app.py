@@ -18,6 +18,18 @@ import pydeck as pdk
 import random
 from streamlit_geolocation import streamlit_geolocation
 import math
+
+def safe_geolocation(key: str) -> dict:
+    """עטיפה בטוחה ל-streamlit_geolocation שלא קורסת"""
+    try:
+        # Import inside function to be extra safe
+        from streamlit_geolocation import streamlit_geolocation
+        loc = streamlit_geolocation(key=key)
+        if isinstance(loc, dict) and loc.get('latitude'):
+            return loc
+        return {}
+    except Exception:
+        return {}
 from typing import Tuple, Optional, List, Dict
 import folium
 from streamlit_folium import st_folium
@@ -485,7 +497,7 @@ def render_gps_checkpoint(checkpoint_num: int, base: str):
         return True
     
     st.markdown(f"**{label}** — {instruction}")
-    loc = streamlit_geolocation(key=f"geo_widget_checkpoint_{checkpoint_num}")
+    loc = safe_geolocation(key=f"geo_widget_checkpoint_{checkpoint_num}")
     if loc and loc.get("latitude"):
         st.session_state[data_key] = {
             "latitude": loc["latitude"],
@@ -6625,13 +6637,9 @@ def render_unit_report():
             st.warning("⚠️ לא נמצאה טיוטה שמורה")
 
     st.markdown("### 📍 מיקום ותאריך")
-    try:
-        loc = streamlit_geolocation(key="main_form_gps_location")
-    except Exception:
-        loc = {}
+    loc = safe_geolocation(key="main_form_gps_location")
 
-    # הגנה מפני כל סוג תשובה שאינו dict תקין
-    if isinstance(loc, dict) and loc.get('latitude') and loc.get('longitude'):
+    if loc.get('latitude') and loc.get('longitude'):
         gps_lat = loc['latitude']
         gps_lon = loc['longitude']
     else:
