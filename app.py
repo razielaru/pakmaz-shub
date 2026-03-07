@@ -6362,20 +6362,22 @@ def render_unit_report():
             hq_shabbat_device_board = radio_with_explanation(
                 "האם יש שילוט על התקני שבת הזמינים?", "hq_sdb", col=c1)
 
-        # 🍯 Honeypot Question (33% chance, only for NO_LOUNGE units = no lounge exists)
+        # 🍯 Honeypot Question (33% chance)
         import random as _hp_rand
-        _show_honeypot = _hp_rand.random() < 0.33 and unit in NO_LOUNGE_WECOOK_UNITS
+        _show_honeypot = _hp_rand.random() < 0.33
         honeypot_answer = "לא מוצג"
         if _show_honeypot:
             st.markdown("---")
             st.markdown("#### 🔒 בדיקת ציוד מיוחד")
-            honeypot_answer = st.radio(
-                "האם מכונת הברד בטרקלין הוכשרה לפסח?",
-                ["לא בדקתי", "לא", "כן"],
-                index=0,
-                key="honeypot_lounge_q",
-                help="בדוק בטרקלין היחידה"
-            )
+            # שאלת מלכודת שונה לפי סוג היחידה
+            if unit in NO_LOUNGE_WECOOK_UNITS:
+                hp_text = "האם מכונת הברד בטרקלין הוכשרה לפסח?"
+                hp_help = "בדוק בטרקלין היחידה (מלכודת: אין טרקלין ביחידה זו)"
+            else:
+                hp_text = "האם פח הגניזה ב'חדר השמרים' ריק?"
+                hp_help = "בדוק במטבח (מלכודת: אין חדר שמרים במטבח צבאי)"
+            
+            honeypot_answer = st.radio(hp_text, ["לא בדקתי", "לא", "כן"], index=0, key="honeypot_lounge_q", help=hp_help)
 
         st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
             <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[4].click()" 
@@ -6701,23 +6703,24 @@ def render_unit_report():
         if r_mezuzot_missing and int(r_mezuzot_missing) > 0:
             st.toast(f"📜 דיווחת מזוזות חסרות — כשר שיפתח מעקב אוטומטי בדוחה!", icon="📜")
 
-        # 🚨 Emergency WhatsApp Button
-        st.markdown("")
-        import urllib.parse as _urlparse
-        emergency_msg = _urlparse.quote(
-            f"🚨 הקפץ רב חטמ\"ר | {unit} | מוצב: {base} | ביצוע: {inspector}\nפרטים: ",
-            safe=""
-        )
-        whatsapp_url = f"https://wa.me/?text={emergency_msg}"
-        st.markdown(f"""
-        <a href='{whatsapp_url}' target='_blank' style='
-            display:block; text-align:center; background:linear-gradient(135deg,#dc2626,#991b1b);
-            color:white; padding:14px; border-radius:12px; font-size:17px; font-weight:700;
-            text-decoration:none; margin:10px 0; box-shadow:0 4px 12px rgba(220,38,38,0.4);
-            letter-spacing:0.5px;'>
-            🚨 הקפץ את הרב עכשיו! &nbsp;&nbsp; מקרה קטסטרופאלי או דורש תגובה מידית
-        </a>
-        """, unsafe_allow_html=True)
+        # 🚨 Emergency WhatsApp Button - רק לחטמרים (לא לחטיבות סדירות)
+        if not is_combat_brigade:
+            st.markdown("")
+            import urllib.parse as _urlparse
+            emergency_msg = _urlparse.quote(
+                f"🚨 הקפץ רב חטמ\"ר | {unit} | מוצב: {base} | ביצוע: {inspector}\nפרטים: ",
+                safe=""
+            )
+            whatsapp_url = f"https://wa.me/?text={emergency_msg}"
+            st.markdown(f"""
+            <a href='{whatsapp_url}' target='_blank' style='
+                display:block; text-align:center; background:linear-gradient(135deg,#dc2626,#991b1b);
+                color:white; padding:14px; border-radius:12px; font-size:17px; font-weight:700;
+                text-decoration:none; margin:10px 0; box-shadow:0 4px 12px rgba(220,38,38,0.4);
+                letter-spacing:0.5px;'>
+                🚨 הקפץ את הרב עכשיו! &nbsp;&nbsp; מקרה קטסטרופאלי או דורש תגובה מידית
+            </a>
+            """, unsafe_allow_html=True)
 
 
         # כפתורי שליחה וטיוטה - תמיד מוצגים (השליחה תהיה חסומה אם יש בעיה)
