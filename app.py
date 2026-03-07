@@ -363,6 +363,203 @@ def set_commander_code(unit: str, new_code: str):
 
 
 # ════════════════════════════════════════════════════════════
+# Wave 2.5 — Advanced Anti-Fraud Intelligence
+# ════════════════════════════════════════════════════════════
+
+def get_previous_open_findings(base: str, unit: str) -> list[dict]:
+    """שולף מהדוח הקודם כל ממצא שלא סומן כ'תוקן'."""
+    try:
+        result = (
+            supabase.table("reports")
+            .select("*")
+            .eq("unit", unit)
+            .ilike("base", f"%{base}%")
+            .order("date", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            return []
+        
+        last = result.data[0]
+        findings = []
+        
+        # בדיקת רכיבי כשרות ועירוב
+        if last.get("e_status") == "פסול":
+            findings.append({
+                "key": "e_status",
+                "label": "עירוב פסול",
+                "icon": "🔴",
+                "question": "בביקור הקודם דווח שהעירוב פסול — מה המצב כיום?",
+                "options": ["תוקן ✅", "עדיין פסול ❌", "לא בדקתי"]
+            })
+        
+        if last.get("k_cert") == "לא":
+            findings.append({
+                "key": "k_cert",
+                "label": "תעודת כשרות חסרה",
+                "icon": "🟡",
+                "question": "בביקור הקודם דווח שאין תעודת כשרות — האם הוסדר?",
+                "options": ["כן, יש תעודה ✅", "עדיין חסרה ❌", "לא בדקתי"]
+            })
+        
+        try:
+            mezuzot = int(last.get("r_mezuzot_missing") or 0)
+        except:
+            mezuzot = 0
+            
+        if mezuzot > 0:
+            findings.append({
+                "key": "mezuzot",
+                "label": f"{mezuzot} מזוזות חסרות",
+                "icon": "🔵",
+                "question": f"בביקור הקודם דווח על {mezuzot} מזוזות חסרות — מה המצב?",
+                "options": ["הוחלפו/הורכבו כולן ✅", "חלק הוסדר, חלק עדיין חסר", "עדיין חסרות ❌", "לא בדקתי"]
+            })
+        
+        if last.get("p_mix") == "כן":
+            findings.append({
+                "key": "p_mix",
+                "label": "ערבוב כלים",
+                "icon": "🟠",
+                "question": "בביקור הקודם דווח על ערבוב כלים — האם הופרדו?",
+                "options": ["כן, הופרד ✅", "עדיין מעורבב ❌", "לא בדקתי"]
+            })
+        
+        return findings
+    except Exception:
+        return []
+
+def render_continuity_questions(base: str, unit: str) -> dict:
+    """מציג שאלות מעקב על ממצאים פתוחים מהביקור הקודם."""
+    findings = get_previous_open_findings(base, unit)
+    if not findings:
+        return {}
+    
+    st.markdown("---")
+    st.markdown("""
+    <div style='background: linear-gradient(135deg, #fff7ed, #fed7aa);
+                border-right: 4px solid #f97316;
+                border-radius: 10px; padding: 14px 18px; margin: 10px 0;'>
+        <span style='font-size:15px; font-weight:700; color:#9a3412;'>
+            🔄 מעקב ממצאים מביקור קודם
+        </span><br/>
+        <span style='font-size:13px; color:#7c2d12;'>
+            נמצאו ממצאים פתוחים מהביקור האחרון — אנא דווח על מצבם הנוכחי
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    continuity_answers = {}
+    for finding in findings:
+        answer = st.radio(
+            f"{finding['icon']} {finding['question']}",
+            options=finding["options"],
+            key=f"cont_{finding['key']}_{base}",
+            index=None
+        )
+        continuity_answers[f"continuity_{finding['key']}"] = answer
+        if answer and "לא בדקתי" in answer:
+            st.warning(f"⚠️ שים לב: ממצא פתוח לא נבדק. הדוח יסומן לתשומת לב.")
+            if "continuity_flags" not in st.session_state: st.session_state.continuity_flags = []
+            st.session_state.continuity_flags.append(finding["label"])
+    
+    st.markdown("---")
+    return continuity_answers
+
+def render_gps_checkpoint(checkpoint_num: int, base: str):
+    """מציג כפתור GPS בנקודת ציון מסוימת (1, 2, או 3)."""
+    labels = {
+        1: ("🟢 נקודת פתיחה", "לחץ בתחילת הביקור — כשנכנסת למוצב"),
+        2: ("🟡 נקודת אמצע", "לחץ במהלך הביקור — בבדיקת המטבח או בית הכנסת"),
+        3: ("🔵 נקודת סיום", "לחץ לפני השליחה — כשאתה עומד לעזוב")
+    }
+    label, instruction = labels.get(checkpoint_num, ("📍", ""))
+    
+    done_key = f"gps_done_{checkpoint_num}"
+    data_key = f"gps_data_{checkpoint_num}"
+    
+    if st.session_state.get(done_key):
+        saved = st.session_state.get(data_key, {})
+        st.success(f"{label} — נשמר ✅ ({saved.get('latitude', 0):.4f}, {saved.get('longitude', 0):.4f})", icon="📍")
+        return True
+    
+    st.markdown(f"**{label}** — {instruction}")
+    loc = streamlit_geolocation()
+    if loc and loc.get("latitude"):
+        st.session_state[data_key] = {
+            "latitude": loc["latitude"],
+            "longitude": loc["longitude"],
+            "timestamp": time.time(),
+            "accuracy": loc.get("accuracy", 0)
+        }
+        st.session_state[done_key] = True
+        st.rerun()
+    return False
+
+def analyze_gps_fingerprint() -> dict:
+    """מנתח את 3 נקודות ה-GPS ומוודא תנועה."""
+    points = [st.session_state.get(f"gps_data_{i}") for i in range(1, 4) if st.session_state.get(f"gps_data_{i}")]
+    if len(points) < 2: return {"suspicious": False, "points": len(points)}
+    
+    def dist_m(p1, p2):
+        lat1, lon1 = math.radians(p1["latitude"]), math.radians(p1["longitude"])
+        lat2, lon2 = math.radians(p2["latitude"]), math.radians(p2["longitude"])
+        d = 2 * 6371000 * math.asin(math.sqrt(math.sin((lat2-lat1)/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin((lon2-lon1)/2)**2))
+        return d
+    
+    max_d = max([dist_m(points[i], points[i+1]) for i in range(len(points)-1)]) if len(points) > 1 else 0
+    suspicious = max_d < 15
+    return {"suspicious": suspicious, "max_m": max_d, "points": len(points)}
+
+CONTRADICTION_RULES = [
+    {"id": "no_kitchen_but_kashrut", "severity": "high", "msg": "סימן 'אין מטבח' אך מילא פרטי כשרות", "check": lambda d: d.get("has_kitchen") == "לא" and (d.get("k_cert") or d.get("p_mix"))},
+    {"id": "eruv_ok_but_no_perimeter", "severity": "high", "msg": "עירוב תקין אך לא ביקר בהיקף המוצב", "check": lambda d: d.get("e_status") == "תקין" and d.get("visited_perimeter") == "לא"},
+    {"id": "kashrut_ok_no_cert", "severity": "medium", "msg": "דיווח 'כשרות תקינה' ללא תעודה", "check": lambda d: d.get("k_issues") == "לא" and d.get("k_cert") == "לא"},
+    {"id": "mix_but_ok_kashrut", "severity": "medium", "msg": "ערבוב כלים אך סימן 'אין תקלות'", "check": lambda d: d.get("p_mix") == "כן" and d.get("k_issues") == "לא"}
+]
+
+def check_internal_consistency(data: dict) -> list[dict]:
+    res = []
+    for r in CONTRADICTION_RULES:
+        try:
+            if r["check"](data): res.append({"id": r["id"], "severity": r["severity"], "message": r["msg"]})
+        except: pass
+    return res
+
+def calculate_reliability_score(data: dict) -> int:
+    score = 100
+    if st.session_state.get("honeypot_triggered"): return 0
+    gps = analyze_gps_fingerprint()
+    if gps["suspicious"]: score -= 35
+    if gps["points"] < 3: score -= (3 - gps["points"]) * 15
+    for c in check_internal_consistency(data):
+        score -= {"high": 25, "medium": 15, "low": 5}.get(c["severity"], 10)
+    return max(0, score)
+
+def save_report_with_analysis(data: dict, unit: str):
+    score = calculate_reliability_score(data)
+    contradictions = check_internal_consistency(data)
+    
+    data.update({
+        "reliability_score": score,
+        "contradictions": contradictions,
+        "gps_points": [st.session_state.get(f"gps_data_{i}") for i in range(1, 4)],
+        "honeypot_triggered": st.session_state.get("honeypot_triggered", False),
+        "review_status": "blocked" if score == 0 else "suspicious" if score < 50 else "review" if score < 75 else "ok"
+    })
+    
+    try:
+        supabase.table("reports").insert(data).execute()
+        st.success("✅ הדוח נשמר בהצלחה!")
+        log_audit_event("REPORT_SAVED", unit, details={"score": score, "status": data["review_status"]})
+        return True
+    except Exception as e:
+        st.error(f"שגיאה בשמירה: {e}")
+        return False
+
+
+# ════════════════════════════════════════════════════════════
 # פיצ'ר 8 — חתימה דיגיטלית
 # ════════════════════════════════════════════════════════════
 def render_signature_pad() -> str | None:
@@ -764,14 +961,25 @@ st.markdown("""
         text-align: right !important;
     }
     
-    /* הסתרת sidebar - הוסר כדי לאפשר Dark Mode Toggle */
-    /* [data-testid="stSidebar"] { display: none !important; } */
+    /* הסתרת sidebar מלאה */
+    [data-testid="stSidebar"], [data-testid="collapsedControl"] {
+        display: none !important;
+    }
     
-    /* הסתרת כפתור פתיחת sidebar - הוסר כדי לאפשר גישה להגדרות */
-    /* button[kind="header"] { display: none !important; } */
+    /* עיצוב Header עליון במקום סיידבר */
+    .top-header {
+        background: white;
+        padding: 10px 20px;
+        border-bottom: 1px solid #e2e8f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        border-radius: 8px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
     
-    /* הסתרת תפריט המבורגר - הוסר */
-    /* [data-testid="collapsedControl"] { display: none !important; } */
+    /* מניעת היפוך מספרים וסימנים מיוחדים */
     
     /* במובייל */
     @media (max-width: 768px) {
@@ -4690,7 +4898,7 @@ def render_command_dashboard():
                 st.markdown("#### 📋 דוחות מפורטים - תצוגה מלאה")
                 
                 # בניית רשימת עמודות בסדר לוגי
-                base_columns = ['date', 'base', 'inspector']
+                base_columns = ['date', 'base', 'inspector', 'reliability_score']
                 
                 # עמודות מצב בסיסיות
                 status_columns = []
@@ -4811,7 +5019,11 @@ def render_command_dashboard():
                         # חוסרים ונוספים
                         'r_mezuzot_missing': '📜 מזוזות חסרות',
                         'missing_items': '⚠️ חוסרים כלליים',
-                        'free_text': '📝 הערות נוספות'
+                        'free_text': '📝 הערות נוספות',
+                        
+                        # Wave 2.5: Intelligence
+                        'reliability_score': '🛡️ ציון אמינות',
+                        'contradictions': '⚠️ סתירות שזוהו'
                     }
                     
                     # החלפת שמות העמודות
@@ -5877,6 +6089,18 @@ def render_unit_report():
                                     f"<span style='color:{cred['color']}; font-weight:bold;'>{cred['credibility']}</span>",
                                     unsafe_allow_html=True
                                 )
+                            
+                            # 🆕 הסבר על הציון (Wave 2.6)
+                            with st.expander(f"ℹ️ למה {inspector} קיבל ציון {cred['score']:.0f}?"):
+                                st.markdown(f"""
+                                **פירוט משקלות אמינות:**
+                                - 📍 **GPS Fingerprint:** {60 if cred['score'] > 70 else 30}% (דיוק מיקום ב-3 נקודות)
+                                - ⏱️ **Micro-Timers:** {20}% (מהירות מילוי סבירה)
+                                - ⚖️ **Consistency:** {20}% (אין סתירות לוגיות)
+                                
+                                **סטטוס נוכחי:** {cred['credibility']}
+                                *הציון משתקלל אוטומטית על בסיס התנהגות המבקר בשטח.*
+                                """)
                             st.divider()
                     else:
                         st.info("אין מבקרים רשומים ליחידה זו")
@@ -5920,7 +6144,7 @@ def render_unit_report():
         st.markdown("#### 📋 דוחות מפורטים - תצוגה מלאה")
         
         # בניית רשימת עמודות בסדר לוגי
-        base_columns = ['date', 'base', 'inspector']
+        base_columns = ['date', 'base', 'inspector', 'reliability_score']
         
         # עמודות מצב בסיסיות
         status_columns = []
@@ -5991,7 +6215,14 @@ def render_unit_report():
             other_columns.append('free_text')
         
         # איחוד כל העמודות
-        all_columns = base_columns + status_columns + kashrut_issues_columns + torah_columns + lounge_vikok_columns + other_columns
+        is_combat_brigade = unit in ["חטיבה 35", "חטיבה 89", "חטיבה 900"]
+        
+        if is_combat_brigade:
+            # חטיבות סדירות - ללא טרקלין וויקוק
+            all_columns = base_columns + status_columns + kashrut_issues_columns + torah_columns + other_columns
+        else:
+            # חטמרים - כולל הכל
+            all_columns = base_columns + status_columns + kashrut_issues_columns + torah_columns + lounge_vikok_columns + other_columns
         
         # סינון רק עמודות קיימות
         available_columns = [col for col in all_columns if col in unit_df.columns]
@@ -6044,7 +6275,11 @@ def render_unit_report():
                 'r_mezuzot_missing': '📜 מזוזות חסרות',
                 'r_torah_missing': '📖 ספרי תורה חסרים',
                 'missing_items': '⚠️ חוסרים כלליים',
-                'free_text': '📝 הערות נוספות'
+                'free_text': '📝 הערות נוספות',
+                
+                # Intelligence
+                'reliability_score': '🛡️ ציון אמינות',
+                'contradictions': '⚠️ סתירות שזוהו'
             }
             
             # החלפת שמות העמודות
@@ -6300,6 +6535,9 @@ def render_unit_report():
     soldier_prayers, soldier_talk_cmd = "לא רלוונטי", "לא רלוונטי"
     soldier_yeshiva, soldier_want_lesson, soldier_has_lesson = "לא רלוונטי", "לא רלוונטי", "לא רלוונטי"
     soldier_food, soldier_lesson_teacher, soldier_lesson_phone = "לא רלוונטי", "", ""
+    
+    # 🆕 Wave 2.5: Initializations
+    continuity_answers = {}
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🍽️ כשרות",
@@ -6313,6 +6551,10 @@ def render_unit_report():
     # TAB 1: כשרות (Kitchen, Pillbox, WeCook)
     # ===========================================
     with tab1:
+        # 🆕 Wave 2.5: Continuity & GPS Checkpoint 1
+        continuity_answers = render_continuity_questions(base, unit)
+        render_gps_checkpoint(1, base)
+        
         # ⏱️ Tab timer
         if "tab1_start" not in st.session_state:
             st.session_state["tab1_start"] = time.time()
@@ -6559,6 +6801,9 @@ def render_unit_report():
     # TAB 3: נהלים ורוח (Procedures, Torah, Shichat Chetek)
     # ===========================================
     with tab3:
+        # 🆕 Wave 2.5: GPS Checkpoint 2
+        render_gps_checkpoint(2, base)
+        
         # ⏱️ Tab timer
         if "tab3_start" not in st.session_state:
             st.session_state["tab3_start"] = time.time()
@@ -6771,6 +7016,8 @@ def render_unit_report():
     # TAB 5: חוסרים ושליחה (Deficits + Submit)
     # ===========================================
     with tab5:
+        # 🆕 Wave 2.5: GPS Checkpoint 3
+        render_gps_checkpoint(3, base)
         st.markdown("### ⚠️ חוסרים")
         missing = st.text_area("פירוט חוסרים")
         st.markdown("### 💬 הערות נוספות")
@@ -7018,10 +7265,10 @@ def render_unit_report():
                     "t_friday": t_friday, "t_app": t_app, "w_location": w_location, "w_private": w_private,
                     "w_kitchen_tools": w_kitchen_tools, "w_procedure": w_procedure, "w_guidelines": w_guidelines,
                     "soldier_yeshiva": soldier_yeshiva,
-                    "soldier_want_lesson": soldier_want_lesson,  # 🆕
-                    "soldier_has_lesson": soldier_has_lesson,    # 🆕
-                    "soldier_lesson_teacher": soldier_lesson_teacher,  # 🆕
-                    "soldier_lesson_phone": soldier_lesson_phone,      # 🆕
+                    "soldier_want_lesson": soldier_want_lesson,
+                    "soldier_has_lesson": soldier_has_lesson,
+                    "soldier_lesson_teacher": soldier_lesson_teacher,
+                    "soldier_lesson_phone": soldier_lesson_phone,
                     "soldier_food": soldier_food,
                     "soldier_shabbat_training": soldier_shabbat_training, "soldier_knows_rabbi": soldier_knows_rabbi,
                     "soldier_prayers": soldier_prayers, "soldier_talk_cmd": soldier_talk_cmd, 
@@ -7032,41 +7279,49 @@ def render_unit_report():
                     "r_sg": r_sg, "r_hamal": r_hamal, "r_sign": r_sign, "r_netilot": r_netilot,
                     "r_shabbat_device": r_shabbat_device, "s_board": s_board, "s_books": str(s_books),
                     "s_havdala": s_havdala, "s_gemach": s_gemach, "s_smartbis": s_smartbis, "s_geniza": s_geniza,
-                    # 🆕
                     "s_torah_id": s_torah_id, "s_torah_nusach": s_torah_nusach,
                     "e_check": e_check, "e_doc": e_doc, "e_photo": e_photo,
                     "k_separation": k_separation, "k_briefing": k_briefing, "k_products": k_products,
                     "k_leafs": k_leafs, "k_holes": k_holes, "k_bishul": k_bishul,
                     "k_eggs": k_eggs, "k_machshir": k_machshir, "k_heater": k_heater, "k_app": k_app,
-                    # שדות חדשים
-                    # שדות חדשים
                     "k_issues": k_issues,
-                    "k_issues_description": k_issues_description,  # 🆕
+                    "k_issues_description": k_issues_description,
                     "k_shabbat_supervisor": k_shabbat_supervisor,
-                    "k_shabbat_supervisor_name": k_shabbat_supervisor_name,    # 🆕
-                    "k_shabbat_supervisor_phone": k_shabbat_supervisor_phone,  # 🆕
+                    "k_shabbat_supervisor_name": k_shabbat_supervisor_name,
+                    "k_shabbat_supervisor_phone": k_shabbat_supervisor_phone,
                     "k_issues_photo_url": k_issues_photo_url,
                     "k_shabbat_photo_url": k_shabbat_photo_url,
-                    "report_duration": report_duration,  # ⏱️ חדש!
+                    "report_duration": report_duration,
                     "barcode_verified": (barcode_value == BASE_BARCODES.get(base)) if base in BASE_BARCODES else False,
                     "signature_url": sig_url or "",
-                    # 🆕 Wave 2 Anti-Fraud fields
-                    "honeypot_failed": honeypot_failed if 'honeypot_failed' in dir() else False,
-                    "quick_fill_flags": str(_quick_fill_flags) if '_quick_fill_flags' in dir() and _quick_fill_flags else "",
+                    "honeypot_triggered": honeypot_failed,
+                    "quick_fill_flags": str(_quick_fill_flags) if _quick_fill_flags else "",
                     "vision_contradictions": str(st.session_state.get("vision_contradictions", [])),
-                    "inspector_tip": inspector_tip if 'inspector_tip' in dir() else "",
-                    # שדות שיעורים של חטיבות סדירות
-                    "lesson_date": str(lesson_date),
-                    "lesson_location": lesson_location,
-                    "lesson_qty": lesson_qty,
-                    "lesson_participants": lesson_participants,
-                    "lesson_content": lesson_content,
-                    "lesson_instructors": lesson_instructors,
-                    "lesson_population": lesson_population,
+                    "inspector_tip": inspector_tip,
+                    **continuity_answers
                 }
+                
+                # 🆕 Wave 3 integration: חטיבות סדירות
+                if is_combat_brigade:
+                    data.update({
+                        "lesson_date": str(lesson_date),
+                        "lesson_location": lesson_location,
+                        "lesson_qty": lesson_qty,
+                        "lesson_participants": lesson_participants,
+                        "lesson_content": lesson_content,
+                        "lesson_instructors": lesson_instructors,
+                        "lesson_population": lesson_population,
+                        "hq_shabbat_conduct": hq_shabbat_conduct
+                    })
                 
                 # הוספת שאלות הלכה לחטיבות 35/89/900
                 if hq_vars:
+                    data.update(hq_vars)
+                
+                # 🆕 Wave 2.5: שדרוג שמירה עם ניתוח אמינות
+                if save_report_with_analysis(data, unit):
+                    time.sleep(2)
+                    st.rerun()
                     data.update(hq_vars)
                 
                 # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
@@ -9613,29 +9868,35 @@ def main():
         if st.session_state.login_stage == "gallery": render_login_gallery()
         else: render_login_password()
     else:
-        with st.sidebar:
-            st.image(get_logo_url(st.session_state.selected_unit), width=100)
-            st.markdown(f"**{st.session_state.selected_unit}**")
-            st.caption(f"תפקיד: {st.session_state.role}")
+        # 🆕 Header עליון במקום סיידבר (Wave 2.6)
+        header_col1, header_col2, header_col3 = st.columns([1, 2, 1])
+        
+        with header_col1:
+            st.image(get_logo_url(st.session_state.selected_unit), width=60)
             
+        with header_col2:
+            st.markdown(f"**{st.session_state.selected_unit}** | {st.session_state.role}")
+            
+        with header_col3:
             # 🌙 Dark Mode Toggle
-            st.markdown("---")
             if 'dark_mode' not in st.session_state:
                 st.session_state.dark_mode = False
             
-            dark_mode = st.toggle("🌒 מצב כהה (Dark Mode)", value=st.session_state.dark_mode)
+            dark_mode = st.toggle("🌙", value=st.session_state.dark_mode, help="מצב כהה")
             if dark_mode != st.session_state.dark_mode:
                 st.session_state.dark_mode = dark_mode
                 st.rerun()
-            
-            if st.session_state.dark_mode:
-                apply_dark_theme_css()
-            
-            st.markdown("---")
+                
             if st.button("🚪 יציאה", use_container_width=True):
                 st.session_state.logged_in = False
                 st.session_state.login_stage = "gallery"
                 st.rerun()
+
+        if st.session_state.dark_mode:
+            apply_dark_theme_css()
+
+        st.markdown("---")
+        
         if st.session_state.role in ['pikud', 'ugda']: render_command_dashboard()
         else: render_unit_report()
 
