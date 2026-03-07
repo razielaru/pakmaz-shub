@@ -4945,41 +4945,46 @@ def render_hatmar_rabbi_dashboard():
     with t6:
         # היסטוריית דוחות (Wave 2.6)
         st.markdown(f"### 📜 היסטוריית דוחות מפורטת - {unit}")
-        # בניית רשימת עמודות בסדר לוגי
-        base_columns = ['date', 'base', 'inspector', 'reliability_score']
         
-        # עמודות מצב בסיסיות
-        status_columns = ['e_status', 'k_cert'] if 'e_status' in df.columns else []
-        
-        # תקלות כשרות
-        kashrut_issues_columns = [col for col in ['k_issues', 'k_issues_description', 'k_separation', 'p_mix', 'k_products', 'k_bishul'] if col in df.columns]
-        
-        # שיעורי תורה
-        torah_columns = [col for col in ['soldier_want_lesson', 'soldier_has_lesson', 'soldier_lesson_teacher', 'soldier_lesson_phone', 'soldier_yeshiva', 's_torah_id', 's_torah_nusach'] if col in df.columns]
-        
-        # טרקלין וויקוק
-        lounge_vikok_columns = [col for col in ['t_private', 't_kitchen_tools', 't_procedure', 't_friday', 't_app', 'w_location', 'w_private', 'w_kitchen_tools', 'w_procedure', 'w_guidelines'] if col in df.columns]
-        
-        # חוסרים ונוספות
-        other_columns = [col for col in ['r_mezuzot_missing', 'r_torah_missing', 'missing_items', 'free_text'] if col in df.columns]
-        
-        # סינון לפי סוג יחידה (Wave 2.6)
-        is_combat_brigade = unit in ["חטיבה 35", "חטיבה 89", "חטיבה 900"]
-        if is_combat_brigade:
-            all_cols = base_columns + status_columns + kashrut_issues_columns + torah_columns + other_columns
+        # ✅ התיקון: מוודאים שיש נתונים לפני שמנסים לשלוף עמודות
+        if df.empty or 'unit' not in df.columns:
+            st.info("📭 טרם הוזנו דוחות ביחידה זו. ברגע שיוגש הדוח הראשון, ההיסטוריה תופיע כאן.")
         else:
-            all_cols = base_columns + status_columns + kashrut_issues_columns + torah_columns + lounge_vikok_columns + other_columns
+            # בניית רשימת עמודות בסדר לוגי
+            base_columns = ['date', 'base', 'inspector', 'reliability_score']
             
-        display_df = df[df['unit'] == unit][all_cols].copy()
-        
-        column_mapping = {
-            'date': 'תאריך', 'base': 'מוצב', 'inspector': 'מבקר', 'reliability_score': '🛡️ אמינות',
-            'e_status': 'סטטוס עירוב', 'k_cert': 'תעודת כשרות', 'k_issues': 'תקלות כשרות',
-            'k_separation': 'הפרדת כלים', 'p_mix': 'ערבוב כלים', 'k_products': 'רכש חוץ',
-            'k_bishul': 'בישול ישראל', 'soldier_want_lesson': 'שיעור תורה', 'free_text': 'הערות'
-        }
-        display_df.rename(columns=column_mapping, inplace=True)
-        st.dataframe(display_df, use_container_width=True, hide_index=True)
+            # עמודות מצב בסיסיות
+            status_columns = ['e_status', 'k_cert'] if 'e_status' in df.columns else []
+            
+            # תקלות כשרות
+            kashrut_issues_columns = [col for col in ['k_issues', 'k_issues_description', 'k_separation', 'p_mix', 'k_products', 'k_bishul'] if col in df.columns]
+            
+            # שיעורי תורה
+            torah_columns = [col for col in ['soldier_want_lesson', 'soldier_has_lesson', 'soldier_lesson_teacher', 'soldier_lesson_phone', 'soldier_yeshiva', 's_torah_id', 's_torah_nusach'] if col in df.columns]
+            
+            # טרקלין וויקוק
+            lounge_vikok_columns = [col for col in ['t_private', 't_kitchen_tools', 't_procedure', 't_friday', 't_app', 'w_location', 'w_private', 'w_kitchen_tools', 'w_procedure', 'w_guidelines'] if col in df.columns]
+            
+            # חוסרים ונוספות
+            other_columns = [col for col in ['r_mezuzot_missing', 'r_torah_missing', 'missing_items', 'free_text'] if col in df.columns]
+            
+            # סינון לפי סוג יחידה (Wave 2.6)
+            is_combat_brigade = unit in ["חטיבה 35", "חטיבה 89", "חטיבה 900"]
+            if is_combat_brigade:
+                all_cols = base_columns + status_columns + kashrut_issues_columns + torah_columns + other_columns
+            else:
+                all_cols = base_columns + status_columns + kashrut_issues_columns + torah_columns + lounge_vikok_columns + other_columns
+                
+            display_df = df[df['unit'] == unit][all_cols].copy()
+            
+            column_mapping = {
+                'date': 'תאריך', 'base': 'מוצב', 'inspector': 'מבקר', 'reliability_score': '🛡️ אמינות',
+                'e_status': 'סטטוס עירוב', 'k_cert': 'תעודת כשרות', 'k_issues': 'תקלות כשרות',
+                'k_separation': 'הפרדת כלים', 'p_mix': 'ערבוב כלים', 'k_products': 'רכש חוץ',
+                'k_bishul': 'בישול ישראל', 'soldier_want_lesson': 'שיעור תורה', 'free_text': 'הערות'
+            }
+            display_df.rename(columns=column_mapping, inplace=True)
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
 
     with t7:
         # מפה
