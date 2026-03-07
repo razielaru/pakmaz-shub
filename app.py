@@ -485,7 +485,7 @@ def render_gps_checkpoint(checkpoint_num: int, base: str):
         return True
     
     st.markdown(f"**{label}** — {instruction}")
-    loc = streamlit_geolocation()
+    loc = streamlit_geolocation(key=f"gps_loc_{checkpoint_num}_{base}")
     if loc and loc.get("latitude"):
         st.session_state[data_key] = {
             "latitude": loc["latitude"],
@@ -4279,6 +4279,10 @@ def render_hatmar_management_tab(df: pd.DataFrame, unit: str):
 
     st.markdown("### 📊 מצב שבועי")
 
+    if df.empty or "unit" not in df.columns:
+        st.info("אין נתונים להצגת מדדי ניהול")
+        return
+
     today = pd.Timestamp.now()
     week_ago = today - pd.Timedelta(days=7)
     two_weeks_ago = today - pd.Timedelta(days=14)
@@ -4391,7 +4395,7 @@ def render_hatmar_management_tab(df: pd.DataFrame, unit: str):
 
     if work_items:
         work_items.sort(key=lambda x: x["דחיפות"], reverse=True)
-        for item in list(work_items)[0:10]:  # מציג עד 10 הדחופים
+        for item in work_items[:10]:  # מציג עד 10 הדחופים
             col_info, col_btn = st.columns([5, 1])
             with col_info:
                 st.markdown(f"""
@@ -4527,30 +4531,42 @@ def render_morning_briefing(df: pd.DataFrame, unit: str):
     """
     נטען לפני כל הטאבים — 3 שורות, 30 שניות, תמונה מלאה.
     """
+    if df.empty or "unit" not in df.columns:
+        return
     today = pd.Timestamp.now()
     df_unit = df[df["unit"] == unit].copy()
     df_unit["date_dt"] = pd.to_datetime(df_unit["date"], errors="coerce")
 
     # --- חישובים ---
-    # מה בוער
+    # מה בוער - איחוד ממצאים
     latest = df_unit.sort_values("date_dt").groupby("base").last()
-    eruv_fail = [b for b, r in latest.iterrows() if r.get("e_status") == "פסול"]
-    no_cert   = [b for b, r in latest.iterrows() if r.get("k_cert") == "לא"]
-    overdue   = [
-        b for b, r in latest.iterrows()
-        if pd.notna(r["date_dt"]) and (today - r["date_dt"]).days > 14
-    ]
+    burning_items = []
+    for b, r in latest.iterrows():
+        if r.get("e_status") == "פסול":
+            burning_items.append({"label": "🔴 עירוב פסול", "base": b, "priority": 1})
+        if r.get("k_cert") == "לא":
+            burning_items.append({"label": "🟡 אין תעודה", "base": b, "priority": 2})
+        days = (today - r["date_dt"]).days if pd.notna(r["date_dt"]) else 999
+        if days > 14:
+            burning_items.append({"label": f"⏰ לא בוקר {days} יום", "base": b, "priority": 3})
+    
+    burning_items.sort(key=lambda x: x["priority"])
 
-    # מי לא דיווח השבוע
+    # מי לא דיווח השבוע - ניקוי שמות
     week_ago = today - pd.Timedelta(days=7)
-    all_inspectors = df_unit["inspector"].dropna().unique()
-    inactive = [
-        i for i in all_inspectors
-        if df_unit[
-            (df_unit["inspector"] == i) &
+    df_unit["inspector_clean"] = df_unit["inspector"].astype(str).str.strip()
+    all_inspectors = [i for i in df_unit["inspector_clean"].unique() if i and i.lower() != "nan" and len(i) > 2]
+    
+    inactive = []
+    for i in all_inspectors:
+        has_recent = not df_unit[
+            (df_unit["inspector_clean"] == i) &
             (df_unit["date_dt"] >= week_ago)
         ].empty
-    ]
+        if not has_recent:
+            inactive.append(i)
+    
+    inactive = sorted(list(set(inactive)))
 
     # כמה שאלות הלכתיות פתוחות (אם יש טבלה)
     try:
@@ -4569,34 +4585,47 @@ def render_morning_briefing(df: pd.DataFrame, unit: str):
 
     st.markdown(f"""
     <div style='background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%);
-                border-radius: 16px; padding: 20px 24px; margin-bottom: 20px;
-                color: white;'>
-        <div style='font-size: 13px; opacity: 0.8; margin-bottom: 4px;'>
-            {today.strftime("%A, %d/%m/%Y")} · {greeting}
+                border-radius: 18px; padding: 24px; margin-bottom: 24px;
+                color: white; box-shadow: 0 10px 25px rgba(30,58,138,0.2);'>
+        <div style='display: flex; justify-content: space-between; align-items: flex-start;'>
+            <div>
+                <div style='font-size: 13px; opacity: 0.85; margin-bottom: 4px; letter-spacing: 0.5px;'>
+                    {today.strftime("%A, %d/%m/%Y")} · {greeting}
+                </div>
+                <div style='font-size: 24px; font-weight: 800; margin-bottom: 20px; text-shadow: 0 2px 4px rgba(0,0,0,0.1);'>
+                    📋 בריפינג יומי — {unit}
+                </div>
+            </div>
+            <div style='background: rgba(255,255,255,0.15); padding: 8px 12px; border-radius: 10px; font-size: 12px;'>
+                ⚡ LIVE
+            </div>
         </div>
-        <div style='font-size: 22px; font-weight: 800; margin-bottom: 16px;'>
-            📋 בריפינג יומי — {unit}
-        </div>
-        <div style='display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;'>
+        
+        <div style='display: grid; grid-template-columns: 1.2fr 1fr 0.8fr; gap: 16px;'>
 
-            <div style='background: rgba(255,255,255,0.12); border-radius: 10px; padding: 12px;'>
-                <div style='font-size: 11px; opacity: 0.75; margin-bottom: 6px;'>🔥 דורש טיפול מיידי</div>
-                {"".join(f"<div style='font-size:13px;'>🔴 עירוב פסול — {b}</div>" for b in list(eruv_fail)) or
-                 "".join(f"<div style='font-size:13px;'>🟡 אין תעודה — {b}</div>" for b in list(no_cert)) or
-                 "".join(f"<div style='font-size:13px;'>⏰ לא בוקר — {b}</div>" for b in list(overdue)[0:3]) or
-                 "<div style='font-size:13px; opacity:0.8;'>✅ הכל תקין</div>"}
+            <div style='background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1); 
+                        border-radius: 14px; padding: 16px; backdrop-filter: blur(4px);'>
+                <div style='font-size: 11px; opacity: 0.8; margin-bottom: 10px; font-weight: 600; text-transform: uppercase;'>🔥 דורש טיפול מיידי</div>
+                <div style='max-height: 100px; overflow-y: auto;'>
+                {"".join(f"<div style='font-size:13px; margin-bottom:6px; display:flex; align-items:center;'> <span style='margin-left:8px;'>{item['label']}</span> <span style='background:rgba(255,255,255,0.2); padding:2px 6px; border-radius:4px; font-size:11px;'>{item['base']}</span></div>" for item in burning_items[:5]) or
+                 "<div style='font-size:13px; opacity:0.8;'>✅ הכל תקין בגזרה</div>"}
+                </div>
             </div>
 
-            <div style='background: rgba(255,255,255,0.12); border-radius: 10px; padding: 12px;'>
-                <div style='font-size: 11px; opacity: 0.75; margin-bottom: 6px;'>👤 לא דיווחו השבוע</div>
-                {"".join(f"<div style='font-size:13px;'>• {i}</div>" for i in list(inactive)[0:4]) or
-                 "<div style='font-size:13px; opacity:0.8;'>✅ כולם פעילים</div>"}
+            <div style='background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1); 
+                        border-radius: 14px; padding: 16px; backdrop-filter: blur(4px);'>
+                <div style='font-size: 11px; opacity: 0.8; margin-bottom: 10px; font-weight: 600; text-transform: uppercase;'>👤 לא דיווחו השבוע</div>
+                <div style='max-height: 100px; overflow-y: auto;'>
+                {"".join(f"<div style='font-size:13px; margin-bottom:4px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:2px;'>• {i}</div>" for i in inactive[:5]) or
+                 "<div style='font-size:13px; opacity:0.8;'>✅ כל המבקרים פעילים</div>"}
+                </div>
             </div>
 
-            <div style='background: rgba(255,255,255,0.12); border-radius: 10px; padding: 12px;'>
-                <div style='font-size: 11px; opacity: 0.75; margin-bottom: 6px;'>📖 שאלות הלכה פתוחות</div>
-                <div style='font-size: 28px; font-weight: 800;'>{open_questions}</div>
-                <div style='font-size: 11px; opacity: 0.7;'>ממתינות לתשובה</div>
+            <div style='background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1); 
+                        border-radius: 14px; padding: 16px; text-align: center; backdrop-filter: blur(4px);'>
+                <div style='font-size: 11px; opacity: 0.8; margin-bottom: 8px; font-weight: 600;'>📖 שאלות פתוחות</div>
+                <div style='font-size: 34px; font-weight: 900; color: #facc15;'>{open_questions}</div>
+                <div style='font-size: 11px; opacity: 0.7;'>שאלות הלכה</div>
             </div>
 
         </div>
@@ -4612,6 +4641,10 @@ def render_route_planner(df: pd.DataFrame, unit: str):
     """
     בוחר אוטומטית את 3 המוצבים הדחופים ביותר ומציג כפתורי Waze.
     """
+    if df.empty or "unit" not in df.columns:
+        st.info("אין נתונים זמינים לתכנון מסלול")
+        return
+
     st.markdown("### 🛣️ מסלול הסיור הקרוב")
 
     today = pd.Timestamp.now()
@@ -4702,6 +4735,10 @@ def render_shabbat_whatsapp_generator(df: pd.DataFrame, unit: str):
     מייצר הודעת שבת מותאמת אישית לפי נתוני השבוע — לשליחה למפקדים.
     """
     st.markdown("### 📱 הודעת שבת אוטומטית למפקדים")
+
+    if df.empty or "unit" not in df.columns:
+        st.info("אין נתונים ליצירת הודעת שבת")
+        return
 
     today = pd.Timestamp.now()
     df_unit = df[df["unit"] == unit].copy()
@@ -6538,7 +6575,7 @@ def render_unit_report():
             st.warning("⚠️ לא נמצאה טיוטה שמורה")
 
     st.markdown("### 📍 מיקום ותאריך")
-    loc = streamlit_geolocation()
+    loc = streamlit_geolocation(key=f"main_report_loc_{unit}")
     gps_lat, gps_lon = (loc['latitude'], loc['longitude']) if loc and loc.get('latitude') else (None, None)
     
     if gps_lat:
