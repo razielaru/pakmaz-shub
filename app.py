@@ -7710,11 +7710,13 @@ def analyze_deficit_progress(accessible_units: list) -> list:
             
         # 2. ניתוח בסיסים ספציפיים (החוסרים הכי ישנים)
         if 'detected_date' in open_now.columns and 'base' in open_now.columns:
-            open_now['detected_date'] = pd.to_datetime(open_now['detected_date'], errors='coerce')
-            old_items = open_now[open_now['detected_date'] < (pd.Timestamp.now() - pd.Timedelta(days=14))]
+            open_now['detected_date'] = pd.to_datetime(open_now['detected_date'], errors='coerce').dt.tz_localize(None)
+            cutoff_14 = pd.Timestamp.now() - pd.Timedelta(days=14)
+            old_items = open_now[open_now['detected_date'] < cutoff_14]
             if not old_items.empty:
+                now_ts = pd.Timestamp.now()
                 for _, row in old_items.sort_values('detected_date').head(2).iterrows():
-                    days = (pd.Timestamp.now() - row['detected_date']).days
+                    days = (now_ts - row['detected_date']).days
                     insight_list.append({
                         "type": "deficits",
                         "base": row['base'],
