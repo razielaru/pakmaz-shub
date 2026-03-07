@@ -485,7 +485,7 @@ def render_gps_checkpoint(checkpoint_num: int, base: str):
         return True
     
     st.markdown(f"**{label}** — {instruction}")
-    loc = streamlit_geolocation(key=f"gps_loc_{checkpoint_num}_{base}")
+    loc = streamlit_geolocation()
     if loc and loc.get("latitude"):
         st.session_state[data_key] = {
             "latitude": loc["latitude"],
@@ -4108,7 +4108,8 @@ def render_weekly_report_generator(unit: str, df: pd.DataFrame):
 
 def render_detailed_unit_analysis(df, selected_unit):
     """מציג ניתוח מפורט ליחידה ספציפית (חלק מכמה דשבורדים)"""
-    role = st.session_state.get('role', 'inspector')
+    if df.empty or 'unit' not in df.columns:
+        return
     
     unit_df = df[df['unit'] == selected_unit]
     
@@ -4288,13 +4289,20 @@ def render_hatmar_management_tab(df: pd.DataFrame, unit: str):
     two_weeks_ago = today - pd.Timedelta(days=14)
 
     df["date_dt"] = pd.to_datetime(df["date"], errors="coerce")
-
     df_unit = df[df["unit"] == unit].copy()
+    
+    # חישוב אמינות ממוצעת לפי האלגוריתם המתקדם
+    inspectors = df_unit["inspector"].dropna().unique()
+    if len(inspectors) > 0:
+        rel_scores = [calculate_inspector_credibility(i, df_unit)['score'] for i in inspectors]
+        avg_reliability = sum(rel_scores) / len(rel_scores)
+    else:
+        avg_reliability = None
+
     total_bases = df_unit["base"].nunique()
     visited_this_week = df_unit[df_unit["date_dt"] >= week_ago]["base"].nunique()
     not_visited_14d = df_unit.groupby("base")["date_dt"].max()
     overdue_bases = (not_visited_14d < two_weeks_ago).sum()
-    avg_reliability = df_unit["reliability_score"].mean() if "reliability_score" in df_unit.columns else None
 
     c1, c2, c3, c4 = st.columns(4)
 
@@ -4440,7 +4448,8 @@ def render_hatmar_management_tab(df: pd.DataFrame, unit: str):
         df_insp = df_unit[df_unit["inspector"] == inspector]
         visits_total = len(df_insp)
         visits_month = len(df_insp[df_insp["date_dt"] >= today - pd.Timedelta(days=30)])
-        avg_rel = df_insp["reliability_score"].mean() if "reliability_score" in df_insp.columns else None
+        cred = calculate_inspector_credibility(inspector, df_unit)
+        avg_rel = cred['score']
         is_p1 = (df_insp["e_status"] == "תקין") if "e_status" in df_insp.columns else pd.Series([True]*len(df_insp))
         is_p2 = (df_insp["k_cert"] == "כן") if "k_cert" in df_insp.columns else pd.Series([True]*len(df_insp))
         is_p3 = (df_insp["k_issues"] == "לא") if "k_issues" in df_insp.columns else pd.Series([True]*len(df_insp))
@@ -4651,6 +4660,10 @@ def render_route_planner(df: pd.DataFrame, unit: str):
     df_unit = df[df["unit"] == unit].copy()
     df_unit["date_dt"] = pd.to_datetime(df_unit["date"], errors="coerce")
     latest = df_unit.sort_values("date_dt").groupby("base").last().reset_index()
+
+    if latest.empty:
+        st.info("אין מוצבים שדורשים ביקור")
+        return
 
     # חישוב ציון דחיפות לכל מוצב
     def urgency_score(row):
@@ -6575,7 +6588,7 @@ def render_unit_report():
             st.warning("⚠️ לא נמצאה טיוטה שמורה")
 
     st.markdown("### 📍 מיקום ותאריך")
-    loc = streamlit_geolocation(key=f"main_report_loc_{unit}")
+    loc = streamlit_geolocation()
     gps_lat, gps_lon = (loc['latitude'], loc['longitude']) if loc and loc.get('latitude') else (None, None)
     
     if gps_lat:
