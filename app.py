@@ -6076,6 +6076,17 @@ def render_unit_report():
     _mandatory_warnings = []
     hq_vars = {}  # Pre-initialize so Tab 2 can also populate it
 
+    # בדיקה האם זו חטיבה סדירה/קומנדו
+    is_combat_brigade = unit in ["חטיבה 35", "חטיבה 89", "חטיבה 900"]
+
+    # Pre-initialize combat-specific lesson variables to avoid NameErrors in DB save
+    lesson_date, lesson_location, lesson_qty, lesson_participants = "", "", 0, 0
+    lesson_content, lesson_instructors, lesson_population = "", "", ""
+    soldier_shabbat_training, soldier_knows_rabbi = "לא רלוונטי", "לא רלוונטי"
+    soldier_prayers, soldier_talk_cmd = "לא רלוונטי", "לא רלוונטי"
+    soldier_yeshiva, soldier_want_lesson, soldier_has_lesson = "לא רלוונטי", "לא רלוונטי", "לא רלוונטי"
+    soldier_food, soldier_lesson_teacher, soldier_lesson_phone = "לא רלוונטי", "", ""
+
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🍽️ כשרות",
         "🕍 ביהכ\"נ ועירוב",
@@ -6171,19 +6182,32 @@ def render_unit_report():
                     k_shabbat_photo = st.file_uploader("📷 תמונת נאמן (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo_tab1")
         # (Photos in Tab 1)
 
-        # רשימת שאלות כשרות לשאפל
-        kashrut_questions = [
-            ("האם יש הפרדה?", "k1", "k_separation"),
-            ("האם בוצע תדריך טבחים?", "k2", "k_briefing"),
-            ("האם רכש חוץ מתנהל לפי פקודה?", "k3", "k_products"),
-            ("האם יש דף תאריכים לתבלינים?", "k4", "k_dates"),
-            ("האם יש שטיפת ירק?", "k5", "k_leafs"),
-            ("בוצע חירור גסטרונומים?", "k6", "k_holes"),
-            ("האם מבוצעת בדיקת ביצים?", "k9", "k_eggs"),
-            ("האם יש חדר מכ״ש במפג״ד?", "k10", "k_machshir"),
-            ("האם יש חימום נפרד בין בשר ודגים?", "k11", "k_heater"),
-            ("האם מולאה אפליקציה?", "k12", "k_app"),
-        ]
+        # רשימת שאלות כשרות לשאפל — מותאמת לסוג יחידה
+        if is_combat_brigade:
+            kashrut_questions = [
+                ("האם יש דף תאריכים לתבלינים?", "k4", "k_dates"),
+                ("האם יש הפרדה?", "k1", "k_separation"),
+                ("האם יש חימום נפרד בין בשר ודגים?", "k11", "k_heater"),
+                ("האם יש שטיפת ירק?", "k5", "k_leafs"),
+                ("בוצע חירור גסטרונומים?", "k6", "k_holes"),
+                ("האם רכש חוץ מתנהל לפי פקודה?", "k3", "k_products"),
+                ("האם מבוצעת בדיקת ביצים?", "k9", "k_eggs"),
+                ("האם מולאה אפליקציה?", "k12", "k_app"),
+                ("האם בוצע תדריך טבחים?", "k2", "k_briefing"),
+            ]
+        else:
+            kashrut_questions = [
+                ("האם יש הפרדה?", "k1", "k_separation"),
+                ("האם בוצע תדריך טבחים?", "k2", "k_briefing"),
+                ("האם רכש חוץ מתנהל לפי פקודה?", "k3", "k_products"),
+                ("האם יש דף תאריכים לתבלינים?", "k4", "k_dates"),
+                ("האם יש שטיפת ירק?", "k5", "k_leafs"),
+                ("בוצע חירור גסטרונומים?", "k6", "k_holes"),
+                ("האם מבוצעת בדיקת ביצים?", "k9", "k_eggs"),
+                ("האם יש חדר מכ״ש במפג״ד?", "k10", "k_machshir"),
+                ("האם יש חימום נפרד בין בשר ודגים?", "k11", "k_heater"),
+                ("האם מולאה אפליקציה?", "k12", "k_app"),
+            ]
         _rand.shuffle(kashrut_questions)
         kashrut_answers = {}
         for i in range(0, len(kashrut_questions), 2):
@@ -6319,36 +6343,54 @@ def render_unit_report():
             )
 
         st.markdown("#### 📖 רוח ושיעורי תורה")
-        c1, c2 = st.columns(2)
-        soldier_yeshiva = radio_with_explanation("האם יש ימי ישיבה?", "so1", col=c1)
-        soldier_want_lesson = radio_with_explanation("האם יש רצון לשיעור תורה?", "so_want_lesson", col=c2)
-        c1, c2 = st.columns(2)
-        soldier_has_lesson = radio_with_explanation("יש שיעור תורה במוצב?", "so_has_lesson", col=c1)
-        soldier_food = radio_with_explanation("האם המענה הכשרותי מספק?", "so2", col=c2)
-        soldier_lesson_teacher = ""
-        soldier_lesson_phone = ""
-        if soldier_has_lesson == "כן":
-            col_teacher, col_phone = st.columns(2)
-            with col_teacher:
-                soldier_lesson_teacher = st.text_input("שם מעביר השיעור", key="so_lesson_teacher", placeholder="לדוגמה: הרב כהן")
-            with col_phone:
-                soldier_lesson_phone = st.text_input("טלפון מעביר השיעור", key="so_lesson_phone", placeholder="לדוגמה: 050-1234567")
+        if is_combat_brigade:
+            st.markdown("""
+            <div style='background:#f1f5f9; padding:15px; border-radius:8px; border:1px solid #cbd5e1; margin-bottom: 15px;'>
+            <h5 style='margin-top: 0; color:#1e3a8a;'>📚 מעקב שיעורים וימי ישיבה (טופס מורחב סדיר)</h5>
+            """, unsafe_allow_html=True)
+            c_l1, c_l2 = st.columns(2)
+            lesson_date = c_l1.date_input("תאריך השיעור", key="l_date")
+            lesson_location = c_l2.text_input("מיקום", key="l_loc")
+            c_l3, c_l4 = st.columns(2)
+            lesson_qty = c_l3.number_input("כמות שיעורים", min_value=0, key="l_qty")
+            lesson_participants = c_l4.number_input("כמות משתתפים משוערת", min_value=0, key="l_part")
+            lesson_content = st.text_input("תוכן השיעורים", key="l_cont")
+            lesson_instructors = st.text_area("מעבירי השיעורים (הפרד בפסיקים)", key="l_inst")
+            lesson_population = st.selectbox("סוג האוכלוסיה", ["חיילי חובה", "קצינים", "מילואים", "מעורב", "אחר"], key="l_pop")
+            st.markdown("</div>", unsafe_allow_html=True)
+            # שיחת חתך לא רלוונטית לחטיבות סדירות
+            soldier_shabbat_training = soldier_knows_rabbi = soldier_prayers = soldier_talk_cmd = "לא רלוונטי"
+            soldier_yeshiva = soldier_want_lesson = soldier_has_lesson = soldier_food = "לא רלוונטי"
+            soldier_lesson_teacher = soldier_lesson_phone = ""
+        else:
+            c1, c2 = st.columns(2)
+            soldier_yeshiva = radio_with_explanation("האם יש ימי ישיבה?", "so1", col=c1)
+            soldier_want_lesson = radio_with_explanation("האם יש רצון לשיעור תורה?", "so_want_lesson", col=c2)
+            c1, c2 = st.columns(2)
+            soldier_has_lesson = radio_with_explanation("יש שיעור תורה במוצב?", "so_has_lesson", col=c1)
+            soldier_food = radio_with_explanation("האם המענה הכשרותי מספק?", "so2", col=c2)
+            soldier_lesson_teacher = ""
+            soldier_lesson_phone = ""
+            if soldier_has_lesson == "כן":
+                col_teacher, col_phone = st.columns(2)
+                with col_teacher:
+                    soldier_lesson_teacher = st.text_input("שם מעביר השיעור", key="so_lesson_teacher", placeholder="לדוגמה: הרב כהן")
+                with col_phone:
+                    soldier_lesson_phone = st.text_input("טלפון מעביר השיעור", key="so_lesson_phone", placeholder="לדוגמה: 050-1234567")
 
-        st.markdown("#### 💬 שיחת חתך חיילים")
-        # caption הוסר
-        c1, c2 = st.columns(2)
-        # שאלת קונטרול מתחלפת
-        if _flip == 1:
-            soldier_shabbat_training = radio_with_explanation("האם יש אימונים בשבת? ✅[תשובה שלילית = תקין]", "so3", col=c1)
-        else:
-            soldier_shabbat_training = radio_with_explanation("האם יש אימונים בשבת?", "so3", col=c1)
-        soldier_knows_rabbi = radio_with_explanation("האם מכיר את הרב?", "so4", col=c2)
-        c1, c2 = st.columns(2)
-        soldier_prayers = radio_with_explanation("האם יש זמני תפילות?", "so5", col=c1)
-        if _flip == 2:
-            soldier_talk_cmd = radio_with_explanation("האם יש שיח מפקדים? ✅[תשובה שלילית = בעיה]", "so6", col=c2)
-        else:
-            soldier_talk_cmd = radio_with_explanation("האם יש שיח מפקדים?", "so6", col=c2)
+            st.markdown("#### 💬 שיחת חתך חיילים")
+            c1, c2 = st.columns(2)
+            if _flip == 1:
+                soldier_shabbat_training = radio_with_explanation("האם יש אימונים בשבת? ✅[תשובה שלילית = תקין]", "so3", col=c1)
+            else:
+                soldier_shabbat_training = radio_with_explanation("האם יש אימונים בשבת?", "so3", col=c1)
+            soldier_knows_rabbi = radio_with_explanation("האם מכיר את הרב?", "so4", col=c2)
+            c1, c2 = st.columns(2)
+            soldier_prayers = radio_with_explanation("האם יש זמני תפילות?", "so5", col=c1)
+            if _flip == 2:
+                soldier_talk_cmd = radio_with_explanation("האם יש שיח מפקדים? ✅[תשובה שלילית = בעיה]", "so6", col=c2)
+            else:
+                soldier_talk_cmd = radio_with_explanation("האם יש שיח מפקדים?", "so6", col=c2)
 
         st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
             <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[5].click()" 
@@ -6650,9 +6692,9 @@ def render_unit_report():
                 st.error("⚠️ **חובה להעלות תמונת נאמן כשרות בימי חמישי ושישי!**")
                 st.warning("💡 נא להעלות תמונה של נאמן הכשרות בשדה המתאים למעלה")
             
-            # 🆕 בדיקת מיקום חובה (נוסף לבקשת המשתמש)
-            elif not (gps_lat and gps_lon):
-                 st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח!")
+            # בדיקת מיקום חובה (פטור לחטיבות סדירות)
+            elif not is_combat_brigade and not (gps_lat and gps_lon):
+                 st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח בחטמ\"ר!")
                  st.warning("💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום")
                  
             elif base and inspector and photo:
@@ -6709,7 +6751,15 @@ def render_unit_report():
                     "k_shabbat_photo_url": k_shabbat_photo_url,
                     "report_duration": report_duration,  # ⏱️ חדש!
                     "barcode_verified": (barcode_value == BASE_BARCODES.get(base)) if base in BASE_BARCODES else False,
-                    "signature_url": sig_url or ""
+                    "signature_url": sig_url or "",
+                    # שדות שיעורים של חטיבות סדירות
+                    "lesson_date": str(lesson_date),
+                    "lesson_location": lesson_location,
+                    "lesson_qty": lesson_qty,
+                    "lesson_participants": lesson_participants,
+                    "lesson_content": lesson_content,
+                    "lesson_instructors": lesson_instructors,
+                    "lesson_population": lesson_population,
                 }
                 
                 # הוספת שאלות הלכה לחטיבות 35/89/900
@@ -6759,6 +6809,9 @@ def render_unit_report():
                                 "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone",
                                 "report_duration", "barcode_verified", "signature_url",
                                 "ai_risk_level", "ai_sla", "ai_action",
+                                # שדות שיעורים של חטיבות סדירות
+                                "lesson_date", "lesson_location", "lesson_qty", "lesson_participants",
+                                "lesson_content", "lesson_instructors", "lesson_population",
                             ]
                             for field in new_fields:
                                 data.pop(field, None)
@@ -8508,7 +8561,12 @@ def render_ogda_summary_dashboard_v2():
     st.markdown("---")
 
     # ===== Compliance Heatmap =====
-    st.markdown("### 🌡️ Compliance Matrix")
+    st.markdown("""
+    <h3 style='margin-bottom: 0;'>🌡️ Compliance Matrix</h3>
+    <p style='color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 15px;'>
+        מדד ציות לפקודות - מציג באחוזים את רמת העמידה של כל חטיבה בנהלי כשרות, עירוב וניקיון. אזורים אדומים מחייבים שיחת חתך.
+    </p>
+    """, unsafe_allow_html=True)
     heatmap_data = []
     compliance_metrics = {'k_cert': 'Kashrut', 'e_status': 'Eruv', 's_clean': 'Cleanliness', 's_board': 'Board'}
     for u in subordinate_units:
@@ -8540,11 +8598,16 @@ def render_ogda_summary_dashboard_v2():
     st.markdown("---")
 
     # ===== Critical Issues =====
-    st.markdown("### 🚨 Critical Issues Summary")
+    st.markdown("""
+    <h3 style='margin-bottom: 0;'>🚨 Critical Issues Summary</h3>
+    <p style='color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 15px;'>
+        סיכום אירועים קריטיים - ריכוז יחידות עם עירוב פסול או כשרות חסרה (משמאל) והתפלגות החוסרים הלוגיסטיים באוגדה (מימין).
+    </p>
+    """, unsafe_allow_html=True)
     iss_col1, iss_col2 = st.columns(2)
 
     with iss_col1:
-        st.markdown("#### ⚠️ Units with Critical Issues")
+        st.markdown("#### ⚠️ Units with Critical Issues <br><span style='font-size:14px; color:#64748b; font-weight:normal;'>יחידות בסיכון גבוה לטיפול מיידי</span>", unsafe_allow_html=True)
         critical_units = []
         for u in subordinate_units:
             unit_df = df[df['unit'] == u] if not df.empty else pd.DataFrame()
@@ -8581,7 +8644,12 @@ def render_ogda_summary_dashboard_v2():
     st.markdown("---")
 
     # ===== 30-Day Trend =====
-    st.markdown("### 📈 30-Day Trend")
+    st.markdown("""
+    <h3 style='margin-bottom: 0;'>📈 30-Day Trend</h3>
+    <p style='color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 15px;'>
+        מגמות חודשיות - השוואה בין כמות הדיווחים התקינים לכמות התקלות (Issues) לאורך החודש האחרון לזיהוי מגמות הידרדרות או שיפור ברמת האוגדה.
+    </p>
+    """, unsafe_allow_html=True)
     if not df.empty and 'date' in df.columns:
         try:
             df_copy = df.copy()
@@ -8622,21 +8690,19 @@ def render_ogda_summary_dashboard_v2():
     footer_cols = st.columns(4)
     with footer_cols[0]:
         avg_rep = len(df) / subordinate_count if subordinate_count > 0 else 0
-        st.metric("📊 Avg Reports/Unit", f"{avg_rep:.1f}")
+        st.metric("📊 Avg Reports (ממוצע לחטיבה)", f"{avg_rep:.1f}")
     with footer_cols[1]:
         total_iss = 0
         if not df.empty:
-            if 'e_status' in df.columns:
-                total_iss += len(df[df['e_status'] == 'פסול'])
-            if 'k_cert' in df.columns:
-                total_iss += len(df[df['k_cert'] == 'לא'])
-        st.metric("🔴 Total Issues", total_iss)
+            if 'e_status' in df.columns: total_iss += len(df[df['e_status'] == 'פסול'])
+            if 'k_cert' in df.columns: total_iss += len(df[df['k_cert'] == 'לא'])
+        st.metric("🔴 Total Issues (סה״כ תקלות)", total_iss)
     with footer_cols[2]:
         compliant = sum(1 for u in subordinate_units if not df.empty and len(df[df['unit'] == u]) > 0
                         and calculate_unit_score(df[df['unit'] == u]) >= 80)
-        st.metric("🟢 Fully Compliant Units", compliant)
+        st.metric("🟢 Compliant Units (כשירות גבוהה)", compliant)
     with footer_cols[3]:
-        st.metric("🔄 Last Update", _dt.datetime.now().strftime('%H:%M'))
+        st.metric("🔄 Last Update (עדכון אחרון)", _dt.datetime.now().strftime('%H:%M'))
 
 def render_hatmar_summary_dashboard():
     """
