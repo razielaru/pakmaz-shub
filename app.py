@@ -6520,6 +6520,14 @@ def render_unit_report():
     # TAB 5: חוסרים ושליחה (Deficits + Submit)
     # ===========================================
     with tab5:
+        st.markdown("### ⚠️ חוסרים")
+        missing = st.text_area("פירוט חוסרים")
+        st.markdown("### 💬 הערות נוספות")
+        free_text = st.text_area("הערות נוספות")
+
+        st.markdown("### 📸 צילומים וחתימה")
+        photo = st.file_uploader("📸 תמונה כללית (חובה)", type=['jpg', 'png', 'jpeg'], key="main_report_photo")
+
         # --- בדיקת תנאי חובה לפני שליחה ---
         _mandatory_warnings = []
         
@@ -6547,14 +6555,6 @@ def render_unit_report():
         if not missing:
             _mandatory_warnings.append("⚠️ חובה למלא את שדה הפירוט (במידה ואין חוסרים כתוב 'אין')")
 
-        st.markdown("### ⚠️ חוסרים")
-        missing = st.text_area("פירוט חוסרים")
-        st.markdown("### 💬 הערות נוספות")
-        free_text = st.text_area("הערות נוספות")
-
-        st.markdown("### 📸 צילומים וחתימה")
-        photo = st.file_uploader("📸 תמונה כללית (חובה)", type=['jpg', 'png', 'jpeg'], key="main_report_photo")
-        
         # 🧠 ניתוח ראייה ממוחשבת (Vision AI)
         if photo:
             with st.spinner("🧠 המוח הפיקודי מנתח את התמונה..."):
@@ -7298,7 +7298,7 @@ def render_executive_summary_dashboard():
 
     st.markdown("---")
     # 🤖 Weekly Insights Manager - Command Panel
-    render_weekly_insights_control_panel()
+    render_weekly_insights_control_panel(key_suffix="_pikud")
     st.markdown("---")
     c1, c2, c3 = st.columns(3)
     with c1: st.metric("📊 Total Reports", len(df) if not df.empty else 0)
@@ -7906,7 +7906,7 @@ def render_weekly_questions_widget():
             st.balloons()
 
 
-def render_weekly_insights_control_panel():
+def render_weekly_insights_control_panel(key_suffix: str = ""):
     """
     🎛️ פאנל בקרה מנהלי — עדכן שאלות בלחיצת כפתור
     הכי פשוט, הכי יציב, בלי Cron/Scheduler/Triggers
@@ -7919,10 +7919,10 @@ def render_weekly_insights_control_panel():
     """, unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("🔄 עדכן שאלות עכשיו", use_container_width=True, type="primary", key="update_weekly_now"):
+        if st.button("🔄 עדכן שאלות עכשיו", use_container_width=True, type="primary", key=f"update_weekly_now{key_suffix}"):
             update_weekly_insights_now()
     with col2:
-        if st.button("📊 ראה את השאלות האחרונות", use_container_width=True, key="show_last_weekly"):
+        if st.button("📊 ראה את השאלות האחרונות", use_container_width=True, key=f"show_last_weekly{key_suffix}"):
             show_last_weekly_questions()
 
 
@@ -8370,7 +8370,7 @@ def render_ogda_summary_dashboard_v2():
         מחולל התובנות השבועי - מערכת AI המייצרת עבורך באופן אוטומטי שאלות הכוונה ומוקדי שיח לשיחת החתך עם רבני החטיבות לקראת שבת.
     </p>
     """, unsafe_allow_html=True)
-    render_weekly_insights_control_panel()
+    render_weekly_insights_control_panel(key_suffix="_exec")
 
     st.markdown("---")
 
@@ -8614,7 +8614,7 @@ def render_ogda_summary_dashboard_v2():
 
     st.markdown("---")
     # 🤖 Weekly Insights Manager - Command Panel
-    render_weekly_insights_control_panel()
+    render_weekly_insights_control_panel(key_suffix="_ogda")
     
     st.markdown("---")
 
