@@ -6427,50 +6427,15 @@ def render_unit_report():
         if not _show_halacha:
             st.info("📌 שיחת חתך   , ,  .")
         else:
-            st.markdown("#### 🕍 נספח הלכתי ושבת")
+            st.markdown("#### 📖 שיעורי תורה ואיש קשר רוחני")
+            hq_vars['hq_want_torah_lesson'] = st.selectbox(
+                "האם יש רצון לשיעור תורה?",
+                ["כן", "לא", "לא בדקתי"],
+                key="hq_want_torah_lesson_sel"
+            )
             c1, c2 = st.columns(2)
-            hq_vars['hq_halachi_annex'] = radio_with_explanation("יש נספח הלכתי מצורף לנספח האבטחה של היחידה (בחמ\"ל)?", "hq1", col=c1)
-            hq_vars['hq_shabbat_pubs'] = radio_with_explanation("פרסום הנחיות שבת בש\"ג, חמ\"ל, נשקייה, מרפאה ובונקר?", "hq2", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_infra_shabbat'] = radio_with_explanation("קיימות מערכות תשתיתיות המחייבות חילול שבת (טרמויאל, עין אלקטרונית וכד')?", "hq3", col=c1)
-            hq_vars['hq_infra_response'] = radio_with_explanation("ניתן מענה/הנחיות לאוכלוסייה הדתית לגבי מערכות אלו?", "hq4", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_shabbat_devices'] = radio_with_explanation("הימצאות התקני שבת (עט, מקלדת, עכבר) בחמ\"ל ובמרפאה / שילוט מותאם?", "hq5", col=c1)
-            hq_vars['hq_mandatory_reg'] = radio_with_explanation("מחייבים רישום/החתמה מסמכים בשבת (נוכחות, ש.ג, מרותקים וכד')?", "hq6", col=c2)
-
-            st.markdown("#### 🏕️ שבתות שטח")
-            c1, c2 = st.columns(2)
-            hq_vars['hq_field_shabbat_orders'] = radio_with_explanation("שבתות שטח מתקיימות לפי הוראות רבצ\"ר ונכתב נספח רבנות?", "hq7", col=c1)
-            hq_vars['hq_field_jewish_dates'] = radio_with_explanation("התקיימו שבתות שטח במועדי ישראל (ר\"ה, יו\"כ, פסח וכד')?", "hq8", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_field_prep_time'] = radio_with_explanation("ההיערכות לשבת הושלמה לפני כניסת השבת?", "hq9", col=c1)
-            hq_vars['hq_field_wash'] = radio_with_explanation("אפשרו לחיילים להתרחץ / לשטוף ידיים ולהחליף מדים לפני שבת?", "hq10", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_field_shul'] = radio_with_explanation("הוקם ביכ\"נ במתחם (כשיש מניין)?", "hq11", col=c1)
-            hq_vars['hq_field_equipment'] = radio_with_explanation("היה ציוד שבת מלא: יין, חלות, כלים, מנות קרב, מים?", "hq12", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_field_hot_meal'] = radio_with_explanation("הוגשה סעודה מבושלת וחמה סביב כיסאות בליל שבת?", "hq13", col=c1)
-            hq_vars['hq_field_training'] = radio_with_explanation("תרגלו חיילים באימון כלשהו במהלך השבת?", "hq14", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_field_gear'] = radio_with_explanation("חייבו חיילים לנוע עם ציוד לחימה בשבת?", "hq15", col=c1)
-            hq_vars['hq_field_generator'] = radio_with_explanation("טיפלו בגנרטור / הקמת אוהל או ציליה בשבת?", "hq16", col=c2)
-            c1, c2 = st.columns(2)
-            hq_vars['hq_field_vehicles'] = radio_with_explanation("הייתה תנועת כלי רכב במהלך השבת בשטח הכוח?", "hq17", col=c1)
-            hq_vars['hq_field_prep_motzash'] = radio_with_explanation("במהלך השבת החלו הכנות לפעילות במוצ\"ש / המשך שבוע?", "hq18", col=c2)
-            hq_vars['hq_field_rabbi_rep'] = radio_with_explanation("שהה בשטח נציג הרבנות במהלך השבת?", "hq19")
-
-            st.markdown("#### 🌿 חגים")
-            c1, c2 = st.columns(2)
-            hq_vars['hq_sukkah_chada'] = radio_with_explanation("הוקמה סוכה ליד חד\"א?", "hq20", col=c1)
-            hq_vars['hq_sukkah_food'] = radio_with_explanation("קיימת סוכה ליד כל עסק למכירת מזון?", "hq21", col=c2)
-            hq_vars['hq_sukkah_option'] = radio_with_explanation("ניתנה אפשרות לחייל לאכול/לישון בסוכה?", "hq22")
-            c1, c2 = st.columns(2)
-            hq_vars['hq_pesach_chametz'] = radio_with_explanation("מיום י\"ג ניסן 09:00 לא היה חמץ בבסיסי צה\"ל?", "hq23", col=c1)
-            hq_vars['hq_pesach_kitchen'] = radio_with_explanation("מטבחים הוכשרו עד י\"ב ניסן 18:00 לפי פקודת פסח?", "hq24", col=c2)
-            hq_vars['hq_pesach_seder'] = radio_with_explanation("בליל פסח התקיים סדר פסח מסורתי לכלל החיילים לפי הוראות רבצ\"ר?", "hq25")
-            c1, c2 = st.columns(2)
-            hq_vars['hq_chanuka_lighting'] = radio_with_explanation("נערך טקס הדלקת נרות חנוכה ואפשרו לחיילים להשתתף?", "hq26", col=c1)
-            hq_vars['hq_purim_megilla'] = radio_with_explanation("אפשרו לחיילים לשמוע קריאת מגילה בפורים?", "hq27", col=c2)
+            hq_vars['hq_contact_name'] = c1.text_input("איש קשר – שם", key="hq_contact_name_inp", placeholder="לדוגמה: הרב כהן")
+            hq_vars['hq_contact_phone'] = c2.text_input("איש קשר – מספר פלאפון", key="hq_contact_phone_inp", placeholder="לדוגמה: 050-1234567")
 
         st.markdown("#### 👮 שאלון חיילים – רבנות היחידה ונושאים נוספים")
 
@@ -7473,34 +7438,43 @@ def render_ogda_summary_dashboard():
 
 # ===== Weekly AI Insights Functions =====
 
+@st.cache_data(ttl=1800, show_spinner=False)  # TTL 30 דקות — מונע קריאת AI בכל רינדור
 def generate_weekly_questions(unit: str, accessible_units: list) -> dict:
     """
-    🤖 יוצר שאלות חכמות והנחיית AI אקטיבית למפקד האוגדה/פיקוד
+    🤖 יוצר שאלות חכמות והנחיית AI אקטיבית למפקד האוגדה/פיקוד.
+    מייצר שאילתא אחת מאוחדת עם 5-7 שאלות על הכפופים בלבד.
     """
-    all_reports = load_reports_cached(accessible_units)
+    # סינון: רק יחידות כפופות (לא היחידה עצמה)
+    subordinate_units = [u for u in accessible_units if u != unit]
+    
+    all_reports = load_reports_cached(subordinate_units if subordinate_units else accessible_units)
     df = pd.DataFrame(all_reports) if all_reports else pd.DataFrame()
+    
+    # סינון נוסף: רק דוחות של יחידות כפופות
+    if not df.empty and 'unit' in df.columns and subordinate_units:
+        df = df[df['unit'].isin(subordinate_units)]
     
     insights = {}
     
-    # 1. ניתוחים סטטיסטיים בסיסיים
+    # ניתוחים סטטיסטיים בסיסיים — על הכפופים בלבד
     if not df.empty:
-        kashrut_insights = analyze_kashrut_trend(df, accessible_units)
+        kashrut_insights = analyze_kashrut_trend(df, subordinate_units)
         if kashrut_insights:
             insights['kashrut'] = kashrut_insights
             
-        eruv_insights = analyze_eruv_trend(df, accessible_units)
+        eruv_insights = analyze_eruv_trend(df, subordinate_units)
         if eruv_insights:
             insights['eruv'] = eruv_insights
             
-        performance_insights = analyze_unit_performance(df, accessible_units)
+        performance_insights = analyze_unit_performance(df, subordinate_units)
         if performance_insights:
             insights['performance'] = performance_insights
             
-        anomaly_insights = detect_weekly_anomalies(df, accessible_units)
+        anomaly_insights = detect_weekly_anomalies(df, subordinate_units)
         if anomaly_insights:
             insights['anomalies'] = anomaly_insights
             
-    # 2. מחולל "הכוונת מפקד AI" (מופעל תמיד!)
+    # מחולל AI מאוחד — שאילתא בודדת, 5-7 שאלות
     import google.generativeai as genai
     import json as _json
     try:
@@ -7509,41 +7483,52 @@ def generate_weekly_questions(unit: str, accessible_units: list) -> dict:
             model = genai.GenerativeModel("gemini-2.5-flash")
             log_api_usage(unit, "weekly_insights")
             
-            # בניית תקציר הנתונים עבור ה-AI
+            # בניית תקציר הנתונים של הכפופים בלבד
             if not df.empty:
-                summary_data = df.groupby('unit').agg(
-                    reports=('id', 'count'),
-                    eruv_fails=('e_status', lambda x: (x == 'פסול').sum()),
-                    kashrut_fails=('k_cert', lambda x: (x == 'לא').sum())
-                ).to_string()
+                try:
+                    summary_data = df.groupby('unit').agg(
+                        reports=('id', 'count'),
+                        eruv_fails=('e_status', lambda x: (x == 'פסול').sum()),
+                        kashrut_fails=('k_cert', lambda x: (x == 'לא').sum())
+                    ).to_string()
+                except Exception:
+                    summary_data = f"יחידות כפופות: {', '.join(subordinate_units)}"
             else:
-                summary_data = "אין דוחות מוזנים השבוע."
+                summary_data = f"אין דוחות מוזנים. יחידות כפופות: {', '.join(subordinate_units) if subordinate_units else 'אין'}"
 
+            units_str = ', '.join(subordinate_units) if subordinate_units else 'אין יחידות כפופות'
             prompt = f"""
-            אתה קצין המטה של רב אוגדה/פיקוד.
-            לקראת שיחות סיכום השבוע עם רבני החטיבות ({', '.join(accessible_units)}), עליך לספק למפקד 3 שאלות מיקוד אסטרטגיות שכדאי לו לשאול אותם.
-            נתוני השבוע: {summary_data}
-            
-            החזר JSON בלבד במבנה הבא:
-            {{"question": "שאלות מיקוד לשיחות חתך שבועיות", "current": 0, "previous": 0, "trend": "ai_focus", "suggestion": "1. שאלה ראשונה... 2. שאלה שנייה... 3. שאלה שלישית..."}}
-            """
+אתה קצין המטה של {unit} (רב אוגדה/פיקוד).
+היחידות הכפופות אליך הן: {units_str}.
+
+סיכום נתוני השבוע:
+{summary_data}
+
+תפקידך: לעזור למפקד למקסם את עבודת האוגדה/פיקוד במהלך השבוע.
+
+צור בדיוק 5-7 שאלות מיקוד אסטרטגיות שהמפקד צריך לחשוב עליהן לקראת השבוע.
+כל שאלה צריכה להיות קצרה, חדה, ומבוססת על הנתונים.
+
+החזר JSON בלבד בפורמט:
+{{"question": "שאלות מיקוד שבועיות לקראת השבוע", "current": 0, "previous": 0, "trend": "ai_focus", "suggestion": "1. [שאלה ראשונה]\n2. [שאלה שנייה]\n3. [שאלה שלישית]\n4. [שאלה רביעית]\n5. [שאלה חמישית]"}}
+"""
             response = model.generate_content(prompt)
             clean_json = response.text.replace("```json", "").replace("```", "").strip()
             ai_focus = _json.loads(clean_json)
             insights['ai_commander_focus'] = ai_focus
     except Exception as e:
         insights['ai_commander_focus'] = {
-            "question": "🤖 הנחיית מפקד שבועית (מחוץ לרשת)",
+            "question": "🤖 שאלות הכוונה שבועיות לקראת השבוע",
             "current": 0, "previous": 0, "trend": "ai_focus",
-            "suggestion": "בדוק: (1) עדכון תג כשרות, (2) מצב עירובין לפני שבת, (3) שיעורי תורה שבועיים."
+            "suggestion": "1. האם כל היחידות הגישו דוח שבועי?\n2. מה מצב העירובין לקראת השבת הקרובה?\n3. האם יש חוסרים פתוחים שלא טופלו יותר מ-7 ימים?\n4. הרב ביחידה החלשה ביותר - מה סטטוסו?\n5. האם התקיימו שיעורי תורה שבועיים בכל היחידות?"
         }
         
-    # 3. ניתוח חוסרים (פתוח תמיד)
-    deficit_insights = analyze_deficit_progress(accessible_units)
+    # ניתוח חוסרים (על הכפופים בלבד)
+    deficit_insights = analyze_deficit_progress(subordinate_units if subordinate_units else accessible_units)
     if deficit_insights and isinstance(deficit_insights, list):
         insights['deficits'] = {
             "question": deficit_insights[0].get("question", "בדוק את סטטוס החוסרים השבוע"),
-            "current": len(get_open_deficits(accessible_units)),
+            "current": len(get_open_deficits(subordinate_units if subordinate_units else accessible_units)),
             "previous": 0,
             "trend": "attention_needed",
             "suggestion": deficit_insights[0].get("suggestion", "עבור על טבלת החוסרים המלאה")
@@ -7981,22 +7966,57 @@ def render_weekly_questions_widget():
 
 def render_weekly_insights_control_panel(key_suffix: str = ""):
     """
-    🎛️ פאנל בקרה מנהלי — עדכן שאלות בלחיצת כפתור
-    הכי פשוט, הכי יציב, בלי Cron/Scheduler/Triggers
+    🎛️ פאנל שאלות שבועיות — מציג שאלות אוטומטית לפי הנתונים העדכניים
     """
     st.markdown("""
     <div style='background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
                 padding: 20px; border-radius: 12px; margin-bottom: 20px;'>
-        <h2 style='color: white; margin: 0;'>🤖 Weekly Insights Manager</h2>
+        <h2 style='color: white; margin: 0;'>🤖 שאלות הכוונה שבועיות לקראת השבוע</h2>
+        <p style='color: rgba(255,255,255,0.85); margin: 6px 0 0 0; font-size: 14px;'>
+            5-7 שאלות מיקוד שנוצרו על בסיס הנתונים שלך — לקראת שיחות החתך שלך עם הכפופים
+        </p>
     </div>
     """, unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔄 עדכן שאלות עכשיו", use_container_width=True, type="primary", key=f"update_weekly_now{key_suffix}"):
-            update_weekly_insights_now()
+    
+    unit = st.session_state.get('selected_unit', '')
+    role = st.session_state.get('role', '')
+    accessible_units = get_accessible_units(unit, role)
+    
+    # הצג ספינר קצר ואז את השאלות — אוטומטי, ללא לחיצת כפתור
+    with st.spinner("⏳ מייצר שאלות הכוונה..."):
+        insights = generate_weekly_questions(unit, accessible_units)
+    
+    # הצגת שאלות ה-AI המאוחדות
+    if 'ai_commander_focus' in insights:
+        ai = insights['ai_commander_focus']
+        suggestion_text = ai.get('suggestion', '')
+        # המר שאלות ממחרוזת לרשימה
+        lines = [l.strip() for l in suggestion_text.split('\n') if l.strip()]
+        st.markdown("""
+        <div style='background: #f0fdf4; border-left: 4px solid #6366f1;
+                    padding: 20px; border-radius: 10px; margin-bottom: 16px;'>
+            <strong style='color: #6366f1; font-size: 16px;'>❓ שאלות מיקוד לשבוע:</strong>
+        </div>
+        """, unsafe_allow_html=True)
+        for i, line in enumerate(lines, 1):
+            # הסר מספור קיים מהטקסט אם יש
+            clean_line = line.lstrip('0123456789. ').strip()
+            if clean_line:
+                st.markdown(f"""
+                <div style='background: white; border: 1px solid #e2e8f0; border-right: 4px solid #6366f1;
+                            padding: 14px 18px; border-radius: 8px; margin-bottom: 10px;
+                            box-shadow: 0 1px 3px rgba(0,0,0,0.06);'>
+                    <span style='color: #6366f1; font-weight: bold; font-size: 16px;'>{i}.</span>
+                    <span style='margin-right: 8px; font-size: 15px; color: #1e293b;'>{clean_line}</span>
+                </div>
+                """, unsafe_allow_html=True)
+    
+    # כפתור ריענון בלבד
+    st.markdown("")
+    col1, col2 = st.columns([3, 1])
     with col2:
-        if st.button("📊 ראה את השאלות האחרונות", use_container_width=True, key=f"show_last_weekly{key_suffix}"):
-            show_last_weekly_questions()
+        if st.button("🔄 רענן שאלות", use_container_width=True, key=f"refresh_weekly{key_suffix}"):
+            st.rerun()
 
 
 def update_weekly_insights_now():
@@ -8436,7 +8456,7 @@ def render_ogda_summary_dashboard_v2():
     st.markdown("""
     <h3 style='margin-bottom: 0;'>🤖 Weekly Insights Manager</h3>
     <p style='color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 15px;'>
-        מחולל התובנות השבועי - מערכת AI המייצרת עבורך באופן אוטומטי שאלות הכוונה ומוקדי שיח לשיחת החתך עם רבני החטיבות לקראת שבת.
+        מחולל התובנות השבועי - מערכת AI המייצרת עבורך באופן אוטומטי שאלות הכוונה ומוקדי שיח לשיחת החתך עם רבני החטיבות לקראת השבוע.
     </p>
     """, unsafe_allow_html=True)
     render_weekly_insights_control_panel(key_suffix="_exec")
