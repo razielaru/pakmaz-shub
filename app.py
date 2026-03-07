@@ -7745,7 +7745,7 @@ def analyze_unit_performance(df: pd.DataFrame, units: list) -> dict:
     scores.sort(key=lambda x: x[1], reverse=True)
     best_unit, best_score = scores[0]
     worst_unit, worst_score = scores[-1] if len(scores) > 1 else (scores[0][0], scores[0][1])
-    avg_score = sum(s[1] for _, s in scores) / len(scores)
+    avg_score = sum(s for _, s in scores) / len(scores)
     if best_score >= 90:
         question = f"🏆 {best_unit} עלתה ל-{best_score:.0f}! — מה הם עושים נכון?"
         suggestion = "שתף את הניסיון שלהם עם יחידות אחרות"
