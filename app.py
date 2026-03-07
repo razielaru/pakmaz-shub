@@ -4272,9 +4272,9 @@ def render_hatmar_rabbi_dashboard():
     raw_data = load_reports_cached(accessible_units)
     df = pd.DataFrame(raw_data)
 
-    st.markdown(f"## 📱 דשבורד רב החטיבה - {unit}")
+    st.markdown(f"## 📱 אור אישי לדרג הפיקודי - {unit}")
     
-    t1, t2, t3, t4, t5, t6 = st.tabs(["🚦 סטטוס מוצבים", "🕯️ הכנה לשבת", "📖 הלכה", "📊 ניהול ודיווח", "🎯 ניתוח יחידה", "🗺️ מפה"])
+    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["🚦 סטטוס מוצבים", "🕯️ הכנה לשבת", "📖 הלכה", "📊 ניהול ודיווח", "🎯 ניתוח יחידה", "📜 היסטוריית דוחות", "🗺️ מפה"])
     
     with t1: render_bases_status_board(df, unit)
     with t2: render_shabbat_preparation_assistant(unit, df)
@@ -4284,12 +4284,51 @@ def render_hatmar_rabbi_dashboard():
         st.divider()
         render_weekly_report_generator(unit, df)
     with t5:
-        # העברת ניתוח יחידה לכאן
-        st.markdown("### 📈 ניתוח מעמיק - חטמ״ר " + unit)
-        render_detailed_unit_analysis(df, unit) # אני צריך לוודא שהפונקציה הזו קיימת או לחלץ את הלוגיקה
+        # ניתוח יחידה מעמיק
+        st.markdown(f"### 📈 ניתוח מעמיק - {unit}")
+        render_detailed_unit_analysis(df, unit)
     with t6:
-        # העברת המפה לכאן
-        st.markdown("### 🗺️ מפה מפורטת - " + unit)
+        # היסטוריית דוחות (Wave 2.6)
+        st.markdown(f"### 📜 היסטוריית דוחות מפורטת - {unit}")
+        # בניית רשימת עמודות בסדר לוגי
+        base_columns = ['date', 'base', 'inspector', 'reliability_score']
+        
+        # עמודות מצב בסיסיות
+        status_columns = ['e_status', 'k_cert'] if 'e_status' in df.columns else []
+        
+        # תקלות כשרות
+        kashrut_issues_columns = [col for col in ['k_issues', 'k_issues_description', 'k_separation', 'p_mix', 'k_products', 'k_bishul'] if col in df.columns]
+        
+        # שיעורי תורה
+        torah_columns = [col for col in ['soldier_want_lesson', 'soldier_has_lesson', 'soldier_lesson_teacher', 'soldier_lesson_phone', 'soldier_yeshiva', 's_torah_id', 's_torah_nusach'] if col in df.columns]
+        
+        # טרקלין וויקוק
+        lounge_vikok_columns = [col for col in ['t_private', 't_kitchen_tools', 't_procedure', 't_friday', 't_app', 'w_location', 'w_private', 'w_kitchen_tools', 'w_procedure', 'w_guidelines'] if col in df.columns]
+        
+        # חוסרים ונוספות
+        other_columns = [col for col in ['r_mezuzot_missing', 'r_torah_missing', 'missing_items', 'free_text'] if col in df.columns]
+        
+        # סינון לפי סוג יחידה (Wave 2.6)
+        is_combat_brigade = unit in ["חטיבה 35", "חטיבה 89", "חטיבה 900"]
+        if is_combat_brigade:
+            all_cols = base_columns + status_columns + kashrut_issues_columns + torah_columns + other_columns
+        else:
+            all_cols = base_columns + status_columns + kashrut_issues_columns + torah_columns + lounge_vikok_columns + other_columns
+            
+        display_df = df[df['unit'] == unit][all_cols].copy()
+        
+        column_mapping = {
+            'date': 'תאריך', 'base': 'מוצב', 'inspector': 'מבקר', 'reliability_score': '🛡️ אמינות',
+            'e_status': 'סטטוס עירוב', 'k_cert': 'תעודת כשרות', 'k_issues': 'תקלות כשרות',
+            'soldier_want_lesson': 'שיעור תורה', 'free_text': 'הערות'
+            # (שאר המיפוי קיים במערכת)
+        }
+        display_df.rename(columns=column_mapping, inplace=True)
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+    with t7:
+        # מפה
+        st.markdown(f"### 🗺️ מפה מפורטת - {unit}")
         render_unit_map(df, unit)
 
 
@@ -5862,465 +5901,9 @@ def render_unit_report():
                         else:
                             st.error("שגיאה בעדכון הקוד בבסיס הנתונים")
         
-        # הצגת ניתוח יחידה (העתקה מטאב 4 של פיקוד)
+        # דשבורד מפקד מאוחד (Wave 2.6) - כולל היסטוריה וניתוחים בתוך טאבים
         st.markdown("---")
-        st.markdown(f"## 📊 ניתוח מפורט - {unit}")
-        
-        # כפתור הורדה בולט לניתוח המפורט
-        try:
-             # טעינה זריזה לצורך הכפתור (או שנשתמש בנתונים שיטענו בהמשך)
-             # עדיף להשתמש ב-unit_df שנטען, אבל נצטרך לחכות לטעינה.
-             # אז נכניס את הכפתור אחרי הטעינה.
-             pass
-        except:
-             pass
-        
-        # טעינת נתונים
-        try:
-            all_reports = load_reports_cached()
-            df = pd.DataFrame(all_reports) if all_reports else pd.DataFrame()
-        except Exception as e:
-            st.error(f"שגיאה בטעינת נתונים: {e}")
-            df = pd.DataFrame()
-        
-        # סינון דוחות ליחידה זו בלבד
-        if not df.empty and 'unit' in df.columns:
-            unit_df = df[df['unit'] == unit].copy()
-        else:
-            unit_df = pd.DataFrame()
-            
-        if unit_df.empty:
-            st.warning(f"⚠️ לא נמצאו דוחות עבור {unit}")
-            st.info("💡 ברגע שיהיו דוחות, הניתוח המפורט יופיע כאן")
-        else:
-            # כפתור הורדה בולט (אחרי שיש נתונים)
-            enhanced_excel = create_enhanced_excel_report(unit_df, unit_name=unit)
-            if enhanced_excel:
-                st.download_button(
-                    label="📥 הורד דוח מפורט משופר (Excel)",
-                    data=enhanced_excel,
-                    file_name=f"detailed_report_{unit}_{pd.Timestamp.now().strftime('%Y%m')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                    key="dl_detailed_internal",
-                    type="primary"
-                )
-            
-            # טאבים לניתוח
-            analysis_tabs = st.tabs(["🔴 חוסרים ובעיות", "🍴 עירוב וכשרות", "🏗️ תשתיות ויומן ביקורת", "📊 סיכום כללי", "🔍 אמינות מבקרים", "🛰️ מפה ארצית"])
-            
-            latest_report = unit_df.sort_values('date', ascending=False).iloc[0] if len(unit_df) > 0 else None
-            
-            with analysis_tabs[0]:  # חוסרים
-                st.markdown("#### חוסרים שדווחו")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    mezuzot_missing = int(latest_report.get('r_mezuzot_missing', 0)) if latest_report is not None else 0
-                    if mezuzot_missing > 0:
-                        st.warning(f"📜 **מזוזות חסרות:** {mezuzot_missing}")
-                    else:
-                        st.success("✅ **מזוזות:** תקין")
-                    
-                    # These keys (r_torah_missing, r_tzitzit_missing, r_tefillin_missing)
-                    # are not present in the original form data.
-                    # They might be expected from a different data source or a future form update.
-                    # For now, I'll keep them as they are in the provided snippet.
-                    torah_missing = int(latest_report.get('r_torah_missing', 0)) if latest_report is not None else 0
-                    if torah_missing > 0:
-                        st.warning(f"📖 **ספרי תורה חסרים:** {torah_missing}")
-                    else:
-                        st.success("✅ **ספרי תורה:** תקין")
-
-                # 🆕 ניהול וסגירת חוסרים (עבור רב חטמ"ר)
-                st.markdown("---")
-                st.markdown("#### 🔴 ניהול וסגירת חוסרים")
-                
-                # שליפת רשימת החוסרים הפתוחים רק ליחידה של רב החטמ"ר
-                current_unit = st.session_state.selected_unit
-                unit_deficits = get_open_deficits([current_unit])
-                
-                if not unit_deficits.empty:
-                    # לוגיקת הצגת כפתורי ה-"סגור" (העתקה מה-Command Dashboard)
-                    for base in sorted(unit_deficits['base'].unique()):
-                        st.markdown(f"**📍 {base}:**")
-                        base_deficits = unit_deficits[unit_deficits['base'] == base]
-                        
-                        for _, deficit in base_deficits.iterrows():
-                            # תרגום סוג החוסר
-                            deficit_names = {
-                                'mezuzot': 'מזוזות חסרות',
-                                'eruv_kelim': 'ערבוב כלים',
-                                'kashrut_cert': 'תעודת כשרות חסרה',
-                                'eruv_status': 'עירוב פסול',
-                                'shabbat_supervisor': 'נאמן כשרות חסר'
-                            }
-                            deficit_type_he = deficit_names.get(deficit['deficit_type'], deficit['deficit_type'])
-                            
-                            col1, col2 = st.columns([3, 1])
-                            with col1:
-                                st.markdown(f"""
-                                    <div style="padding: 10px; border-right: 4px solid #ef4444; background-color: #f8fafc; border-radius: 5px; margin-bottom: 10px;">
-                                        <div style="font-weight: 700;">• {deficit_type_he}</div>
-                                        <div style="color: #64748b; font-size: 0.9rem;">כמות: {deficit['deficit_count']}</div>
-                                    </div>
-                                """, unsafe_allow_html=True)
-                            with col2:
-                                if st.button("✅ סגור", key=f"cmd_close_{deficit['id']}"):
-                                    if update_deficit_status(deficit['id'], 'closed', notes="נסגר על ידי רב החטמ״ר"):
-                                        st.success("החוסר נסגר")
-                                        time.sleep(0.5)
-                                        st.rerun()
-                else:
-                    st.success("אין חוסרים פתוחים ליחידה זו")
-                
-                with col2:
-                    tzitzit_missing = int(latest_report.get('r_tzitzit_missing', 0)) if latest_report is not None else 0
-                    if tzitzit_missing > 0:
-                        st.warning(f"🧵 **ציציות חסרות:** {tzitzit_missing}")
-                    else:
-                        st.success("✅ **ציציות:** תקין")
-                    
-                    tefillin_missing = int(latest_report.get('r_tefillin_missing', 0)) if latest_report is not None else 0
-                    if tefillin_missing > 0:
-                        st.warning(f"📿 **תפילין חסרים:** {tefillin_missing}")
-                    else:
-                        st.success("✅ **תפילין:** תקין")
-            
-            with analysis_tabs[1]:  # עירוב וכשרות
-                st.markdown("#### מצב עירוב וכשרות")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    eruv_status = latest_report.get('e_status', 'לא ידוע') if latest_report is not None else 'לא ידוע'
-                    if eruv_status == 'תקין':
-                        st.success("✅ **עירוב:** תקין")
-                    else:
-                        st.error("🚧 **עירוב:** פסול")
-                    
-                    # 'k_eruv_kelim' is not in the original form data.
-                    eruv_kelim = latest_report.get('k_eruv_kelim', 'לא') if latest_report is not None else 'לא'
-                    if eruv_kelim == 'כן':
-                        st.error("🔴 **עירוב כלים:** קיים")
-                    else:
-                        st.success("✅ **עירוב כלים:** לא קיים")
-                
-                with col2:
-                    k_cert = latest_report.get('k_cert', 'לא') if latest_report is not None else 'לא'
-                    if k_cert == 'כן':
-                        st.success("✅ **תעודת כשרות:** קיימת")
-                    else:
-                        st.warning("⚠️ **תעודת כשרות:** חסרה")
-                    
-                    # 's_traklin_closed' is not in the original form data.
-                    traklin_closed = latest_report.get('s_traklin_closed', 'לא') if latest_report is not None else 'לא'
-                    if traklin_closed == 'כן':
-                        st.success("✅ **סגירת טרקלין:** מבוצעת")
-                    else:
-                        st.warning("⚠️ **סגירת טרקלין:** לא מבוצעת")
-            
-            with analysis_tabs[2]:  # תשתיות
-                st.markdown("#### תשתיות ויומן ביקורת")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    # 'k_pikubok' is not in the original form data.
-                    pikubok = latest_report.get('k_pikubok', 'לא') if latest_report is not None else 'לא'
-                    if pikubok == 'כן':
-                        st.success("✅ **יומן ביקורת:** קיים")
-                    else:
-                        st.warning("⚠️ **יומן ביקורת:** לא קיים")
-                    
-                    # 'k_streams' is not in the original form data.
-                    procedures = latest_report.get('k_streams', 'לא') if latest_report is not None else 'לא'
-                    if procedures == 'כן':
-                        st.info("📋 **נהלים מעודכנים:** קיימים")
-                    else:
-                        st.warning("⚠️ **נהלים מעודכנים:** לא קיימים")
-            
-            with analysis_tabs[3]:  # סיכום
-                st.markdown("#### סיכום כללי")
-                
-                # חישוב אחוז תקינות
-                total_checks = 9
-                passed_checks = 0
-                
-                if mezuzot_missing == 0: passed_checks += 1
-                if torah_missing == 0: passed_checks += 1
-                if tzitzit_missing == 0: passed_checks += 1
-                if tefillin_missing == 0: passed_checks += 1
-                if eruv_status == 'תקין': passed_checks += 1
-                if eruv_kelim == 'לא': passed_checks += 1
-                if k_cert == 'כן': passed_checks += 1
-                if traklin_closed == 'כן': passed_checks += 1
-                if pikubok == 'כן': passed_checks += 1
-                
-                compliance_pct = (passed_checks / total_checks) * 100
-                
-                st.metric("📊 אחוז תקינות כללי", f"{compliance_pct:.0f}%")
-                st.progress(compliance_pct / 100)
-                
-                if compliance_pct >= 90:
-                    st.success("🌟 **מצוין!** היחידה במצב תקין מעולה")
-                elif compliance_pct >= 70:
-                    st.info("👍 **טוב!** היחידה במצב סביר, יש מקום לשיפור")
-                else:
-                    st.warning("⚠️ **דורש תשומת לב!** יש נושאים שדורשים טיפול")
-
-            with analysis_tabs[4]:  # אמינות מבקרים
-                st.markdown("## 🔍 אמינות מבקרים")
-                if not unit_df.empty and 'inspector' in unit_df.columns:
-                    inspectors = unit_df['inspector'].dropna().unique()
-                    if len(inspectors) > 0:
-                        for inspector in sorted(inspectors):
-                            cred = calculate_inspector_credibility(inspector, unit_df)
-                            col1, col2, col3, col4 = st.columns([2, 1, 1, 3])
-                            with col1:
-                                st.markdown(f"**{inspector}**")
-                            with col2:
-                                st.metric("ציון", f"{cred['score']:.0f}")
-                            with col3:
-                                st.metric("% ליקויים", f"{cred['defect_rate']:.0f}%")
-                            with col4:
-                                st.markdown(
-                                    f"<span style='color:{cred['color']}; font-weight:bold;'>{cred['credibility']}</span>",
-                                    unsafe_allow_html=True
-                                )
-                            
-                            # 🆕 הסבר על הציון (Wave 2.6)
-                            with st.expander(f"ℹ️ למה {inspector} קיבל ציון {cred['score']:.0f}?"):
-                                st.markdown(f"""
-                                **פירוט משקלות אמינות:**
-                                - 📍 **GPS Fingerprint:** {60 if cred['score'] > 70 else 30}% (דיוק מיקום ב-3 נקודות)
-                                - ⏱️ **Micro-Timers:** {20}% (מהירות מילוי סבירה)
-                                - ⚖️ **Consistency:** {20}% (אין סתירות לוגיות)
-                                
-                                **סטטוס נוכחי:** {cred['credibility']}
-                                *הציון משתקלל אוטומטית על בסיס התנהגות המבקר בשטח.*
-                                """)
-                            st.divider()
-                    else:
-                        st.info("אין מבקרים רשומים ליחידה זו")
-                else:
-                    st.info("אין נתוני מבקרים")
-
-            with analysis_tabs[5]: # מפה ארצית
-                st.markdown("#### 🛰️ מפה ארצית מלאה")
-                
-                # טעינת כל הנתונים ללא סינון
-                unit_map_raw = load_reports_cached(None) 
-                unit_map_df = pd.DataFrame(unit_map_raw) if unit_map_raw else pd.DataFrame()
-                
-                if not unit_map_df.empty:
-                    v_unit_map = unit_map_df.dropna(subset=['latitude', 'longitude']).copy()
-                    # ביטול סינונים - מציג את כל הארץ
-                    v_unit_map = v_unit_map[(v_unit_map['latitude'] > 29) & (v_unit_map['latitude'] < 34)]
-                    
-                    # מיפוי צבעים
-                    unit_color_map = {
-                        "חטמ״ר בנימין": "#1e3a8a",
-                        "חטמ״ר שומרון": "#60a5fa",
-                        "חטמ״ר יהודה": "#22c55e",
-                        "חטמ״ר עציון": "#fb923c",
-                        "חטמ״ר אפרים": "#ef4444",
-                        "חטמ״ר מנשה": "#a855f7",
-                        "חטמ״ר הבקעה": "#db2777"
-                    }
-                    
-                    m_unit = create_street_level_map(center=(31.7, 35.2), zoom_start=8)
-                    for _, row in v_unit_map.iterrows():
-                        add_unit_marker_to_folium(m_unit, row, unit_color_map)
-                        
-                    st_folium(m_unit, width=1200, height=500, key="hatmar_global_map", returned_objects=[])
-                else:
-                    st.warning("לא נמצאו נתונים למפה")
-        
-        st.markdown("---")
-
-        # ===== טבלה מורחבת עם כל העמודות החדשות - נוסף עבור רבני חטמ״ר =====
-        st.markdown("#### 📋 דוחות מפורטים - תצוגה מלאה")
-        
-        # בניית רשימת עמודות בסדר לוגי
-        base_columns = ['date', 'base', 'inspector', 'reliability_score']
-        
-        # עמודות מצב בסיסיות
-        status_columns = []
-        if 'e_status' in unit_df.columns:
-            status_columns.append('e_status')
-        if 'k_cert' in unit_df.columns:
-            status_columns.append('k_cert')
-        
-        # 🆕 עמודות תקלות כשרות (הכל!)
-        kashrut_issues_columns = []
-        if 'k_issues' in unit_df.columns:
-            kashrut_issues_columns.append('k_issues')
-        if 'k_issues_description' in unit_df.columns:
-            kashrut_issues_columns.append('k_issues_description')
-        if 'k_separation' in unit_df.columns:
-            kashrut_issues_columns.append('k_separation')
-        if 'p_mix' in unit_df.columns:
-            kashrut_issues_columns.append('p_mix')
-        if 'k_products' in unit_df.columns:
-            kashrut_issues_columns.append('k_products')
-        if 'k_bishul' in unit_df.columns:
-            kashrut_issues_columns.append('k_bishul')
-        
-        # 🆕 עמודות שיעורי תורה (הכל!)
-        torah_columns = []
-        if 'soldier_want_lesson' in unit_df.columns:
-            torah_columns.append('soldier_want_lesson')
-        if 'soldier_has_lesson' in unit_df.columns:
-            torah_columns.append('soldier_has_lesson')
-        if 'soldier_lesson_teacher' in unit_df.columns:
-            torah_columns.append('soldier_lesson_teacher')
-        if 'soldier_lesson_phone' in unit_df.columns:
-            torah_columns.append('soldier_lesson_phone')
-        if 'soldier_yeshiva' in unit_df.columns:
-            torah_columns.append('soldier_yeshiva')
-        
-        # 🆕 עמודות טופס בית כנסת (נוספו לבקשת המשתמש)
-        if 's_torah_id' in unit_df.columns:
-            torah_columns.append('s_torah_id')
-        if 's_torah_nusach' in unit_df.columns:
-            torah_columns.append('s_torah_nusach')
-        
-        # 🆕 עמודות טרקלין וויקוק
-        lounge_vikok_columns = []
-        # Lounge
-        if 't_private' in unit_df.columns: lounge_vikok_columns.append('t_private')
-        if 't_kitchen_tools' in unit_df.columns: lounge_vikok_columns.append('t_kitchen_tools')
-        if 't_procedure' in unit_df.columns: lounge_vikok_columns.append('t_procedure')
-        if 't_friday' in unit_df.columns: lounge_vikok_columns.append('t_friday')
-        if 't_app' in unit_df.columns: lounge_vikok_columns.append('t_app')
-        
-        # Vikok
-        if 'w_location' in unit_df.columns: lounge_vikok_columns.append('w_location')
-        if 'w_private' in unit_df.columns: lounge_vikok_columns.append('w_private')
-        if 'w_kitchen_tools' in unit_df.columns: lounge_vikok_columns.append('w_kitchen_tools')
-        if 'w_procedure' in unit_df.columns: lounge_vikok_columns.append('w_procedure')
-        if 'w_guidelines' in unit_df.columns: lounge_vikok_columns.append('w_guidelines')
-
-        # 🆕 עמודות חוסרים ונוספות
-        other_columns = []
-        if 'r_mezuzot_missing' in unit_df.columns:
-            other_columns.append('r_mezuzot_missing')
-        if 'r_torah_missing' in unit_df.columns:
-            other_columns.append('r_torah_missing')
-        if 'missing_items' in unit_df.columns:
-            other_columns.append('missing_items')
-        if 'free_text' in unit_df.columns:
-            other_columns.append('free_text')
-        
-        # איחוד כל העמודות
-        is_combat_brigade = unit in ["חטיבה 35", "חטיבה 89", "חטיבה 900"]
-        
-        if is_combat_brigade:
-            # חטיבות סדירות - ללא טרקלין וויקוק
-            all_columns = base_columns + status_columns + kashrut_issues_columns + torah_columns + other_columns
-        else:
-            # חטמרים - כולל הכל
-            all_columns = base_columns + status_columns + kashrut_issues_columns + torah_columns + lounge_vikok_columns + other_columns
-        
-        # סינון רק עמודות קיימות
-        available_columns = [col for col in all_columns if col in unit_df.columns]
-        
-        # יצירת DataFrame לתצוגה
-        if available_columns:
-            display_df = unit_df[available_columns].copy()
-            
-            # 🆕 מיפוי שמות עמודות לעברית - מלא ומפורט
-            column_mapping = {
-                # בסיסי
-                'date': 'תאריך',
-                'base': 'מוצב',
-                'inspector': 'מבקר',
-                
-                # מצב
-                'e_status': 'סטטוס עירוב',
-                'k_cert': 'תעודת כשרות',
-                
-                # תקלות כשרות
-                'k_issues': '❗ יש תקלות כשרות?',
-                'k_issues_description': '📝 פירוט תקלות כשרות',
-                'k_separation': 'הפרדת כלים',
-                'p_mix': '🔴 ערבוב כלים',
-                'k_products': 'רכש חוץ לא מאושר',
-                'k_bishul': 'בישול ישראל',
-                
-                # טרקלין
-                't_private': '☕ טרקלין - כלים פרטיים',
-                't_kitchen_tools': '🥣 טרקלין - כלי מטבח',
-                't_procedure': '🔒 טרקלין - נוהל סגירה',
-                't_friday': '🛑 טרקלין - סגור בשבת',
-                't_app': '📱 טרקלין - אפליקציה',
-                
-                # ויקוק
-                'w_location': '📍 ויקוק - מיקום',
-                'w_private': '🥤 ויקוק - כלים פרטיים',
-                'w_kitchen_tools': '🍴 ויקוק - כלי מטבח',
-                'w_procedure': '📜 ויקוק - עובד לפי פקודה',
-                'w_guidelines': '📋 ויקוק - הנחיות',
-
-                # שיעורי תורה
-                'soldier_want_lesson': '💡 רצון לשיעור תורה',
-                'soldier_has_lesson': '📚 יש שיעור במוצב?',
-                'soldier_lesson_teacher': '👨‍🏫 שם מעביר השיעור',
-                'soldier_lesson_phone': '📞 טלפון מעביר השיעור',
-                'soldier_yeshiva': 'ימי ישיבה',
-                
-                # חוסרים ונוספים
-                'r_mezuzot_missing': '📜 מזוזות חסרות',
-                'r_torah_missing': '📖 ספרי תורה חסרים',
-                'missing_items': '⚠️ חוסרים כלליים',
-                'free_text': '📝 הערות נוספות',
-                
-                # Intelligence
-                'reliability_score': '🛡️ ציון אמינות',
-                'contradictions': '⚠️ סתירות שזוהו'
-            }
-            
-            # החלפת שמות העמודות
-            display_df.columns = [column_mapping.get(col, col) for col in display_df.columns]
-            
-            # הצגת הטבלה
-            st.dataframe(
-                display_df,
-                use_container_width=True,
-                hide_index=True,
-                height=400
-            )
-        else:
-            st.warning("לא נמצאו עמודות להצגה")
-            
-        # 🆕 כפתור הורדה חובה - למובייל ומחשב
-        st.markdown("---")
-        st.markdown("### 📥 הורדת דוח Excel מלא")
-        
-        # הכנת הקובץ מראש
-        excel_file_hatmar = None
-        if not unit_df.empty:
-            try:
-                excel_file_hatmar = create_full_report_excel(unit_df)
-            except Exception as e:
-                st.error(f"שגיאה ביצירת Excel: {e}")
-        
-        # הצגת הכפתור
-        if excel_file_hatmar:
-            st.download_button(
-                label="⬇️ לחץ להורדת כל הנתונים (Excel)",
-                data=excel_file_hatmar,
-                file_name=f"דוח_מלא_{unit}_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                type="primary",
-                key=f"dl_excel_hatmar_{pd.Timestamp.now().strftime('%H%M%S')}"
-            )
-            st.caption("📊 הקובץ כולל את כל השאלות והתשובות מהשאלון")
-        else:
-            st.error("❌ לא ניתן ליצור קובץ Excel")
+        render_hatmar_rabbi_dashboard()
     
     # טופס דיווח (רק אם לא במצב מפקד)
     if not st.session_state.commander_authenticated:
