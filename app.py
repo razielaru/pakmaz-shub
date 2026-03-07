@@ -480,33 +480,31 @@ def render_continuity_questions(base: str, unit: str) -> dict:
     return continuity_answers
 
 def render_gps_checkpoint(checkpoint_num: int, base: str):
-    """מציג כפתור GPS בנקודת ציון מסוימת (1, 2, או 3)."""
+    if st.session_state.get(f"gps_done_{checkpoint_num}"):
+        saved = st.session_state.get(f"gps_data_{checkpoint_num}", {})
+        st.success(f"✅ מיקום נשמר ({saved.get('latitude',0):.4f}, {saved.get('longitude',0):.4f})")
+        return True
+
     labels = {
         1: ("🟢 נקודת פתיחה", "לחץ בתחילת הביקור — כשנכנסת למוצב"),
         2: ("🟡 נקודת אמצע", "לחץ במהלך הביקור — בבדיקת המטבח או בית הכנסת"),
         3: ("🔵 נקודת סיום", "לחץ לפני השליחה — כשאתה עומד לעזוב")
     }
     label, instruction = labels.get(checkpoint_num, ("📍", ""))
-    
-    done_key = f"gps_done_{checkpoint_num}"
-    data_key = f"gps_data_{checkpoint_num}"
-    
-    if st.session_state.get(done_key):
-        saved = st.session_state.get(data_key, {})
-        st.success(f"{label} — נשמר ✅ ({saved.get('latitude', 0):.4f}, {saved.get('longitude', 0):.4f})", icon="📍")
-        return True
-    
+
     st.markdown(f"**{label}** — {instruction}")
     loc = safe_geolocation(key=f"geo_widget_checkpoint_{checkpoint_num}")
-    if loc and loc.get("latitude"):
-        st.session_state[data_key] = {
+    
+    if isinstance(loc, dict) and loc.get("latitude"):
+        st.session_state[f"gps_data_{checkpoint_num}"] = {
             "latitude": loc["latitude"],
             "longitude": loc["longitude"],
             "timestamp": time.time(),
             "accuracy": loc.get("accuracy", 0)
         }
-        st.session_state[done_key] = True
+        st.session_state[f"gps_done_{checkpoint_num}"] = True
         st.rerun()
+    
     return False
 
 def analyze_gps_fingerprint() -> dict:
@@ -4636,10 +4634,10 @@ def render_morning_briefing(df: pd.DataFrame, unit: str):
     greeting_hour = today.hour
     greeting = "בוקר טוב" if greeting_hour < 12 else "צהריים טובים" if greeting_hour < 17 else "ערב טוב"
 
-    st.markdown(f"""
+    html_content = f"""
     <div style='background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%);
                 border-radius: 18px; padding: 24px; margin-bottom: 24px;
-                color: white; box-shadow: 0 10px 25px rgba(30,58,138,0.2);'>
+                color: white; box-shadow: 0 10px 25px rgba(30,58,138,0.2); font-family: Arial, sans-serif; direction: rtl;'>
         <div style='display: flex; justify-content: space-between; align-items: flex-start;'>
             <div>
                 <div style='font-size: 13px; opacity: 0.85; margin-bottom: 4px; letter-spacing: 0.5px;'>
@@ -4683,7 +4681,8 @@ def render_morning_briefing(df: pd.DataFrame, unit: str):
 
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """
+    st.components.v1.html(html_content, height=200)
 
 
 # ══════════════════════════════════════════════════════
@@ -5007,13 +5006,48 @@ def render_hatmar_rabbi_dashboard():
                 
             display_df = df[df['unit'] == unit][all_cols].copy()
             
-            column_mapping = {
-                'date': 'תאריך', 'base': 'מוצב', 'inspector': 'מבקר', 'reliability_score': '🛡️ אמינות',
-                'e_status': 'סטטוס עירוב', 'k_cert': 'תעודת כשרות', 'k_issues': 'תקלות כשרות',
-                'k_separation': 'הפרדת כלים', 'p_mix': 'ערבוב כלים', 'k_products': 'רכש חוץ',
-                'k_bishul': 'בישול ישראל', 'soldier_want_lesson': 'שיעור תורה', 'free_text': 'הערות'
+            hebrew_columns = {
+                'date': 'תאריך',
+                'base': 'מוצב',
+                'inspector': 'מבקר',
+                'unit': 'יחידה',
+                'reliability_score': '🛡️ אמינות',
+                'e_status': 'עירוב',
+                'k_cert': 'תעודת כשרות',
+                'k_issues': 'תקלות כשרות',
+                'k_issues_description': 'פירוט תקלה',
+                'k_separation': 'הפרדה',
+                'p_mix': 'ערבוב כלים',
+                'k_products': 'מוצרים',
+                'k_bishul': 'בישול',
+                'soldier_want_lesson': 'רצון לשיעור',
+                'soldier_has_lesson': 'יש שיעור',
+                'soldier_lesson_teacher': 'מלמד',
+                'soldier_lesson_phone': 'טלפון מלמד',
+                'soldier_yeshiva': 'ישיבה',
+                's_torah_id': 'ס״ת מזוהה',
+                's_torah_nusach': 'נוסח',
+                't_private': 'חדר פרטי',
+                't_kitchen_tools': 'כלי טרקלין',
+                't_procedure': 'נוהל טרקלין',
+                't_friday': 'שישי טרקלין',
+                't_app': 'אפליקציה',
+                'w_location': 'מיקום ויקוק',
+                'w_private': 'פרטיות ויקוק',
+                'w_kitchen_tools': 'כלי ויקוק',
+                'w_procedure': 'נוהל ויקוק',
+                'w_guidelines': 'הנחיות ויקוק',
+                'r_mezuzot_missing': 'מזוזות חסרות',
+                'r_torah_missing': 'ס״ת חסרים',
+                'missing_items': 'חוסרים',
+                'free_text': 'הערות',
+                'review_status': 'סטטוס בדיקה',
             }
-            display_df.rename(columns=column_mapping, inplace=True)
+
+            display_df = display_df.rename(columns={
+                k: v for k, v in hebrew_columns.items() 
+                if k in display_df.columns
+            })
             st.dataframe(display_df, use_container_width=True, hide_index=True)
 
     with t7:
@@ -7066,17 +7100,19 @@ def render_unit_report():
         _show_honeypot = _hp_rand.random() < 0.33
         honeypot_answer = "לא מוצג"
         if _show_honeypot:
-            st.markdown("---")
-            st.markdown("#### 🔒 בדיקת ציוד מיוחד")
             # שאלת מלכודת שונה לפי סוג היחידה
             if unit in NO_LOUNGE_WECOOK_UNITS:
                 hp_text = "האם מכונת הברד בטרקלין הוכשרה לפסח?"
-                hp_help = "בדוק בטרקלין היחידה (מלכודת: אין טרקלין ביחידה זו)"
             else:
                 hp_text = "האם פח הגניזה ב'חדר השמרים' ריק?"
-                hp_help = "בדוק במטבח (מלכודת: אין חדר שמרים במטבח צבאי)"
             
-            honeypot_answer = st.radio(hp_text, ["לא בדקתי", "לא", "כן"], index=0, key="honeypot_lounge_q", help=hp_help)
+            honeypot_answer = st.radio(
+                hp_text, 
+                options=["כן", "לא", "לא רלוונטי / לא קיים במוצב"],
+                key=f"honeypot_lounge_q_{base}",
+                index=None,
+                horizontal=True
+            )
 
         st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
             <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[4].click()" 
