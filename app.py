@@ -4768,68 +4768,88 @@ def render_command_dashboard():
                                 </div>
                                 """, unsafe_allow_html=True)
                 
-                # סיכום שיעורי תורה
-                if torah_columns:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    st.markdown("#### 📚 סיכום שיעורי תורה")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    
-                    if 'soldier_want_lesson' in unit_df.columns:
-                        want_lesson = len(unit_df[unit_df['soldier_want_lesson'] == 'כן'])
-                        col1.metric("💡 מעוניינים בשיעור", want_lesson,
-                                   help="מספר המוצבים שביקשו שיעור תורה")
-                    
-                    if 'soldier_has_lesson' in unit_df.columns:
-                        has_lesson = len(unit_df[unit_df['soldier_has_lesson'] == 'כן'])
-                        col2.metric("📚 יש שיעור פעיל", has_lesson,
-                                   help="מוצבים שכבר יש בהם שיעור תורה")
-                    
-                    if 'r_mezuzot_missing' in unit_df.columns:
-                        total_mezuzot = int(unit_df['r_mezuzot_missing'].sum())
-                        col3.metric("📜 סה״כ מזוזות חסרות", total_mezuzot,
-                                   delta_color="inverse" if total_mezuzot > 0 else "off")
-                    
-                    # רשימת מעבירי שיעורים עם פרטי קשר
-                    if 'soldier_lesson_teacher' in unit_df.columns and 'soldier_has_lesson' in unit_df.columns:
-                        active_lessons = unit_df[
-                            (unit_df['soldier_has_lesson'] == 'כן') & 
-                            (unit_df['soldier_lesson_teacher'].notna()) & 
-                            (unit_df['soldier_lesson_teacher'] != '')
-                        ]
-                        
-                        if len(active_lessons) > 0:
-                            st.markdown("##### 👨‍🏫 רשימת מעבירי שיעורים:")
-                            for idx, row in active_lessons.iterrows():
-                                teacher = row.get('soldier_lesson_teacher', 'לא ידוע')
-                                phone = row.get('soldier_lesson_phone', '')
-                                base_name = row.get('base', 'לא ידוע')
-                                
-                                phone_str = f" | 📞 {phone}" if phone else ""
-                                st.markdown(f"""
-                                <div style='padding: 10px; background-color: #dbeafe; border-right: 4px solid #3b82f6; 
-                                            border-radius: 5px; margin-bottom: 8px;'>
-                                    <div style='font-weight: 700;'>📍 {base_name}</div>
-                                    <div style='margin-top: 5px;'>
-                                        👨‍🏫 {teacher}{phone_str}
-                                    </div>
-                                </div>
-                                """, unsafe_allow_html=True)
+                # ==========================================
+                # תצוגת שיעורי תורה (מפוצלת לפי סוג חטיבה)
+                # ==========================================
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                is_combat_unit = selected_unit in ["חטיבה 35", "חטיבה 89", "חטיבה 900"]
+
+                if is_combat_unit:
+                    st.markdown("#### 📚 יומן שיעורי תורה וימי ישיבה (סדיר)")
+
+                    if 'lesson_qty' in unit_df.columns:
+                        lessons_df = unit_df[pd.to_numeric(unit_df['lesson_qty'], errors='coerce').fillna(0) > 0].copy()
+
+                        if not lessons_df.empty:
+                            c1, c2, c3 = st.columns(3)
+                            total_lessons = pd.to_numeric(lessons_df['lesson_qty'], errors='coerce').sum()
+                            total_participants = pd.to_numeric(lessons_df['lesson_participants'], errors='coerce').sum() if 'lesson_participants' in lessons_df.columns else 0
+                            c1.metric("סה\"כ שיעורים שהועברו", int(total_lessons))
+                            c2.metric("סה\"כ משתתפים", int(total_participants))
+                            c3.metric("מוקדי פעילות (מיקומים)", lessons_df['lesson_location'].nunique() if 'lesson_location' in lessons_df.columns else 0)
+
+                            cols_to_show = {
+                                'lesson_date': 'תאריך',
+                                'lesson_location': 'מיקום',
+                                'lesson_content': 'תוכן השיעור',
+                                'lesson_instructors': 'מעבירי השיעור',
+                                'lesson_qty': 'כמות שיעורים',
+                                'lesson_participants': 'משתתפים',
+                                'lesson_population': 'סוג אוכלוסייה'
+                            }
+                            available_cols = {k: v for k, v in cols_to_show.items() if k in lessons_df.columns}
+                            if available_cols:
+                                display_lessons = lessons_df[list(available_cols.keys())].rename(columns=available_cols)
+                                st.dataframe(display_lessons, use_container_width=True, hide_index=True)
                         else:
-                            st.info("💡 אין מוצבים עם מעבירי שיעורים רשומים")
-                    
-                    # מוצבים שרוצים שיעור אבל אין להם
-                    if 'soldier_want_lesson' in unit_df.columns and 'soldier_has_lesson' in unit_df.columns:
-                        want_but_no_lesson = unit_df[
-                            (unit_df['soldier_want_lesson'] == 'כן') & 
-                            (unit_df['soldier_has_lesson'] == 'לא')
-                        ]
-                        
-                        if len(want_but_no_lesson) > 0:
-                            st.markdown("##### ⚠️ מוצבים שמעוניינים בשיעור אך אין להם:")
-                            bases_list = ", ".join(want_but_no_lesson['base'].unique())
-                            st.warning(f"📍 {bases_list}")
-                            st.info("💡 יש לתאם מעביר שיעור למוצבים אלו")
+                            st.info("טרם דווחו שיעורי תורה או ימי ישיבה ביחידה זו.")
+
+                else:
+                    # תצוגת שיעורי תורה רגילה לחטמ"ר
+                    if torah_columns:
+                        st.markdown("#### 📚 סיכום שיעורי תורה (חטמ\"ר)")
+
+                        col1, col2, col3 = st.columns(3)
+
+                        if 'soldier_want_lesson' in unit_df.columns:
+                            want_lesson = len(unit_df[unit_df['soldier_want_lesson'] == 'כן'])
+                            col1.metric("💡 מעוניינים בשיעור", want_lesson)
+
+                        if 'soldier_has_lesson' in unit_df.columns:
+                            has_lesson = len(unit_df[unit_df['soldier_has_lesson'] == 'כן'])
+                            col2.metric("📚 יש שיעור פעיל", has_lesson)
+
+                        if 'r_mezuzot_missing' in unit_df.columns:
+                            total_mezuzot = int(unit_df['r_mezuzot_missing'].sum())
+                            col3.metric("📜 סה\"כ מזוזות חסרות", total_mezuzot, delta_color="inverse" if total_mezuzot > 0 else "off")
+
+                        if 'soldier_lesson_teacher' in unit_df.columns and 'soldier_has_lesson' in unit_df.columns:
+                            active_lessons = unit_df[
+                                (unit_df['soldier_has_lesson'] == 'כן') &
+                                (unit_df['soldier_lesson_teacher'].notna()) &
+                                (unit_df['soldier_lesson_teacher'] != '')
+                            ]
+                            if len(active_lessons) > 0:
+                                st.markdown("##### 👨\u200d🏫 רשימת מעבירי שיעורים באוגדה:")
+                                for idx, row in active_lessons.iterrows():
+                                    teacher = row.get('soldier_lesson_teacher', 'לא ידוע')
+                                    phone = row.get('soldier_lesson_phone', '')
+                                    base_name = row.get('base', 'לא ידוע')
+                                    phone_str = f" | 📞 {phone}" if phone else ""
+                                    st.markdown(f"<div style='padding: 10px; background-color: #dbeafe; border-right: 4px solid #3b82f6; border-radius: 5px; margin-bottom: 8px;'><b>📍 {base_name}</b><br>👨\u200d🏫 {teacher}{phone_str}</div>", unsafe_allow_html=True)
+
+                        if 'soldier_want_lesson' in unit_df.columns and 'soldier_has_lesson' in unit_df.columns:
+                            want_but_no_lesson = unit_df[
+                                (unit_df['soldier_want_lesson'] == 'כן') &
+                                (unit_df['soldier_has_lesson'] == 'לא')
+                            ]
+                            if len(want_but_no_lesson) > 0:
+                                st.markdown("##### ⚠️ מוצבים שמעוניינים בשיעור אך אין להם:")
+                                bases_list = ", ".join(want_but_no_lesson['base'].unique())
+                                st.warning(f"📍 {bases_list}")
+                                st.info("💡 יש לתאם מעביר שיעור למוצבים אלו")
+
         
                 # סיכום חוסרים כלליים
                 if 'missing_items' in unit_df.columns:
@@ -8037,13 +8057,9 @@ def create_weekly_insights_table():
     ON weekly_insights(unit, week_start DESC);
     """
     try:
-        # חלק את ה-SQL לשתי הצהרות
-        for statement in sql.split(';'):
-            if statement.strip():
-                supabase.postgrest.client.execute(statement)
-    except Exception as e:
-        if "already exists" not in str(e).lower():
-            print(f"⚠️ {str(e)[:100]}")
+        supabase.table("weekly_insights").select("id").limit(1).execute()
+    except Exception:
+        pass  # טבלה כבר קיימת או תיווצר דרך migration
 
 
 def delete_old_insights():
@@ -8680,10 +8696,7 @@ def render_ogda_summary_dashboard_v2():
         except Exception as e:
             st.info(f"לא ניתן לטעון טרנד: {e}")
 
-    st.markdown("---")
-    # 🤖 Weekly Insights Manager - Command Panel
-    render_weekly_insights_control_panel(key_suffix="_ogda")
-    
+
     st.markdown("---")
 
     # ===== Footer Metrics =====
