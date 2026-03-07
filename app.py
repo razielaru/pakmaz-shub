@@ -231,7 +231,7 @@ def send_whatsapp_alert(message: str, unit: str):
 # ════════════════════════════════════════════════════════════
 def render_base_history_card(base: str, unit: str):
     """
-    מציג כרטיס היסטוריה למוצב שנבחר.
+    🕵️ מבלש כרטיס היסטוריה למוצב שנבחר ושאלות מעקב חכמות (בלש חוקר).
     """
     if not base or len(base) < 2:
         return
@@ -256,24 +256,24 @@ def render_base_history_card(base: str, unit: str):
 
     last = reports[0]
     try:
-        last_date = pd.to_datetime(last["date"])
+        last_date = pd.to_datetime(last["date"]).tz_localize(None) if pd.to_datetime(last["date"]).tzinfo else pd.to_datetime(last["date"])
         days_ago  = (pd.Timestamp.now() - last_date).days
     except Exception:
         days_ago = "?"
 
     findings = []
     if last.get("e_status") == "פסול":
-        findings.append(("🚧", "עירוב פסול", "#ef4444"))
+        findings.append(("🚧", "עירוב פסול", "#ef4444", "eruv"))
     if last.get("k_cert") == "לא":
-        findings.append(("🍽️", "כשרות חסרה", "#f59e0b"))
+        findings.append(("🍽️", "כשרות חסרה", "#f59e0b", "kashrut"))
     mezuzot = int(last.get("r_mezuzot_missing") or 0)
     if mezuzot > 0:
-        findings.append(("📜", f"{mezuzot} מזוזות חסרות", "#3b82f6"))
+        findings.append(("📜", f"{mezuzot} מזוזות חסרות", "#3b82f6", "mezuzot"))
     if last.get("p_mix") == "כן":
-        findings.append(("🔴", "ערבוב כלים", "#dc2626"))
+        findings.append(("🔴", "ערבוב כלים", "#dc2626", "mix"))
     if last.get("k_issues") == "כן":
         desc = last.get("k_issues_description", "")
-        findings.append(("⚠️", f"תקלת כשרות: {desc[:40]}..." if len(desc) > 40 else f"תקלת כשרות: {desc}", "#f97316"))
+        findings.append(("⚠️", f"תקלת כשרות: {desc[:40]}..." if len(desc) > 40 else f"תקלת כשרות: {desc}", "#f97316", "kashrut_issue"))
 
     urgency_color = "#ef4444" if days_ago != "?" and days_ago > 14 else \
                     "#f59e0b" if days_ago != "?" and days_ago > 7  else "#10b981"
@@ -281,7 +281,7 @@ def render_base_history_card(base: str, unit: str):
     findings_html = ""
     if findings:
         findings_html = "<div style='margin-top:10px;'><strong>ממצאים מהביקור הקודם:</strong><br/>"
-        for icon, text, color in findings:
+        for icon, text, color, _ in findings:
             findings_html += f"<span style='background:{color}22;color:{color};padding:3px 8px;border-radius:4px;margin:3px 2px;display:inline-block;font-size:13px;'>{icon} {text}</span>"
         findings_html += "</div>"
     else:
@@ -301,6 +301,30 @@ def render_base_history_card(base: str, unit: str):
         {findings_html}
     </div>
     """, unsafe_allow_html=True)
+
+    # ===== 🕵️ Smart Continuity — שאלות מעקב בלש חוקר =====
+    if findings:
+        st.markdown("##### 🕵️ סגירת מעגלים מהביקור הקודם — סגירת מעגלים")
+        for icon, text, color, key_suffix in findings:
+            is_fixed = st.checkbox(
+                f"{icon} {text} — האם תוקן?",
+                key=f"fixed_{key_suffix}_{base}",
+                value=False
+            )
+            if is_fixed:
+                st.toast(f"✅ סגירת מעגל — {text} סומן כמותקן! העם דע בחוסרים אם צריך", icon="✅")
+
+    # ===== 💡 Crowdsourced Tip — טיפ מהמבקר הקודם =====
+    last_tip = last.get("inspector_tip", "") if last else ""
+    if last_tip and str(last_tip).strip():
+        tip_days = days_ago if days_ago != "?" else "?"
+        st.markdown(f"""
+        <div style='background:linear-gradient(135deg,#fefce8,#fef9c3); border-right:4px solid #eab308;
+                    border-radius:10px; padding:12px 16px; margin:8px 0;'>
+            <span style='font-size:13px; color:#92400e; font-weight:600;'>💡 טיפ מאת {inspector_prev} (לפני {tip_days} ימים):</span><br/>
+            <span style='font-size:15px; color:#78350f;'>"{last_tip.strip()}"</span>
+        </div>
+        """, unsafe_allow_html=True)
 
     if len(reports) >= 2:
         prev = reports[1]
@@ -6119,6 +6143,9 @@ def render_unit_report():
     # TAB 1: כשרות (Kitchen, Pillbox, WeCook)
     # ===========================================
     with tab1:
+        # ⏱️ Tab timer
+        if "tab1_start" not in st.session_state:
+            st.session_state["tab1_start"] = time.time()
         # 🎤 דווח בקול (AI)
         with st.expander("🎤 דווח בקול (AI Transcription)", expanded=False):
             audio_file = st.file_uploader("העלה הקלטה קולית (mp3) לדיווח מהיר", type=['mp3'], key="voice_report")
@@ -6282,6 +6309,9 @@ def render_unit_report():
     # TAB 2: בית כנסת ועירוב
     # ===========================================
     with tab2:
+        # ⏱️ Tab timer
+        if "tab2_start" not in st.session_state:
+            st.session_state["tab2_start"] = time.time()
         st.markdown("#### 🕍 בית כנסת")
         c_torah1, c_torah2 = st.columns(2)
         s_torah_id = c_torah1.text_input("מס' צ' של ספר התורה", placeholder="לדוגמה: 12345", help="הזן את המספר הצה''לי של הספר")
@@ -6332,6 +6362,21 @@ def render_unit_report():
             hq_shabbat_device_board = radio_with_explanation(
                 "האם יש שילוט על התקני שבת הזמינים?", "hq_sdb", col=c1)
 
+        # 🍯 Honeypot Question (33% chance, only for NO_LOUNGE units = no lounge exists)
+        import random as _hp_rand
+        _show_honeypot = _hp_rand.random() < 0.33 and unit in NO_LOUNGE_WECOOK_UNITS
+        honeypot_answer = "לא מוצג"
+        if _show_honeypot:
+            st.markdown("---")
+            st.markdown("#### 🔒 בדיקת ציוד מיוחד")
+            honeypot_answer = st.radio(
+                "האם מכונת הברד בטרקלין הוכשרה לפסח?",
+                ["לא בדקתי", "לא", "כן"],
+                index=0,
+                key="honeypot_lounge_q",
+                help="בדוק בטרקלין היחידה"
+            )
+
         st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
             <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[4].click()" 
                 style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
@@ -6342,6 +6387,9 @@ def render_unit_report():
     # TAB 3: נהלים ורוח (Procedures, Torah, Shichat Chetek)
     # ===========================================
     with tab3:
+        # ⏱️ Tab timer
+        if "tab3_start" not in st.session_state:
+            st.session_state["tab3_start"] = time.time()
         st.markdown("#### 📜 נהלים")
         c1, c2 = st.columns(2)
         r_sg = radio_with_explanation("האם יש הוראות רבנות בש.ג?", "r1", col=c1)
@@ -6556,6 +6604,15 @@ def render_unit_report():
         st.markdown("### 💬 הערות נוספות")
         free_text = st.text_area("הערות נוספות")
 
+        # 💡 Inspector Tip — Crowdsourced Intel ("העברת מקל")
+        st.markdown("### 💡 טיפ למבקר הבא (רשות)")
+        inspector_tip = st.text_input(
+            "השאר טיפ קצר למי שיבקר כאן בשבוע הבא:",
+            placeholder="לדוגמה: שים לב לברז המים החמים ליד המקפיא — נשכח לסגור לפני שבת.",
+            key="inspector_tip_input",
+            max_chars=200
+        )
+
         st.markdown("### 📸 צילומים וחתימה")
         photo = st.file_uploader("📸 תמונה כללית (חובה)", type=['jpg', 'png', 'jpeg'], key="main_report_photo")
 
@@ -6599,6 +6656,32 @@ def render_unit_report():
                     with c_v2:
                         st.write(f"🥩 כשרות: {vision_analysis.get('kashrut_issues', 'תקין')}")
                         st.write(f"🔍 אמינות דיווח: {vision_analysis.get('reliability_score', '?')}")
+
+                    # 🔍 Vision-Text Crosscheck — "פוליגרף AI"
+                    _contradictions = []
+                    try:
+                        cleanliness = int(vision_analysis.get('kitchen_cleanliness', 5))
+                        if cleanliness < 3 and k_issues == "לא":
+                            _contradictions.append("📸 AI מזהה לכלוך חריג — אך דיווחת 'אין תקלות כשרות'")
+                        mezuzot_vision = str(vision_analysis.get('mezuzot', '')).lower()
+                        if ('חסר' in mezuzot_vision or 'missing' in mezuzot_vision) and int(r_mezuzot_missing or 0) == 0:
+                            _contradictions.append("📸 AI מזהה מזוזות חסרות — אך דיווחת '0 מזוזות חסרות'")
+                        kashrut_vision = str(vision_analysis.get('kashrut_issues', 'תקין'))
+                        if kashrut_vision not in ['תקין', 'תקין.', 'ok', 'none', ''] and k_cert == "כן":
+                            _contradictions.append(f"📸 AI מזהה בעיות כשרות ({kashrut_vision}) — אך דיווחת תעודת כשרות תקפה")
+                    except Exception:
+                        pass
+                    if _contradictions:
+                        st.warning("⚠️ **פוליגרף AI — זוהו סתירות בין התמונה לדיווח:**")
+                        for c in _contradictions:
+                            st.error(f"🚨 סתירה חמורה: {c}")
+                        st.session_state["vision_contradictions"] = _contradictions
+                    else:
+                        st.session_state["vision_contradictions"] = []
+            # 🎉 Micro-interaction: הודיה על העלאת תמונה
+            st.toast("📸 בום! תמונה פצצה, איזה תיעוד!", icon="📸")
+
+
         
         # תמונות כשרות מועברות לטאב 1
         # k_issues_photo (Tab 1), k_shabbat_photo (Tab 1)
@@ -6610,6 +6693,33 @@ def render_unit_report():
         sig_url = True  # מאפשר שליחה ללא חתימה
 
         
+        # 🎉 Micro-interactions: תגובות מידיות לפעילות חייל
+        if free_text and len(free_text.split()) > 10:
+            st.toast("📝 פירוט של מקצוענים! זה יעזור מאוד לחטמ\"ר!", icon="📝")
+        if e_status == "פסול":
+            st.toast("🚧 זיהוי קריטי! הצלת את השבת של המוצב!", icon="🚧")
+        if r_mezuzot_missing and int(r_mezuzot_missing) > 0:
+            st.toast(f"📜 דיווחת מזוזות חסרות — כשר שיפתח מעקב אוטומטי בדוחה!", icon="📜")
+
+        # 🚨 Emergency WhatsApp Button
+        st.markdown("")
+        import urllib.parse as _urlparse
+        emergency_msg = _urlparse.quote(
+            f"🚨 הקפץ רב חטמ\"ר | {unit} | מוצב: {base} | ביצוע: {inspector}\nפרטים: ",
+            safe=""
+        )
+        whatsapp_url = f"https://wa.me/?text={emergency_msg}"
+        st.markdown(f"""
+        <a href='{whatsapp_url}' target='_blank' style='
+            display:block; text-align:center; background:linear-gradient(135deg,#dc2626,#991b1b);
+            color:white; padding:14px; border-radius:12px; font-size:17px; font-weight:700;
+            text-decoration:none; margin:10px 0; box-shadow:0 4px 12px rgba(220,38,38,0.4);
+            letter-spacing:0.5px;'>
+            🚨 הקפץ את הרב עכשיו! &nbsp;&nbsp; מקרה קטסטרופאלי או דורש תגובה מידית
+        </a>
+        """, unsafe_allow_html=True)
+
+
         # כפתורי שליחה וטיוטה - תמיד מוצגים (השליחה תהיה חסומה אם יש בעיה)
         st.markdown("---")
         col_submit, col_draft = st.columns([3, 1])
@@ -6636,6 +6746,32 @@ def render_unit_report():
                 report_duration = int(time.time() - st.session_state.report_start_time)
                 # איפוס הטיימר לדיווח הבא
                 del st.session_state.report_start_time
+
+            # ===== 🍯 Honeypot Check =====
+            honeypot_failed = False
+            if 'honeypot_answer' in dir() and honeypot_answer == "כן":
+                honeypot_failed = True
+                st.error("🚨 **נכשלת בשאלת מלכודת!** ציון האמינות שלך אופס. הדוח יסומן לבדיקת מפקד.")
+
+            # ===== ⏱️ Tab Speed Check =====
+            _quick_fill_flags = []
+            _now = time.time()
+            _tab_thresholds = {
+                "tab1": ("כשרות (12+ שאלות)", 90),
+                "tab2": ("בית כנסת ועירוב (8 שאלות)", 30),
+                "tab3": ("נהלים ורוח (10 שאלות)", 30),
+            }
+            for _tkey, (_tlabel, _tmin) in _tab_thresholds.items():
+                _tstart = st.session_state.get(f"{_tkey}_start")
+                if _tstart:
+                    _telapsed = _now - _tstart
+                    if _telapsed < _tmin:
+                        _quick_fill_flags.append(f"{_tlabel} — {_telapsed:.1f} שניות")
+            if _quick_fill_flags:
+                st.warning(
+                    "⚡ **זיהינו מילוי מהיר מדי בטאבים הבאים** — אנא ודא שעברת על כל הסעיפים:\n" +
+                    "\n".join(f"• {f}" for f in _quick_fill_flags)
+                )
 
             # בדיקת יום בשבוע - חמישי (3) ושישי (4) ב-Python weekday
             current_weekday = datetime.datetime.now().weekday()
@@ -6741,6 +6877,11 @@ def render_unit_report():
                     "report_duration": report_duration,  # ⏱️ חדש!
                     "barcode_verified": (barcode_value == BASE_BARCODES.get(base)) if base in BASE_BARCODES else False,
                     "signature_url": sig_url or "",
+                    # 🆕 Wave 2 Anti-Fraud fields
+                    "honeypot_failed": honeypot_failed if 'honeypot_failed' in dir() else False,
+                    "quick_fill_flags": str(_quick_fill_flags) if '_quick_fill_flags' in dir() and _quick_fill_flags else "",
+                    "vision_contradictions": str(st.session_state.get("vision_contradictions", [])),
+                    "inspector_tip": inspector_tip if 'inspector_tip' in dir() else "",
                     # שדות שיעורים של חטיבות סדירות
                     "lesson_date": str(lesson_date),
                     "lesson_location": lesson_location,
@@ -6801,6 +6942,8 @@ def render_unit_report():
                                 # שדות שיעורים של חטיבות סדירות
                                 "lesson_date", "lesson_location", "lesson_qty", "lesson_participants",
                                 "lesson_content", "lesson_instructors", "lesson_population",
+                                # 🆕 Wave 2 Anti-Fraud fields
+                                "honeypot_failed", "quick_fill_flags", "vision_contradictions", "inspector_tip",
                             ]
                             for field in new_fields:
                                 data.pop(field, None)
@@ -6818,8 +6961,34 @@ def render_unit_report():
                             # 🆕 יצירת כרטיס תקלה אוטומטי (Closed-Loop Ticketing)
                             create_maintenance_ticket(data, report_id)
                     
-                    st.success("✅ הדוח נשלח בהצלחה ונקלט בחמ״ל!")
-                    
+                    # ===== 🎊 Impact Screen — מסך ניצחון אחרי שגר =====
+                    st.balloons()
+                    # חשב רצף דיווחים
+                    try:
+                        streak_res = supabase.table("reports").select("date").eq("unit", unit).eq("inspector", inspector).order("date", desc=True).limit(10).execute()
+                        streak_count = len(streak_res.data) if streak_res.data else 1
+                    except Exception:
+                        streak_count = 1
+                    # חישוב אוכלוסייה בעלת השפע
+                    soldiers_impacted = 150 if not is_combat_brigade else 800
+                    reliability_score = min(100, 70 + streak_count * 3)
+                    streak_emoji = "🔥" if streak_count >= 4 else "⭐" if streak_count >= 2 else ""
+                    st.markdown(f"""
+                    <div style='text-align:center; background:linear-gradient(135deg,#f0fdf4,#dcfce7); border:2px solid #10b981;
+                                border-radius:16px; padding:28px 20px; margin:16px 0;'>
+                        <div style='font-size:64px; margin-bottom:8px;'>🎯</div>
+                        <h2 style='color:#10b981; margin:0 0 8px 0;'>הדוח שוגר לחפ"ק!</h2>
+                        <p style='font-size:16px; color:#374151; margin:6px 0;'>
+                            בזכותך, <b>{soldiers_impacted} לוחמים</b> במוצב יאכלו כשר ויוכלו לטלטל בשבת הקרובה.
+                        </p>
+                        <p style='font-size:15px; color:#374151; margin:4px 0;'>
+                            {streak_emoji} <b>רצף דיווחים:</b> {streak_count} דוחות
+                        </p>
+                        <p style='font-size:15px; color:#374151; margin:4px 0;'>
+                            📈 <b>ציון אמינות:</b> {reliability_score}/100 ({'!🏆 אלוף' if reliability_score >= 95 else '🔥 מקצוען' if reliability_score >= 85 else 'טוב מאוד'})
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
                     # 📨 התראות דוא"ל לבעיות קריטיות
                     send_email_alerts(data, unit)
                     
