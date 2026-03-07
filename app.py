@@ -1012,11 +1012,12 @@ except:
     st.stop()
 
 # --- 3. קונפיגורציה ---
-HATMAR_UNITS = [
+REGIONAL_UNITS = [
     "חטמ״ר בנימין", "חטמ״ר שומרון", "חטמ״ר יהודה",
-    "חטמ״ר עציון", "חטמ״ר אפרים", "חטמ״ר מנשה", "חטמ״ר הבקעה",
-    "חטיבה 35", "חטיבה 89", "חטיבה 900"
+    "חטמ״ר עציון", "חטמ״ר אפרים", "חטמ״ר מנשה", "חטמ״ר הבקעה"
 ]
+REGULAR_UNITS = ["חטיבה 35", "חטיבה 89", "חטיבה 900"]
+HATMAR_UNITS = REGIONAL_UNITS + REGULAR_UNITS
 # חטיבות ללא טרקלין ויקוק
 NO_LOUNGE_WECOOK_UNITS = {"חטיבה 35", "חטיבה 89", "חטיבה 900"}
 COMMAND_UNITS = ["אוגדת 877", "אוגדת 96", "אוגדת 98", "פיקוד מרכז"]
@@ -2783,14 +2784,25 @@ def render_login_gallery():
     
     st.markdown("### 🏔️ חטיבות מרחביות")
     
-    # גריד רספונסיבי
-    cols = st.columns([1, 1, 1, 1])
-    for i, unit in enumerate(HATMAR_UNITS):
-        with cols[i % 4]:
-            render_unit_card(unit)
+    # רינדור שורות (4 עמודות בכל שורה) - מבטיח סדר גם במובייל
+    for i in range(0, len(REGIONAL_UNITS), 4):
+        row_units = REGIONAL_UNITS[i:i+4]
+        cols = st.columns(4)
+        for j, unit in enumerate(row_units):
+            with cols[j]:
+                render_unit_card(unit)
             
     st.markdown("---")
-    st.markdown("### 🎖️ מפקדות ושליטה")
+    st.markdown("### 🎖️ חטיבות סדירות")
+    for i in range(0, len(REGULAR_UNITS), 4):
+        row_units = REGULAR_UNITS[i:i+4]
+        cols = st.columns(4)
+        for j, unit in enumerate(row_units):
+            with cols[j]:
+                render_unit_card(unit)
+
+    st.markdown("---")
+    st.markdown("### 🏛️ מפקדות ושליטה")
     
     c_cols = st.columns(4)
     for i, cmd in enumerate(COMMAND_UNITS):
@@ -7390,14 +7402,14 @@ def render_ogda_summary_dashboard():
 
 def generate_weekly_questions(unit: str, accessible_units: list) -> dict:
     """
-    🤖 יוצר שאלות חכמות שונות כל שבוע בהתאם לנתונים
+    🤖 יוצר שאלות חכמות והנחיית AI אקטיבית למפקד האוגדה/פיקוד
     """
     all_reports = load_reports_cached(accessible_units)
     df = pd.DataFrame(all_reports) if all_reports else pd.DataFrame()
     
     insights = {}
     
-    # 1. ניתוחים שתלויים בדיווחים חדשים
+    # 1. ניתוחים סטטיסטיים בסיסיים
     if not df.empty:
         kashrut_insights = analyze_kashrut_trend(df, accessible_units)
         if kashrut_insights:
@@ -7415,9 +7427,55 @@ def generate_weekly_questions(unit: str, accessible_units: list) -> dict:
         if anomaly_insights:
             insights['anomalies'] = anomaly_insights
             
-    # 2. ניתוח חוסרים (תמיד רץ - בודק את טבלת deficit_tracking)
+    # 2. מחולל "הכוונת מפקד AI" (מופעל תמיד!)
+    import google.generativeai as genai
+    import json as _json
+    try:
+        if check_api_quota_safety(daily_limit=500):
+            genai.configure(api_key=st.secrets["gemini"]["api_key"])
+            model = genai.GenerativeModel("gemini-2.5-flash")
+            log_api_usage(unit, "weekly_insights")
+            
+            # בניית תקציר הנתונים עבור ה-AI
+            if not df.empty:
+                summary_data = df.groupby('unit').agg(
+                    reports=('id', 'count'),
+                    eruv_fails=('e_status', lambda x: (x == 'פסול').sum()),
+                    kashrut_fails=('k_cert', lambda x: (x == 'לא').sum())
+                ).to_string()
+            else:
+                summary_data = "אין דוחות מוזנים השבוע."
+
+            prompt = f"""
+            אתה קצין המטה של רב אוגדה/פיקוד.
+            לקראת שיחות סיכום השבוע עם רבני החטיבות ({', '.join(accessible_units)}), עליך לספק למפקד 3 שאלות מיקוד אסטרטגיות שכדאי לו לשאול אותם.
+            נתוני השבוע: {summary_data}
+            
+            החזר JSON בלבד במבנה הבא:
+            {{"question": "שאלות מיקוד לשיחות חתך שבועיות", "current": 0, "previous": 0, "trend": "ai_focus", "suggestion": "1. שאלה ראשונה... 2. שאלה שנייה... 3. שאלה שלישית..."}}
+            """
+            response = model.generate_content(prompt)
+            clean_json = response.text.replace("```json", "").replace("```", "").strip()
+            ai_focus = _json.loads(clean_json)
+            insights['ai_commander_focus'] = ai_focus
+    except Exception as e:
+        insights['ai_commander_focus'] = {
+            "question": "🤖 הנחיית מפקד שבועית (מחוץ לרשת)",
+            "current": 0, "previous": 0, "trend": "ai_focus",
+            "suggestion": "בדוק: (1) עדכון תג כשרות, (2) מצב עירובין לפני שבת, (3) שיעורי תורה שבועיים."
+        }
+        
+    # 3. ניתוח חוסרים (פתוח תמיד)
     deficit_insights = analyze_deficit_progress(accessible_units)
-    if deficit_insights:
+    if deficit_insights and isinstance(deficit_insights, list):
+        insights['deficits'] = {
+            "question": deficit_insights[0].get("question", "בדוק את סטטוס החוסרים השבוע"),
+            "current": len(get_open_deficits(accessible_units)),
+            "previous": 0,
+            "trend": "attention_needed",
+            "suggestion": deficit_insights[0].get("suggestion", "עבור על טבלת החוסרים המלאה")
+        }
+    elif deficit_insights and isinstance(deficit_insights, dict):
         insights['deficits'] = deficit_insights
         
     return insights
@@ -8012,21 +8070,26 @@ def show_last_weekly_questions():
         st.warning(f"⚠️ לא ניתן לטעון: {str(e)}")
 
 
+
+
 def render_ogda_summary_dashboard_v2():
-
-    """Ogda Dashboard v2 - enhanced design with rich visuals."""
-
+    """Ogda Dashboard v2 - עם הסברים בעברית ותמיכה באוגדות ללא נתונים"""
     import datetime as _dt
 
-    # ===== Header Premium =====
+    # ===== Header Premium עם הסברים בעברית =====
     st.markdown("""
     <div style='background: linear-gradient(135deg, #059669 0%, #10b981 100%);
                 padding: 40px; border-radius: 16px; margin-bottom: 30px;
                 box-shadow: 0 10px 30px rgba(0,0,0,0.2);'>
         <div style='display: flex; justify-content: space-between; align-items: center;'>
             <div>
-                <h1 style='color: white; margin: 0; font-size: 36px;'>🎯 Ogda Dashboard – Summary</h1>
-                <p style='color: rgba(255,255,255,0.9); margin: 8px 0 0 0; font-size: 14px;'>
+                <h1 style='color: white; margin: 0; font-size: 36px;'>
+                    🎯 Ogda Dashboard – Summary
+                </h1>
+                <p style='color: #d1fae5; font-size: 16px; font-weight: 600; margin: 5px 0 10px 0;'>
+                    לוח מעקב פיקודי - תמונת מצב אוגדתית לאיתור מוקדי סיכון ניהוליים והלכתיים בחטיבות.
+                </p>
+                <p style='color: rgba(255,255,255,0.9); margin: 0; font-size: 14px;'>
                     Subordinate Units Status · """ + _dt.datetime.now().strftime('%d/%m/%Y %H:%M:%S') + """
                 </p>
             </div>
@@ -8046,7 +8109,291 @@ def render_ogda_summary_dashboard_v2():
     subordinate_count = len(subordinate_units)
 
     # ===== KPI Cards =====
-    st.markdown("### 📊 Key Performance Indicators")
+    st.markdown("""
+    <h3 style='margin-bottom: 0;'>📊 Key Performance Indicators</h3>
+    <p style='color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 15px;'>
+        מדדי ביצוע מרכזיים - מספקים אינדיקציה מיידית לבריאות האוגדה: כמה דוחות מולאו, מה היקף החוסרים, ומה רמת הכשירות הממוצעת.
+    </p>
+    """, unsafe_allow_html=True)
+
+    kpi_cols = st.columns(4)
+    with kpi_cols[0]:
+        st.metric(label="🏛️ Subordinate Units", value=subordinate_count, delta="חטיבות מרחביות תחת הפיקוד", delta_color="off")
+
+    with kpi_cols[1]:
+        total_reports = len(df)
+        avg_reports = total_reports / subordinate_count if subordinate_count > 0 else 0
+        st.metric(label="📋 Total Reports", value=total_reports, delta=f"ממוצע {avg_reports:.1f} לחטיבה", delta_color="normal")
+
+    with kpi_cols[2]:
+        issues_count = 0
+        if not df.empty:
+            if 'e_status' in df.columns: issues_count += len(df[df['e_status'] == 'פסול'])
+            if 'k_cert' in df.columns: issues_count += len(df[df['k_cert'] == 'לא'])
+        st.metric(label="🔴 Open Issues", value=issues_count,
+                  delta="בעיות ליבה הדורשות התערבות" if issues_count > 0 else "הכל תקין",
+                  delta_color="inverse" if issues_count > 0 else "normal")
+
+    with kpi_cols[3]:
+        scores = [calculate_unit_score(df[df['unit'] == u]) for u in subordinate_units
+                  if not df.empty and len(df[df['unit'] == u]) > 0]
+        avg_score = sum(scores) / len(scores) if scores else 0
+        score_status = "🟢 מצוין" if avg_score >= 80 else "🟡 סביר" if avg_score >= 60 else "🔴 טעון שיפור"
+        st.metric(label="📊 Avg Score", value=f"{avg_score:.0f}/100", delta=score_status,
+                  delta_color="normal" if avg_score >= 70 else "inverse")
+
+    st.markdown("---")
+
+    # ===== Performance Comparison =====
+    st.markdown("""
+    <h3 style='margin-bottom: 0;'>📊 Performance Comparison</h3>
+    <p style='color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 15px;'>
+        השוואת ביצועים בין חטיבות - מאפשר למפקד האוגדה לזהות אילו חטיבות מתפקדות כראוי ואילו דורשות שיחת חתך ומיקוד משאבים. ציון 0 פירושו שהחטיבה טרם הגישה דוחות.
+    </p>
+    """, unsafe_allow_html=True)
+
+    col_chart, col_gauge = st.columns([2, 1])
+
+    # תמיד כולל את כל החטיבות — גם ללא נתונים מציג 0
+    comparison_data = []
+    for u in subordinate_units:
+        unit_df = df[df['unit'] == u] if not df.empty else pd.DataFrame()
+        score = calculate_unit_score(unit_df) if not unit_df.empty else 0
+        try:
+            open_deficits = len(get_open_deficits([u]))
+        except Exception:
+            open_deficits = 0
+        comparison_data.append({"Unit": u, "Score": score, "Reports": len(unit_df), "Deficits": open_deficits})
+
+    with col_chart:
+        if comparison_data:
+            comp_df = pd.DataFrame(comparison_data).sort_values('Score', ascending=False)
+            fig_comp = px.bar(comp_df, x='Unit', y='Score', color='Score',
+                              color_continuous_scale=['#ef4444', '#f59e0b', '#10b981'],
+                              range_color=[0, 100], hover_data=['Reports', 'Deficits'], text='Score')
+            fig_comp.update_traces(textposition='outside')
+            fig_comp.update_layout(height=400, font=dict(color='#1e293b', size=12),
+                                   paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(240,244,248,0.5)',
+                                   xaxis_tickangle=-45, showlegend=False, hovermode='x unified')
+            st.plotly_chart(fig_comp, use_container_width=True)
+        else:
+            st.info("📊 לא נמצאו חטיבות כפופות לאוגדה זו.")
+
+    with col_gauge:
+        fig_gauge = go.Figure(data=[go.Indicator(
+            mode="gauge+number", value=avg_score,
+            title={'text': "ציון אוגדתי משוקלל"},
+            domain={'x': [0, 1], 'y': [0, 1]},
+            gauge={
+                'axis': {'range': [None, 100]},
+                'bar': {'color': "#059669"},
+                'steps': [
+                    {'range': [0, 25], 'color': "#fee2e2"},
+                    {'range': [25, 50], 'color': "#fef3c7"},
+                    {'range': [50, 100], 'color': "#d1fae5"}
+                ],
+                'threshold': {'line': {'color': "green", 'width': 4}, 'thickness': 0.75, 'value': 70}
+            }
+        )])
+        fig_gauge.update_layout(font=dict(color='#1e293b', size=14), paper_bgcolor='rgba(0,0,0,0)', height=400)
+        st.plotly_chart(fig_gauge, use_container_width=True)
+
+    st.markdown("---")
+
+    # ===== Detailed Metrics Grid =====
+    st.markdown("""
+    <h3 style='margin-bottom: 0;'>📋 Detailed Unit Metrics</h3>
+    <p style='color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 15px;'>
+        כרטיסיית ניתוח יחידתית - פירוט מדויק של כמות הדוחות, הציון, והחוסרים הפתוחים (Deficits) לכל חטמ"ר. חטמ"ר עם 0 דוחות מוצג בצבע אדום לתשומת לב.
+    </p>
+    """, unsafe_allow_html=True)
+
+    if comparison_data:
+        comp_df = pd.DataFrame(comparison_data).sort_values('Score', ascending=False)
+        grid_cols = st.columns(min(3, max(1, len(comp_df))))
+        for idx, (_, row) in enumerate(comp_df.iterrows()):
+            score = row['Score']
+            has_data = row['Reports'] > 0
+            border_color = "#10b981" if score >= 80 else "#f59e0b" if score >= 60 else "#ef4444"
+            badge = "✅ תקין ומבצעי" if score >= 80 else "👍 דורש השלמות" if score >= 60 else ("⚠️ טעון התערבות" if has_data else "📭 טרם הוגשו דוחות")
+            deficit_color = "#10b981" if row['Deficits'] == 0 else "#ef4444"
+            with grid_cols[idx % len(grid_cols)]:
+                st.markdown(f"""
+                <div style='background:linear-gradient(135deg,#f8fafc 0%,#e2e8f0 100%);
+                    padding:20px;border-radius:12px;border-left:4px solid {border_color};
+                    box-shadow:0 4px 12px rgba(0,0,0,0.1);margin-bottom:12px;'>
+                    <h4 style='margin:0 0 12px 0;color:#0f172a;'>{row["Unit"]}</h4>
+                    <div style='display:grid;grid-template-columns:1fr 1fr;gap:12px;'>
+                        <div><div style='color:#64748b;font-size:12px;'>ציון כשירות</div>
+                            <div style='font-size:24px;font-weight:bold;color:#0f172a;'>{score:.0f}</div></div>
+                        <div><div style='color:#64748b;font-size:12px;'>דוחות במערכת</div>
+                            <div style='font-size:24px;font-weight:bold;color:#0f172a;'>{row["Reports"]}</div></div>
+                        <div><div style='color:#64748b;font-size:12px;'>חוסרים פתוחים</div>
+                            <div style='font-size:24px;font-weight:bold;color:{deficit_color};'>{row["Deficits"]}</div></div>
+                    </div>
+                    <div style='margin-top:12px;padding-top:12px;border-top:1px solid #cbd5e1;
+                        font-size:12px;color:{border_color};font-weight:bold;'>{badge}</div>
+                </div>""", unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # ===== Compliance Heatmap =====
+    st.markdown("""
+    <h3 style='margin-bottom: 0;'>🌡️ Compliance Matrix</h3>
+    <p style='color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 15px;'>
+        מפת חום ציות - מראה אחוז עמידה בדרישות לפי קטגוריה (כשרות, עירוב, ניקיון, לוח). ירוק = תקין, אדום = דורש טיפול.
+    </p>
+    """, unsafe_allow_html=True)
+
+    heatmap_data = []
+    compliance_metrics = {'k_cert': 'כשרות', 'e_status': 'עירוב', 's_clean': 'ניקיון', 's_board': 'לוח'}
+    for u in subordinate_units:
+        unit_df = df[df['unit'] == u] if not df.empty else pd.DataFrame()
+        row_data = {"Unit": u}
+        for col_name, metric_name in compliance_metrics.items():
+            if not unit_df.empty and col_name in unit_df.columns and len(unit_df) > 0:
+                if col_name == 'k_cert':
+                    ok = len(unit_df[unit_df[col_name] == 'כן'])
+                elif col_name == 'e_status':
+                    ok = len(unit_df[unit_df[col_name] == 'תקין'])
+                elif col_name == 's_clean':
+                    ok = len(unit_df[unit_df[col_name].isin(['טוב', 'מצוין'])])
+                else:
+                    ok = len(unit_df[unit_df[col_name] == 'כן'])
+                row_data[metric_name] = round(ok / len(unit_df) * 100, 0)
+            else:
+                row_data[metric_name] = 0
+        heatmap_data.append(row_data)
+
+    if heatmap_data:
+        heatmap_df = pd.DataFrame(heatmap_data).set_index('Unit')
+        fig_hm = px.imshow(heatmap_df, color_continuous_scale='RdYlGn', text_auto='.0f',
+                           aspect='auto', color_continuous_midpoint=50, labels={'color': 'ציות %'})
+        fig_hm.update_layout(height=350, font=dict(color='#1e293b'),
+                              paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        st.plotly_chart(fig_hm, use_container_width=True)
+
+    st.markdown("---")
+
+    # ===== Critical Issues =====
+    st.markdown("""
+    <h3 style='margin-bottom: 0;'>🚨 Critical Issues Summary</h3>
+    <p style='color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 15px;'>
+        סיכום בעיות קריטיות - מציג חטיבות עם ליקויי עירוב או כשרות שדורשים התערבות מיידית של הרב האוגדתי.
+    </p>
+    """, unsafe_allow_html=True)
+
+    iss_col1, iss_col2 = st.columns(2)
+    with iss_col1:
+        st.markdown("#### ⚠️ יחידות עם ליקויים קריטיים")
+        critical_units = []
+        for u in subordinate_units:
+            unit_df = df[df['unit'] == u] if not df.empty else pd.DataFrame()
+            if not unit_df.empty:
+                eruv_iss = len(unit_df[unit_df['e_status'] == 'פסול']) if 'e_status' in unit_df.columns else 0
+                kash_iss = len(unit_df[unit_df['k_cert'] == 'לא']) if 'k_cert' in unit_df.columns else 0
+                if eruv_iss > 0 or kash_iss > 0:
+                    critical_units.append({"Unit": u, "Eruv": eruv_iss, "Kashrut": kash_iss, "Total": eruv_iss + kash_iss})
+        if critical_units:
+            for row in sorted(critical_units, key=lambda x: x['Total'], reverse=True):
+                st.markdown(f"""
+                <div style='background:#fee2e2;border-left:4px solid #ef4444;padding:12px;
+                    border-radius:6px;margin-bottom:10px;'>
+                    <strong>🔴 {row["Unit"]}</strong><br/>
+                    🚧 עירוב: {row["Eruv"]} | 🍽️ כשרות: {row["Kashrut"]}
+                </div>""", unsafe_allow_html=True)
+        else:
+            st.success("✅ אין ליקויים קריטיים מדווחים")
+
+    with iss_col2:
+        st.markdown("#### 📊 פירוט חוסרים פתוחים")
+        try:
+            all_open_deficits = get_open_deficits(accessible_units)
+            if not all_open_deficits.empty and 'deficit_type' in all_open_deficits.columns:
+                deficit_counts = all_open_deficits['deficit_type'].value_counts()
+                fig_pie = px.pie(values=deficit_counts.values, names=deficit_counts.index, hole=0.4)
+                fig_pie.update_layout(height=300, font=dict(color='#1e293b'), paper_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig_pie, use_container_width=True)
+            else:
+                st.success("✅ אין חוסרים פתוחים")
+        except Exception:
+            st.info("אין נתוני חוסרים")
+
+    st.markdown("---")
+
+    # ===== 30-Day Trend =====
+    st.markdown("""
+    <h3 style='margin-bottom: 0;'>📈 30-Day Trend</h3>
+    <p style='color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 15px;'>
+        מגמה של 30 יום - מראה את קצב הגשת הדוחות ואת מספר הבעיות לאורך זמן. עלייה חדה בבעיות (קו אדום) מסמנת אירוע שדורש בדיקה.
+    </p>
+    """, unsafe_allow_html=True)
+
+    if not df.empty and 'date' in df.columns:
+        try:
+            df_copy = df.copy()
+            df_copy['date'] = pd.to_datetime(df_copy['date'], errors='coerce')
+            df_30 = df_copy[df_copy['date'] > (pd.Timestamp.now() - pd.Timedelta(days=30))].copy()
+            if not df_30.empty:
+                trend_data = []
+                for tdate in pd.date_range(start=df_30['date'].min(), end=df_30['date'].max(), freq='D'):
+                    day_reports = df_30[df_30['date'].dt.date == tdate.date()]
+                    iss = 0
+                    if 'e_status' in day_reports.columns:
+                        iss += len(day_reports[day_reports['e_status'] == 'פסול'])
+                    if 'k_cert' in day_reports.columns:
+                        iss += len(day_reports[day_reports['k_cert'] == 'לא'])
+                    trend_data.append({"date": tdate, "issues": iss, "reports": len(day_reports)})
+                trend_df = pd.DataFrame(trend_data)
+                fig_trend = make_subplots(specs=[[{"secondary_y": True}]])
+                fig_trend.add_trace(go.Bar(x=trend_df['date'], y=trend_df['reports'],
+                                           name='דוחות', marker_color='#3b82f6'), secondary_y=False)
+                fig_trend.add_trace(go.Scatter(x=trend_df['date'], y=trend_df['issues'], name='בעיות',
+                                               marker=dict(color='#ef4444'), mode='lines+markers'), secondary_y=True)
+                fig_trend.update_layout(height=350, font=dict(color='#1e293b'),
+                                        paper_bgcolor='rgba(0,0,0,0)',
+                                        plot_bgcolor='rgba(240,244,248,0.5)', hovermode='x unified')
+                fig_trend.update_yaxes(title_text="דוחות", secondary_y=False)
+                fig_trend.update_yaxes(title_text="בעיות", secondary_y=True)
+                st.plotly_chart(fig_trend, use_container_width=True)
+        except Exception as e:
+            st.info(f"לא ניתן לטעון טרנד: {e}")
+    else:
+        st.info("📈 טרם הוזנו דוחות - הגרף יוצג לאחר קבלת הדוחות הראשונים.")
+
+    st.markdown("---")
+
+    # 🤖 Weekly Insights Manager - Command Panel
+    st.markdown("""
+    <h3 style='margin-bottom: 0;'>🤖 Weekly Insights Manager</h3>
+    <p style='color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 15px;'>
+        מחולל התובנות השבועי - מערכת AI המייצרת עבורך באופן אוטומטי שאלות הכוונה ומוקדי שיח לשיחת החתך עם רבני החטיבות לקראת שבת.
+    </p>
+    """, unsafe_allow_html=True)
+    render_weekly_insights_control_panel()
+
+    st.markdown("---")
+
+    # ===== Footer Metrics =====
+    footer_cols = st.columns(4)
+    with footer_cols[0]:
+        avg_rep = len(df) / subordinate_count if subordinate_count > 0 else 0
+        st.metric("📊 דוחות ממוצע ליחידה", f"{avg_rep:.1f}")
+    with footer_cols[1]:
+        total_iss = 0
+        if not df.empty:
+            if 'e_status' in df.columns:
+                total_iss += len(df[df['e_status'] == 'פסול'])
+            if 'k_cert' in df.columns:
+                total_iss += len(df[df['k_cert'] == 'לא'])
+        st.metric("🔴 סה\"כ ליקויים", total_iss)
+    with footer_cols[2]:
+        compliant = sum(1 for u in subordinate_units if not df.empty and len(df[df['unit'] == u]) > 0
+                        and calculate_unit_score(df[df['unit'] == u]) >= 80)
+        st.metric("🟢 יחידות תקינות", compliant)
+    with footer_cols[3]:
+        st.metric("🔄 עדכון אחרון", _dt.datetime.now().strftime('%H:%M'))
+
     kpi_cols = st.columns(4)
 
     with kpi_cols[0]:
