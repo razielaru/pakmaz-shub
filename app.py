@@ -1140,6 +1140,41 @@ def load_reports_cached(accessible_units=None):
 
 def clear_cache(): load_reports_cached.clear()
 
+def log_api_usage(unit_name: str, api_type: str = "text"):
+    """רישום קריאת API ב-Supabase למניעת חריגת תקציב"""
+    try:
+        supabase.table("api_usage").insert({
+            "unit": unit_name,
+            "api_type": api_type
+        }).execute()
+    except Exception as e:
+        print(f"⚠️ שגיאה ברישום שימוש API: {e}")
+
+def check_api_quota_safety(daily_limit: int = 500) -> bool:
+    """
+    בדיקה האם עברנו את המכסה היומית הכללית.
+    מחזיר True אם בטוח להמשיך, False אם הגענו לקצה.
+    """
+    try:
+        # קבלת תחילת היום הנוכחי בפורמט ISO
+        today = datetime.date.today().isoformat()
+        
+        # ספירת השורות מהיום
+        result = supabase.table("api_usage") \
+            .select("id", count="exact") \
+            .gte("created_at", today) \
+            .execute()
+        
+        current_usage = result.count if result.count is not None else 0
+        
+        if current_usage >= daily_limit:
+            return False
+        return True
+    except Exception as e:
+        # במקרה של שגיאת תקשורת, נחמיר ונחזיר True כדי לא לתקוע את המערכת
+        print(f"⚠️ שגיאה בבדיקת מכסה: {e}")
+        return True
+
 def upload_report_photo(photo_bytes, unit_name, base_name):
     """העלאת תמונה ל-Supabase Storage עם שם קובץ בטוח (ASCII בלבד)"""
     try:
@@ -3021,6 +3056,15 @@ def render_ai_chatbot(df: pd.DataFrame, accessible_units: list):
             st.rerun()
 
     if send_pressed and user_question:
+        # בדיקת בטיחות מכסה לפני הכל
+        if not check_api_quota_safety(daily_limit=500):
+            st.error("🚨 הגענו למכסת ה-AI היומית של החטיבה (500 קריאות). המערכת נעולה עד מחר למניעת חיובי יתר.")
+            return
+
+        # עדכון מונה ב-Session ורישום ב-DB
+        st.session_state.api_call_count += 1
+        log_api_usage(st.session_state.get('selected_unit', 'system'), "chat")
+
         context = _build_data_context(df, accessible_units)
         try:
             import google.generativeai as genai
@@ -3185,13 +3229,21 @@ def render_executive_ai_brief(df: pd.DataFrame, accessible_units: list):
     st.markdown("---")
     if st.button("⚡ הפק פקודת יום (AI Executive Brief)", use_container_width=True, type="primary", key="exec_brief_btn"):
         with st.spinner("המוח הפיקודי מנתח את נתוני הגזרה..."):
-            try:
-                import google.generativeai as genai
-                genai.configure(api_key=st.secrets["gemini"]["api_key"])
+            # בדיקת בטיחות מכסה
+            if not check_api_quota_safety(daily_limit=500):
+                st.error("🚨 הגענו למכסת ה-AI היומית. המערכת נעולה למניעת חיובי יתר.")
+            else:
+                # עדכון מונה ב-Session ורישום ב-DB
+                st.session_state.api_call_count += 1
+                log_api_usage(st.session_state.get('selected_unit', 'system'), "exec_brief")
 
-                context = mri_df[['יחידה', 'מדד %', 'סטטוס', 'מגמה', 'תקלות כשרות', 'עירוב פסול']].to_string(index=False)
+                try:
+                    import google.generativeai as genai
+                    genai.configure(api_key=st.secrets["gemini"]["api_key"])
 
-                prompt = f"""
+                    context = mri_df[['יחידה', 'מדד %', 'סטטוס', 'מגמה', 'תקלות כשרות', 'עירוב פסול']].to_string(index=False)
+
+                    prompt = f"""
 אתה מערכת השו"ב של רבנות פיקוד מרכז. לפניך מדדי מוכנות (MRI) של יחידות:
 
 {context}
@@ -3211,22 +3263,22 @@ def render_executive_ai_brief(df: pd.DataFrame, accessible_units: list):
 1. []
 כתוב בשפה צבאית-עניינית, ללא הקדמות, והתבסס אך ורק על חומרת הנתונים.
 """
-                response = None
-                for _m in ["gemini-2.5-flash", "gemini-2.0-flash"]:
-                    try:
-                        model = genai.GenerativeModel(_m)
-                        response = model.generate_content(prompt)
-                        break
-                    except Exception:
-                        continue
+                    response = None
+                    for _m in ["gemini-2.5-flash", "gemini-2.0-flash"]:
+                        try:
+                            model = genai.GenerativeModel(_m)
+                            response = model.generate_content(prompt)
+                            break
+                        except Exception:
+                            continue
 
-                if response:
-                    st.success("פקודת יום מוכנה:")
-                    st.markdown(response.text)
-                else:
-                    st.error("כל מודלי Gemini נכשלו. בדוק מפתח API.")
-            except Exception as e:
-                st.error(f"שגיאה אסטרטגית: {e}")
+                    if response:
+                        st.success("פקודת יום מוכנה:")
+                        st.markdown(response.text)
+                    else:
+                        st.error("כל מודלי Gemini נכשלו. בדוק מפתח API.")
+                except Exception as e:
+                    st.error(f"שגיאה אסטרטגית: {e}")
 
     # 🆕 חיזוי וסיכונים עתידיים (Predictive)
     st.markdown("---")
@@ -3293,6 +3345,15 @@ def analyze_report_with_ai(base_name: str, report_data: dict) -> dict:
 החזר רק JSON נקי, ללא טקסט לפני או אחריו."""
 
     try:
+        # בדיקת מכסה
+        if not check_api_quota_safety(daily_limit=500):
+            return {"risk_level": "לא סווג", "sla": "טרם נקבע", "recommended_action": "מכסת AI הסתיימה"}
+        
+        # עדכון מונה ורישום
+        if "api_call_count" in st.session_state:
+            st.session_state.api_call_count += 1
+        log_api_usage(st.session_state.get('selected_unit', 'system'), "auto_analysis")
+
         import google.generativeai as genai
         import json as _json
         genai.configure(api_key=st.secrets["gemini"]["api_key"])
@@ -3315,6 +3376,15 @@ def analyze_report_with_ai(base_name: str, report_data: dict) -> dict:
 
 def analyze_photo_with_vision(image_bytes: bytes) -> dict:
     """שימוש ב-Gemini Vision לניתוח תמונות מהשטח"""
+    # בדיקת בטיחות מכסה
+    if not check_api_quota_safety(daily_limit=500):
+        return {"error": "Quota exceeded"}
+    
+    # עדכון מונה ב-Session ורישום ב-DB
+    if "api_call_count" in st.session_state:
+        st.session_state.api_call_count += 1
+    log_api_usage(st.session_state.get('selected_unit', 'system'), "vision")
+
     import google.generativeai as genai
     import base64
     import json as _json
@@ -3351,6 +3421,15 @@ def transcribe_voice_note(audio_bytes: bytes) -> str:
     import base64
 
     try:
+        # בדיקת מכסה
+        if not check_api_quota_safety(daily_limit=500):
+            return "מכסת תמלול הסתיימה"
+        
+        # עדכון מונה ורישום
+        if "api_call_count" in st.session_state:
+            st.session_state.api_call_count += 1
+        log_api_usage("system", "voice_transcription")
+
         genai.configure(api_key=st.secrets["gemini"]["api_key"])
         model = genai.GenerativeModel("gemini-2.5-flash")
         audio_b64 = base64.b64encode(audio_bytes).decode()
@@ -3400,6 +3479,15 @@ def semantic_search_reports(query: str, df: pd.DataFrame) -> pd.DataFrame:
 
     try:
         if df.empty: return df
+        # בדיקת מכסה
+        if not check_api_quota_safety(daily_limit=500):
+            return df.head(0)
+            
+        # עדכון מונה ורישום
+        if "api_call_count" in st.session_state:
+            st.session_state.api_call_count += 1
+        log_api_usage("system", "semantic_search")
+
         genai.configure(api_key=st.secrets["gemini"]["api_key"])
 
         # תקציר דוחות (50 אחרונים)
@@ -3470,6 +3558,15 @@ def generate_smart_priority_queue(df: pd.DataFrame, accessible_units: list) -> l
     if not issues: return []
 
     try:
+        # בדיקת בטיחות מכסה
+        if not check_api_quota_safety(daily_limit=500):
+            return [{"priority": i+1, "issue": iss} for i, iss in enumerate(issues[:5])]
+        
+        # עדכון מונה ב-Session ורישום ב-DB
+        if "api_call_count" in st.session_state:
+            st.session_state.api_call_count += 1
+        log_api_usage(st.session_state.get('selected_unit', 'system'), "priority_queue")
+
         genai.configure(api_key=st.secrets["gemini"]["api_key"])
         model = genai.GenerativeModel("gemini-2.5-flash")
         prompt = f"""דרג את רשימת הליקויים הבאה לפי דחיפות טיפול (1 - הכי דחוף).
@@ -3564,14 +3661,23 @@ def render_shabbat_preparation_assistant(unit: str, df: pd.DataFrame):
             if row.get('k_cert') == 'לא': open_issues.append(f"כשרות חסרה ב{row['base']}")
 
     if st.button("⚡ ג'נרט רשימת משימות ליום שישי", type="primary", use_container_width=True):
-        with st.spinner("ה-AI בונה עבורך תכנית עבודה..."):
-            try:
-                genai.configure(api_key=st.secrets["gemini"]["api_key"])
-                model = genai.GenerativeModel("gemini-2.5-flash")
-                context = f"רב חטמ״ר {unit}. בעיות: {', '.join(open_issues) if open_issues else 'אין'}"
-                response = model.generate_content(f"צור לו\"ז משימות צבאי ליום שישי לרב חטמ״ר: {context}. פורמט: שעה - משימה.")
-                st.info(response.text)
-            except Exception as e: st.error(f"שגיאה: {e}")
+        # בדיקת בטיחות מכסה
+        if not check_api_quota_safety(daily_limit=500):
+            st.error("🚨 הגענו למכסת ה-AI היומית.")
+        else:
+            with st.spinner("ה-AI בונה עבורך תכנית עבודה..."):
+                # עדכון מונה ורישום
+                st.session_state.api_call_count += 1
+                log_api_usage(unit, "shabbat_advisor")
+
+                try:
+                    genai.configure(api_key=st.secrets["gemini"]["api_key"])
+                    model = genai.GenerativeModel("gemini-2.5-flash")
+                    context = f"רב חטמ״ר {unit}. בעיות: {', '.join(open_issues) if open_issues else 'אין'}"
+                    response = model.generate_content(f"צור לו\"ז משימות צבאי ליום שישי לרב חטמ״ר: {context}. פורמט: שעה - משימה.")
+                    st.info(response.text)
+                except Exception as e:
+                    st.error(f"שגיאה: {e}")
 
 
 def render_halachic_advisor():
@@ -3580,13 +3686,22 @@ def render_halachic_advisor():
     st.markdown("### 📖 יועץ הלכתי מהיר (AI)")
     q = st.text_input("שאלת הלכה מהשטח (לדוגמה: עירוב שנקרע בשישי):")
     if q and st.button("💡 קבל מענה ראשוני"):
-        with st.spinner("מעיין במקורות..."):
-            try:
-                genai.configure(api_key=st.secrets["gemini"]["api_key"])
-                model = genai.GenerativeModel("gemini-2.5-flash")
-                res = model.generate_content(f"ענה בקצרה כרב צבאי על שאלת הלכה: {q}. ציין מקור והדגש שזו תשובה ראשונית בלבד.")
-                st.success(res.text)
-            except Exception as e: st.error(f"שגיאה: {e}")
+        # בדיקת מכסה
+        if not check_api_quota_safety(daily_limit=500):
+            st.error("🚨 הגענו למכסת ה-AI היומית.")
+        else:
+            with st.spinner("מעיין במקורות..."):
+                # עדכון מונה ורישום
+                st.session_state.api_call_count += 1
+                log_api_usage("halacha", "halacha_advisor")
+
+                try:
+                    genai.configure(api_key=st.secrets["gemini"]["api_key"])
+                    model = genai.GenerativeModel("gemini-2.5-flash")
+                    res = model.generate_content(f"ענה בקצרה כרב צבאי על שאלת הלכה: {q}. ציין מקור והדגש שזו תשובה ראשונית בלבד.")
+                    st.success(res.text)
+                except Exception as e:
+                    st.error(f"שגיאה: {e}")
 
 
 def render_inspector_management(unit: str, df: pd.DataFrame):
@@ -3615,14 +3730,23 @@ def render_weekly_report_generator(unit: str, df: pd.DataFrame):
     import google.generativeai as genai
     st.markdown("### 📤 מחולל דוח שבועי לאוגדה")
     if st.button("🤖 נסח דוח שבועי (שפה צבאית)", use_container_width=True):
-        with st.spinner("מנסח דוח רשמי..."):
-            try:
-                genai.configure(api_key=st.secrets["gemini"]["api_key"])
-                model = genai.GenerativeModel("gemini-1.5-flash")
-                summary = df[df['unit'] == unit].tail(10).to_string() if not df.empty else "אין נתונים"
-                res = model.generate_content(f"כתוב דוח שבועי רשמי בשפה צבאית לרב האוגדה על חטיבת {unit} לפי הנתונים: {summary}")
-                st.code(res.text, language="markdown")
-            except Exception as e: st.error(f"שגיאה: {e}")
+        # בדיקת מכסה
+        if not check_api_quota_safety(daily_limit=500):
+            st.error("🚨 הגענו למכסת ה-AI היומית.")
+        else:
+            with st.spinner("מנסח דוח רשמי..."):
+                # עדכון מונה ורישום
+                st.session_state.api_call_count += 1
+                log_api_usage(unit, "weekly_report")
+
+                try:
+                    genai.configure(api_key=st.secrets["gemini"]["api_key"])
+                    model = genai.GenerativeModel("gemini-1.5-flash")
+                    summary = df[df['unit'] == unit].tail(10).to_string() if not df.empty else "אין נתונים"
+                    res = model.generate_content(f"כתוב דוח שבועי רשמי בשפה צבאית לרב האוגדה על חטיבת {unit} לפי הנתונים: {summary}")
+                    st.code(res.text, language="markdown")
+                except Exception as e:
+                    st.error(f"שגיאה: {e}")
 
 
 def render_detailed_unit_analysis(df, selected_unit):
@@ -6386,20 +6510,30 @@ def render_unit_report():
     with tab5:
         # --- בדיקת תנאי חובה לפני שליחה ---
         _mandatory_warnings = []
-        # Tab 1 mandatory check: inspector and base must not be empty
+        
+        # 📍 טאב מיקום (חובה)
         if not inspector:
             _mandatory_warnings.append("⚠️ חובה להזין שם מבקר (לשונית 📍 מיקום)")
         if not base:
             _mandatory_warnings.append("⚠️ חובה להזין מוצב / מיקום (לשונית 📍 מיקום)")
-        # Tab 1 mandatory: at least kashrut cert filled
+            
+        # 🍽️ טאב כשרות (חובה)
         if k_cert == "לא יודע / לא בדקתי":
             _mandatory_warnings.append("⚠️ חובה לבדוק תעודת כשרות (לשונית 🍽️ כשרות)")
-        # Tab 2 mandatory: eruv status must be filled
+            
+        # 🕍 טאב ביהכ"נ ועירוב (חובה)
         if e_status not in ["תקין", "פסול", "בטיפול"]:
             _mandatory_warnings.append("⚠️ חובה לציין סטטוס עירוב (לשונית 🕍 ביהכ\"נ ועירוב)")
-        # Tab 3 mandatory: at least r_sg not skipped
+            
+        # 📜 טאב נהלים ורוח (חובה)
         if r_sg == "לא יודע / לא בדקתי" and r_hamal == "לא יודע / לא בדקתי":
             _mandatory_warnings.append("⚠️ חובה לבדוק לפחות נוהל אחד (לשונית 📜 נהלים ורוח)")
+            
+        # ⚠️ טאב חוסרים ושליחה (חובה)
+        if not photo:
+            _mandatory_warnings.append("⚠️ חובה להעלות תמונה כללית של הביקורת")
+        if not missing:
+            _mandatory_warnings.append("⚠️ חובה למלא את שדה הפירוט (במידה ואין חוסרים כתוב 'אין')")
 
         st.markdown("### ⚠️ חוסרים")
         missing = st.text_area("פירוט חוסרים")
@@ -8598,6 +8732,14 @@ def render_deficit_heat_map(df: pd.DataFrame, accessible_units: list):
 
 # --- 10. Main ---
 def main():
+    # הגנה על תקציב API - מקסימום 50 קריאות ל-Session
+    if "api_call_count" not in st.session_state:
+        st.session_state.api_call_count = 0
+
+    if st.session_state.api_call_count > 50:
+        st.error("🚨 חרגת ממכסת השימוש המותרת לחיבור זה. המערכת ננעלה למניעת חיובי יתר.")
+        st.stop()
+
     # החלת עיצוב CSS גלובלי
     apply_custom_css()
     
