@@ -51,16 +51,7 @@ BASE_COORDINATES = {
     "מוצב הבקעה": (31.8500, 35.4500),
 }
 
-# קודי גישה לרבני חטמ"ר
-COMMANDER_CODES = {
-    "חטמ״ר בנימין": "binyamin2024",
-    "חטמ״ר שומרון": "shomron2024",
-    "חטמ״ר יהודה": "yehuda2024",
-    "חטמ״ר עציון": "etzion2024",
-    "חטמ״ר אפרים": "efraim2024",
-    "חטמ״ר מנשה": "menashe2024",
-    "חטמ״ר הבקעה": "bika2024"
-}
+# קודי גישה לרבני חטמ"ר - מועבר ל-DB (פונקציות עזר להלן)
 
 BASE_BARCODES = {
     "מחנה עופר": "RB_OFER_99", "בית אל": "RB_BETEL_88", "פסגות": "RB_PSAGOT_77",
@@ -342,6 +333,33 @@ def render_base_history_card(base: str, unit: str):
             changes.append(f"מזוזות: {arrow}")
         if changes:
             st.caption("📊 שינויים מהביקור הקודם: " + " | ".join(changes))
+
+
+# ===== פונקציות לניהול קודי גישה דינמיים =====
+
+def get_commander_code(unit: str) -> str:
+    """מחזיר את קוד הגישה של היחידה מה-DB, ברירת מחדל 1111"""
+    try:
+        res = supabase.table("commander_settings").select("access_code").eq("unit", unit).execute()
+        if res.data and res.data[0].get('access_code'):
+            return str(res.data[0]['access_code'])
+    except Exception:
+        pass
+    return "1111"
+
+def set_commander_code(unit: str, new_code: str):
+    """מעדכן את קוד הגישה של היחידה ב-DB"""
+    try:
+        # השתמש ב-upsert כדי ליצור אם לא קיים
+        supabase.table("commander_settings").upsert({
+            "unit": unit,
+            "access_code": str(new_code),
+            "updated_at": datetime.datetime.now().isoformat()
+        }, on_conflict="unit").execute()
+        return True
+    except Exception as e:
+        print(f"Error setting commander code: {e}")
+        return False
 
 
 # ════════════════════════════════════════════════════════════
@@ -746,20 +764,14 @@ st.markdown("""
         text-align: right !important;
     }
     
-    /* הסתרת sidebar בכל המכשירים */
-    [data-testid="stSidebar"] {
-        display: none !important;
-    }
+    /* הסתרת sidebar - הוסר כדי לאפשר Dark Mode Toggle */
+    /* [data-testid="stSidebar"] { display: none !important; } */
     
-    /* הסתרת כפתור פתיחת sidebar */
-    button[kind="header"] {
-        display: none !important;
-    }
+    /* הסתרת כפתור פתיחת sidebar - הוסר כדי לאפשר גישה להגדרות */
+    /* button[kind="header"] { display: none !important; } */
     
-    /* הסתרת תפריט המבורגר */
-    [data-testid="collapsedControl"] {
-        display: none !important;
-    }
+    /* הסתרת תפריט המבורגר - הוסר */
+    /* [data-testid="collapsedControl"] { display: none !important; } */
     
     /* במובייל */
     @media (max-width: 768px) {
@@ -1302,6 +1314,107 @@ def apply_custom_css():
         /* טבלאות */
         table {
             color: #1e293b !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+def apply_dark_theme_css():
+    """החלת עיצוב כהה מקצועי (Dark Mode)"""
+    st.markdown("""
+        <style>
+        /* רקע כללי כהה */
+        .stApp, [data-testid="stAppViewContainer"] {
+            background-color: #0f172a !important; /* slate-950 */
+            color: #f8fafc !important; /* slate-50 */
+        }
+        
+        /* טקסט וכותרות */
+        h1, h2, h3, h4, h5, h6, p, span, label, .stMarkdown, .stText, .stAlert, 
+        .stMetricLabel, .stMetricValue, [data-testid="stMarkdownContainer"] p,
+        [data-testid="stMarkdownContainer"] li {
+            color: #f1f5f9 !important; /* slate-100 */
+        }
+        
+        /* כרטיסים ו-Expanders */
+        [data-testid="stExpander"], .stCard, .css-1r6slb0, div[style*="background: white"], 
+        div[style*="background-color: white"], div[style*="background:white"] {
+            background-color: #1e293b !important; /* slate-800 */
+            border-color: #334155 !important;
+            color: #f1f5f9 !important;
+        }
+        
+        /* שדות קלט בסביבה כהה */
+        input, textarea, select, [data-baseweb="select"] div, .stTextInput input, .stTextArea textarea {
+            background-color: #1e293b !important;
+            color: #f8fafc !important;
+            border-color: #475569 !important;
+        }
+        
+        /* תיקון צבע סלקטבוקס במצב כהה */
+        [data-baseweb="select"] {
+            background-color: #1e293b !important;
+        }
+        
+        /* התאמות סיידבר */
+        [data-testid="stSidebar"] {
+            background-color: #020617 !important; /* slate-950 */
+            border-left: 1px solid #1e293b;
+        }
+        
+        /* תיקון צבעים למדדים (Metrics) */
+        [data-testid="stMetric"] {
+            background-color: #1e293b !important;
+            border: 1px solid #334155 !important;
+        }
+        
+        div[data-testid="stMetricValue"] {
+            color: #60a5fa !important; /* כחול בהיר */
+        }
+        
+        div[data-testid="stMetricLabel"] {
+            color: #94a3b8 !important; /* slate-400 */
+        }
+        
+        /* טאבים */
+        button[data-baseweb="tab"] {
+            color: #94a3b8 !important;
+        }
+        
+        button[data-baseweb="tab"][aria-selected="true"] {
+            color: #3b82f6 !important;
+            border-bottom-color: #3b82f6 !important;
+        }
+
+        /* RTL & Professional Polish */
+        .stApp {
+            direction: rtl;
+        }
+        
+        /* כפתורים - התאמה לצבע כהה */
+        .stButton button {
+            background-color: #3b82f6 !important;
+            border: none !important;
+            color: white !important;
+        }
+
+        /* מסך ניצחון (Impact Screen) */
+        div[style*="background:linear-gradient(135deg,#f0fdf4,#dcfce7)"] {
+            background: linear-gradient(135deg, #064e3b, #022c22) !important;
+            border-color: #10b981 !important;
+        }
+        
+        div[style*="color:#374151"] {
+            color: #d1fae5 !important;
+        }
+
+        /* בועת טיפ (Inspector Tip) */
+        div[style*="background:linear-gradient(135deg,#fefce8,#fef9c3)"] {
+            background: linear-gradient(135deg, #713f12, #422006) !important;
+            border-color: #eab308 !important;
+        }
+        
+        span[style*="color:#78350f"] {
+            color: #fef9c3 !important;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -5223,6 +5336,48 @@ def render_command_dashboard():
                     else:
                         st.warning("⚠️ הסיסמה חייבת להכיל לפחות 4 תווים")
 
+                st.markdown("---")
+                st.subheader("🔑 ניהול קודי גישה למפקדים (אור אישי)")
+                st.caption("כאן ניתן לאפס או לשנות את קוד הגישה האישי של מפקדי היחידות")
+                
+                # הצגת המצב הקיים
+                try:
+                    all_cmd_codes = supabase.table("commander_settings").select("*").execute().data
+                    if all_cmd_codes:
+                        st.markdown("**קודי גישה פעילים:**")
+                        for item in all_cmd_codes:
+                            c_u, c_c = item['unit'], item['access_code']
+                            col_info, col_reset = st.columns([3, 1])
+                            with col_info:
+                                st.code(f"{c_u}: {c_c}")
+                            with col_reset:
+                                if st.button(f"🔄 אפס ל-1111", key=f"reset_code_{c_u}"):
+                                    if set_commander_code(c_u, "1111"):
+                                        st.success(f"✅ הקוד של {c_u} אופס")
+                                        time.sleep(0.5)
+                                        st.rerun()
+                except:
+                    pass
+
+                with st.form("update_commander_code"):
+                    st.write("עדכון ידני של קוד מפקד")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        target_u = st.selectbox("בחר יחידה", ALL_UNITS, key="target_cmd_unit")
+                    with c2:
+                        target_code = st.text_input("קוד חדש (לפחות 4 ספרות)", type="password", key="target_cmd_code")
+                    
+                    if st.form_submit_button("💾 שמור קוד מפקד", use_container_width=True):
+                        if len(target_code) >= 4:
+                            if set_commander_code(target_u, target_code):
+                                st.success(f"✅ הקוד של {target_u} עודכן בהצלחה")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("❌ שגיאה בעדכון הקוד")
+                        else:
+                            st.warning("⚠️ הקוד חייב להכיל לפחות 4 תווים")
+
             # הגדרות אימייל להתראות
             with management_tabs[2]: # I will move logos to [3] and add email to [2]
                 st.subheader("📧 הגדרות מייל להתראות אוטומטיות")
@@ -5456,8 +5611,9 @@ def render_unit_report():
             st.write("")  # spacing
             st.write("")  # spacing
             if st.button("🔓 כניסה", use_container_width=True):
-                # בדיקת קוד גישה
-                if unit in COMMANDER_CODES and access_code == COMMANDER_CODES[unit]:
+                # בדיקת קוד גישה דינמי
+                correct_code = get_commander_code(unit)
+                if access_code == correct_code:
                     st.session_state.commander_authenticated = True
                     st.session_state.commander_unit = unit
                     st.success("✅ קוד גישה נכון! מעביר לניתוח יחידה...")
@@ -5465,20 +5621,34 @@ def render_unit_report():
                     st.rerun()
                 else:
                     st.error(f"❌ קוד גישה שגוי")
-                    # Debug info
-                    if unit in COMMANDER_CODES:
-                        st.info(f"💡 רמז: הקוד הנכון מתחיל ב-'{COMMANDER_CODES[unit][:3]}...'")
-                    else:
-                        st.warning(f"⚠️ לא נמצא קוד עבור {unit}")
+                    st.info(f"💡 רמז: הקוד הנכון מתחיל ב-'{correct_code[:1]}...'")
     else:
-        # מפקד מחובר - הצג ניתוח יחידה
+        # מפקד מחובר - הצג ניתוח יחידה + אפשרות לשינוי קוד
         st.success(f"✅ מחובר כרב חטמ\"ר - {unit}")
         
-        col1, col2 = st.columns([1, 4])
-        with col1:
+        col_back, col_pwd, col_spacer = st.columns([1, 1, 2])
+        with col_back:
             if st.button("🔙 חזרה לדשבורד", use_container_width=True):
                 st.session_state.commander_authenticated = False
                 st.rerun()
+        
+        with col_pwd:
+            with st.popover("🔐 שינוי קוד גישה"):
+                st.write("שנה את קוד הגישה האישי שלך")
+                new_code = st.text_input("קוד חדש (לפחות 4 תווים)", type="password", key="new_commander_code")
+                confirm_code = st.text_input("אימות קוד", type="password", key="confirm_commander_code")
+                if st.button("שמור קוד חדש", use_container_width=True):
+                    if len(new_code) < 4:
+                        st.error("הקוד חייב להכיל לפחות 4 תווים")
+                    elif new_code != confirm_code:
+                        st.error("הקודים אינם תואמים")
+                    else:
+                        if set_commander_code(unit, new_code):
+                            st.success("✅ הקוד עודכן בהצלחה!")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("שגיאה בעדכון הקוד בבסיס הנתונים")
         
         # הצגת ניתוח יחידה (העתקה מטאב 4 של פיקוד)
         st.markdown("---")
@@ -9447,6 +9617,21 @@ def main():
             st.image(get_logo_url(st.session_state.selected_unit), width=100)
             st.markdown(f"**{st.session_state.selected_unit}**")
             st.caption(f"תפקיד: {st.session_state.role}")
+            
+            # 🌙 Dark Mode Toggle
+            st.markdown("---")
+            if 'dark_mode' not in st.session_state:
+                st.session_state.dark_mode = False
+            
+            dark_mode = st.toggle("🌒 מצב כהה (Dark Mode)", value=st.session_state.dark_mode)
+            if dark_mode != st.session_state.dark_mode:
+                st.session_state.dark_mode = dark_mode
+                st.rerun()
+            
+            if st.session_state.dark_mode:
+                apply_dark_theme_css()
+            
+            st.markdown("---")
             if st.button("🚪 יציאה", use_container_width=True):
                 st.session_state.logged_in = False
                 st.session_state.login_stage = "gallery"
