@@ -6412,6 +6412,18 @@ def render_unit_report():
             else:
                 soldier_talk_cmd = radio_with_explanation("האם יש שיח מפקדים?", "so6", col=c2)
 
+        # שיעורי תורה ואיש קשר רוחני — לחטיבות 35/89/900 (הועבר מ-שיחת חתך)
+        if unit in NO_LOUNGE_WECOOK_UNITS:
+            st.markdown("#### 📖 שיעורי תורה ואיש קשר רוחני")
+            hq_vars['hq_want_torah_lesson'] = st.selectbox(
+                "האם יש רצון לשיעור תורה?",
+                ["כן", "לא", "לא בדקתי"],
+                key="hq_want_torah_lesson_sel"
+            )
+            c1, c2 = st.columns(2)
+            hq_vars['hq_contact_name'] = c1.text_input("איש קשר – שם", key="hq_contact_name_inp", placeholder="לדוגמה: הרב כהן")
+            hq_vars['hq_contact_phone'] = c2.text_input("איש קשר – מספר פלאפון", key="hq_contact_phone_inp", placeholder="לדוגמה: 050-1234567")
+
         st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
             <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[5].click()" 
                 style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
@@ -6427,15 +6439,7 @@ def render_unit_report():
         if not _show_halacha:
             st.info("📌 שיחת חתך   , ,  .")
         else:
-            st.markdown("#### 📖 שיעורי תורה ואיש קשר רוחני")
-            hq_vars['hq_want_torah_lesson'] = st.selectbox(
-                "האם יש רצון לשיעור תורה?",
-                ["כן", "לא", "לא בדקתי"],
-                key="hq_want_torah_lesson_sel"
-            )
-            c1, c2 = st.columns(2)
-            hq_vars['hq_contact_name'] = c1.text_input("איש קשר – שם", key="hq_contact_name_inp", placeholder="לדוגמה: הרב כהן")
-            hq_vars['hq_contact_phone'] = c2.text_input("איש קשר – מספר פלאפון", key="hq_contact_phone_inp", placeholder="לדוגמה: 050-1234567")
+            st.info("📌 פנה לטאב 'נהלים ורוח' לעדכון שיעורי תורה ואיש קשר.")
 
         st.markdown("#### 👮 שאלון חיילים – רבנות היחידה ונושאים נוספים")
 
@@ -7441,40 +7445,114 @@ def render_ogda_summary_dashboard():
 @st.cache_data(ttl=1800, show_spinner=False)  # TTL 30 דקות — מונע קריאת AI בכל רינדור
 def generate_weekly_questions(unit: str, accessible_units: list) -> dict:
     """
-    🤖 יוצר שאלות חכמות והנחיית AI אקטיבית למפקד האוגדה/פיקוד.
-    מייצר שאילתא אחת מאוחדת עם 5-7 שאלות על הכפופים בלבד.
+    🤖 יוצר שאלות מבוססות-נתונים אמיתיים — חריגות שנמצאו בשאלונים.
+    מזהה בעיות חוזרות: מזוזות חסרות, ערבוב כלים, שיעורי תורה חסרים,
+    עירוב פסול, כשרות ועוד — ומשתמש ב-AI לניסוח שאלות ממוקדות.
     """
     # סינון: רק יחידות כפופות (לא היחידה עצמה)
     subordinate_units = [u for u in accessible_units if u != unit]
-    
-    all_reports = load_reports_cached(subordinate_units if subordinate_units else accessible_units)
+    units_to_query = subordinate_units if subordinate_units else accessible_units
+
+    all_reports = load_reports_cached(units_to_query)
     df = pd.DataFrame(all_reports) if all_reports else pd.DataFrame()
-    
+
     # סינון נוסף: רק דוחות של יחידות כפופות
     if not df.empty and 'unit' in df.columns and subordinate_units:
         df = df[df['unit'].isin(subordinate_units)]
-    
+
     insights = {}
-    
-    # ניתוחים סטטיסטיים בסיסיים — על הכפופים בלבד
+
+    # ===== חילוץ חריגות אמיתיות מהנתונים =====
+    anomaly_lines = []  # רשימת תיאורי חריגות לשלוח ל-AI
+
     if not df.empty:
-        kashrut_insights = analyze_kashrut_trend(df, subordinate_units)
+        df_copy = df.copy()
+        if 'date' in df_copy.columns:
+            df_copy['date'] = pd.to_datetime(df_copy['date'], errors='coerce').dt.tz_localize(None)
+        last_30 = df_copy[df_copy['date'] >= (pd.Timestamp.now() - pd.Timedelta(days=30))] if 'date' in df_copy.columns else df_copy
+
+        # 1. מזוזות חסרות — חוזר באותה יחידה/מוצב
+        if 'r_mezuzot_missing' in last_30.columns and 'unit' in last_30.columns:
+            try:
+                mezuzot_df = last_30[pd.to_numeric(last_30['r_mezuzot_missing'], errors='coerce') > 0]
+                for grp_unit, grp in mezuzot_df.groupby('unit'):
+                    total_missing = int(pd.to_numeric(grp['r_mezuzot_missing'], errors='coerce').sum())
+                    weeks_count = grp['date'].dt.isocalendar().week.nunique() if 'date' in grp.columns else len(grp)
+                    if weeks_count >= 2:
+                        anomaly_lines.append(f"⚠️ {grp_unit}: חסרות מזוזות ({total_missing} סה\"כ) ב-{weeks_count} דוחות בחודש האחרון")
+            except Exception:
+                pass
+
+        # 2. ערבוב כלים חוזר
+        if 'p_mix' in last_30.columns:
+            try:
+                mix_df = last_30[last_30['p_mix'].isin(['כן', 'כן (חלקי)'])]
+                for grp_unit, grp in mix_df.groupby('unit'):
+                    bases = grp['base'].unique().tolist() if 'base' in grp.columns else []
+                    base_str = ', '.join(str(b) for b in bases[:3]) if bases else ''
+                    count = len(grp)
+                    if count >= 2:
+                        anomaly_lines.append(f"⚠️ {grp_unit}: ערבוב כלים זוהה {count} פעמים" + (f" במוצבים: {base_str}" if base_str else ''))
+            except Exception:
+                pass
+
+        # 3. שיעורי תורה חסרים
+        if 'soldier_has_lesson' in last_30.columns or 'hq_want_torah_lesson' in last_30.columns:
+            try:
+                lesson_col = 'soldier_has_lesson' if 'soldier_has_lesson' in last_30.columns else 'hq_want_torah_lesson'
+                no_lesson_df = last_30[last_30[lesson_col].isin(['לא', 'לא בדקתי'])]
+                for grp_unit, grp in no_lesson_df.groupby('unit'):
+                    count = len(grp)
+                    if count >= 2:
+                        anomaly_lines.append(f"⚠️ {grp_unit}: אין שיעור תורה — דווח {count} פעמים בחודש האחרון")
+            except Exception:
+                pass
+
+        # 4. כשרות (עירוב פסול וכשרות לא תקינה)
+        if 'e_status' in last_30.columns:
+            try:
+                eruv_bad = last_30[last_30['e_status'] == 'פסול'].groupby('unit').size()
+                for grp_unit, count in eruv_bad.items():
+                    if count >= 2:
+                        anomaly_lines.append(f"🚧 {grp_unit}: עירוב פסול {count} פעמים בחודש האחרון")
+            except Exception:
+                pass
+
+        if 'k_cert' in last_30.columns:
+            try:
+                no_cert = last_30[last_30['k_cert'] == 'לא'].groupby('unit').size()
+                for grp_unit, count in no_cert.items():
+                    if count >= 2:
+                        anomaly_lines.append(f"🍽️ {grp_unit}: תעודת כשרות לא תקפה {count} פעמים בחודש האחרון")
+            except Exception:
+                pass
+
+        # 5. יחידות שלא דיווחו השבוע
+        if 'date' in df_copy.columns:
+            try:
+                this_week = df_copy[df_copy['date'] >= (pd.Timestamp.now() - pd.Timedelta(days=7))]
+                reported_this_week = set(this_week['unit'].unique()) if not this_week.empty else set()
+                silent = [u for u in units_to_query if u not in reported_this_week]
+                if silent:
+                    anomaly_lines.append(f"📡 לא דיווחו השבוע: {', '.join(silent[:5])}")
+            except Exception:
+                pass
+
+        # ניתוחים סטטיסטיים נוספים
+        kashrut_insights = analyze_kashrut_trend(df, units_to_query)
         if kashrut_insights:
             insights['kashrut'] = kashrut_insights
-            
-        eruv_insights = analyze_eruv_trend(df, subordinate_units)
+        eruv_insights = analyze_eruv_trend(df, units_to_query)
         if eruv_insights:
             insights['eruv'] = eruv_insights
-            
-        performance_insights = analyze_unit_performance(df, subordinate_units)
+        performance_insights = analyze_unit_performance(df, units_to_query)
         if performance_insights:
             insights['performance'] = performance_insights
-            
-        anomaly_insights = detect_weekly_anomalies(df, subordinate_units)
+        anomaly_insights = detect_weekly_anomalies(df, units_to_query)
         if anomaly_insights:
             insights['anomalies'] = anomaly_insights
-            
-    # מחולל AI מאוחד — שאילתא בודדת, 5-7 שאלות
+
+    # ===== מחולל AI — שאלות מבוססות חריגות אמיתיות =====
     import google.generativeai as genai
     import json as _json
     try:
@@ -7482,60 +7560,58 @@ def generate_weekly_questions(unit: str, accessible_units: list) -> dict:
             genai.configure(api_key=st.secrets["gemini"]["api_key"])
             model = genai.GenerativeModel("gemini-2.5-flash")
             log_api_usage(unit, "weekly_insights")
-            
-            # בניית תקציר הנתונים של הכפופים בלבד
-            if not df.empty:
-                try:
-                    summary_data = df.groupby('unit').agg(
-                        reports=('id', 'count'),
-                        eruv_fails=('e_status', lambda x: (x == 'פסול').sum()),
-                        kashrut_fails=('k_cert', lambda x: (x == 'לא').sum())
-                    ).to_string()
-                except Exception:
-                    summary_data = f"יחידות כפופות: {', '.join(subordinate_units)}"
-            else:
-                summary_data = f"אין דוחות מוזנים. יחידות כפופות: {', '.join(subordinate_units) if subordinate_units else 'אין'}"
 
-            units_str = ', '.join(subordinate_units) if subordinate_units else 'אין יחידות כפופות'
+            units_str = ', '.join(units_to_query) if units_to_query else 'אין יחידות'
+            anomalies_str = '\n'.join(anomaly_lines) if anomaly_lines else 'לא זוהו חריגות חוזרות בנתונים.'
+
             prompt = f"""
-אתה קצין המטה של {unit} (רב אוגדה/פיקוד).
-היחידות הכפופות אליך הן: {units_str}.
+אתה קצין מטה של {unit} (רב אוגדה/פיקוד). היחידות הכפופות: {units_str}.
 
-סיכום נתוני השבוע:
-{summary_data}
+חריגות שזוהו אוטומטית מהשאלונים בחודש האחרון:
+{anomalies_str}
 
-תפקידך: לעזור למפקד למקסם את עבודת האוגדה/פיקוד במהלך השבוע.
+תפקידך: עזור לרב לנהל שיחות חתך ממוקדות עם כפופיו לקראת השבוע.
+ספק 5-7 שאלות קצרות, חדות, מבוססות ישירות על החריגות שנמצאו.
+כל שאלה תתייחס לחריגה ספציפית — יחידה, מוצב, או תופעה חוזרת.
+אם אין חריגות — שאל על שמירת איכות ועל היחידה החלשה.
 
-צור בדיוק 5-7 שאלות מיקוד אסטרטגיות שהמפקד צריך לחשוב עליהן לקראת השבוע.
-כל שאלה צריכה להיות קצרה, חדה, ומבוססת על הנתונים.
-
-החזר JSON בלבד בפורמט:
-{{"question": "שאלות מיקוד שבועיות לקראת השבוע", "current": 0, "previous": 0, "trend": "ai_focus", "suggestion": "1. [שאלה ראשונה]\n2. [שאלה שנייה]\n3. [שאלה שלישית]\n4. [שאלה רביעית]\n5. [שאלה חמישית]"}}
+החזר JSON בלבד:
+{{"question": "שאלות מיקוד שבועיות לקראת השבוע", "current": 0, "previous": 0, "trend": "ai_focus",
+"suggestion": "1. [שאלה על חריגה ספציפית]\n2. [שאלה על חריגה ספציפית]\n3. ...\n4. ...\n5. ..."}}
 """
             response = model.generate_content(prompt)
             clean_json = response.text.replace("```json", "").replace("```", "").strip()
             ai_focus = _json.loads(clean_json)
             insights['ai_commander_focus'] = ai_focus
-    except Exception as e:
+    except Exception:
+        # Fallback: אם ה-AI לא זמין, בנה שאלות מהחריגות ישירות
+        fallback_questions = anomaly_lines[:5] if anomaly_lines else [
+            "האם כל היחידות הגישו דוח שבועי?",
+            "מה מצב העירובין לקראת השבת?",
+            "האם יש חוסרים פתוחים יותר מ-7 ימים?",
+            "מה מצב שיעורי התורה בחטיבות?",
+            "האם זוהו בעיות כשרות חוזרות?"
+        ]
+        numbered = '\n'.join(f"{i+1}. {q.lstrip('⚠️🚧🍽️📡 ')}" for i, q in enumerate(fallback_questions))
         insights['ai_commander_focus'] = {
             "question": "🤖 שאלות הכוונה שבועיות לקראת השבוע",
             "current": 0, "previous": 0, "trend": "ai_focus",
-            "suggestion": "1. האם כל היחידות הגישו דוח שבועי?\n2. מה מצב העירובין לקראת השבת הקרובה?\n3. האם יש חוסרים פתוחים שלא טופלו יותר מ-7 ימים?\n4. הרב ביחידה החלשה ביותר - מה סטטוסו?\n5. האם התקיימו שיעורי תורה שבועיים בכל היחידות?"
+            "suggestion": numbered
         }
-        
+
     # ניתוח חוסרים (על הכפופים בלבד)
-    deficit_insights = analyze_deficit_progress(subordinate_units if subordinate_units else accessible_units)
+    deficit_insights = analyze_deficit_progress(units_to_query)
     if deficit_insights and isinstance(deficit_insights, list):
         insights['deficits'] = {
             "question": deficit_insights[0].get("question", "בדוק את סטטוס החוסרים השבוע"),
-            "current": len(get_open_deficits(subordinate_units if subordinate_units else accessible_units)),
+            "current": len(get_open_deficits(units_to_query)),
             "previous": 0,
             "trend": "attention_needed",
             "suggestion": deficit_insights[0].get("suggestion", "עבור על טבלת החוסרים המלאה")
         }
     elif deficit_insights and isinstance(deficit_insights, dict):
         insights['deficits'] = deficit_insights
-        
+
     return insights
 
 
