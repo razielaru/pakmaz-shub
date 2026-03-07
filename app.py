@@ -4251,18 +4251,36 @@ def render_detailed_unit_analysis(df, selected_unit):
         st.dataframe(unit_df[[c for c in display_cols if c in unit_df.columns]], use_container_width=True, hide_index=True)
 
 def render_unit_map(df, unit):
-    """מציג מפת חטמ״ר מפורטת"""
-    unit_df = df[df['unit'] == unit].dropna(subset=['latitude', 'longitude'])
-    if not unit_df.empty:
-        center_lat = unit_df['latitude'].mean()
-        center_lon = unit_df['longitude'].mean()
-        unit_color_map = {unit: "#1e3a8a"}
-        m = create_street_level_map(center=(center_lat, center_lon), zoom_start=11)
-        for _, row in unit_df.iterrows():
-            add_unit_marker_to_folium(m, row, unit_color_map)
-        st_folium(m, width=800, height=500, key=f"unit_map_{unit}")
-    else:
+    if df.empty or 'unit' not in df.columns:
+        st.info("אין נתונים להצגה במפה")
+        return
+
+    unit_df = df[df['unit'] == unit].copy()
+    if unit_df.empty:
+        st.warning("⚠️ לא נמצאו נתונים ליחידה זו.")
+        return
+
+    # הוספת קואורדינטות מ-BASE_COORDINATES לפי שם מוצב
+    def get_coords(base_name):
+        coords = BASE_COORDINATES.get(str(base_name), None)
+        return coords if coords else (None, None)
+
+    unit_df[['latitude', 'longitude']] = unit_df['base'].apply(
+        lambda b: pd.Series(get_coords(b))
+    )
+    unit_df = unit_df.dropna(subset=['latitude', 'longitude'])
+
+    if unit_df.empty:
         st.warning("⚠️ לא נמצאו נתוני מיקום ליחידה זו.")
+        return
+
+    center_lat = unit_df['latitude'].mean()
+    center_lon = unit_df['longitude'].mean()
+    unit_color_map = {unit: "#1e3a8a"}
+    m = create_street_level_map(center=(center_lat, center_lon), zoom_start=11)
+    for _, row in unit_df.iterrows():
+        add_unit_marker_to_folium(m, row, unit_color_map)
+    st_folium(m, width=800, height=500, key=f"unit_map_{unit}")
 
 
 def render_hatmar_management_tab(df: pd.DataFrame, unit: str):
@@ -6607,8 +6625,18 @@ def render_unit_report():
             st.warning("⚠️ לא נמצאה טיוטה שמורה")
 
     st.markdown("### 📍 מיקום ותאריך")
-    loc = streamlit_geolocation(key="main_form_gps_location")
-    gps_lat, gps_lon = (loc['latitude'], loc['longitude']) if loc and loc.get('latitude') else (None, None)
+    try:
+        loc = streamlit_geolocation(key="main_form_gps_location")
+    except Exception:
+        loc = {}
+
+    # הגנה מפני כל סוג תשובה שאינו dict תקין
+    if isinstance(loc, dict) and loc.get('latitude') and loc.get('longitude'):
+        gps_lat = loc['latitude']
+        gps_lon = loc['longitude']
+    else:
+        gps_lat = None
+        gps_lon = None
     
     if gps_lat:
         # ✅ הצגת המיקום המדויק שנקלט
