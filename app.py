@@ -485,7 +485,7 @@ def render_gps_checkpoint(checkpoint_num: int, base: str):
         return True
     
     st.markdown(f"**{label}** — {instruction}")
-    loc = streamlit_geolocation()
+    loc = streamlit_geolocation(key=f"geo_widget_checkpoint_{checkpoint_num}")
     if loc and loc.get("latitude"):
         st.session_state[data_key] = {
             "latitude": loc["latitude"],
@@ -4441,63 +4441,77 @@ def render_hatmar_management_tab(df: pd.DataFrame, unit: str):
 
     st.markdown("### 👤 מבקרים — מי עובד, מי מחפף")
 
-    inspectors = df_unit["inspector"].dropna().unique()
+    # בדיקה בטוחה של המבקרים
+    inspectors = df_unit["inspector"].dropna().unique() if "inspector" in df_unit.columns else []
 
-    cols = st.columns(min(len(inspectors), 3))
-    for idx, inspector in enumerate(inspectors):
-        df_insp = df_unit[df_unit["inspector"] == inspector]
-        visits_total = len(df_insp)
-        visits_month = len(df_insp[df_insp["date_dt"] >= today - pd.Timedelta(days=30)])
-        cred = calculate_inspector_credibility(inspector, df_unit)
-        avg_rel = cred['score']
-        is_p1 = (df_insp["e_status"] == "תקין") if "e_status" in df_insp.columns else pd.Series([True]*len(df_insp))
-        is_p2 = (df_insp["k_cert"] == "כן") if "k_cert" in df_insp.columns else pd.Series([True]*len(df_insp))
-        is_p3 = (df_insp["k_issues"] == "לא") if "k_issues" in df_insp.columns else pd.Series([True]*len(df_insp))
-        
-        all_perfect = False
-        if len(df_insp) >= 3:
-            try:
-                all_perfect = bool((is_p1 & is_p2 & is_p3).all())
-            except:
-                all_perfect = False
-        last_visit = df_insp["date_dt"].max()
-        days_since = (today - last_visit).days if pd.notna(last_visit) else 999
+    # רק אם יש לפחות מבקר אחד - נייצר עמודות
+    if len(inspectors) > 0:
+        cols = st.columns(min(len(inspectors), 3))
+        for idx, inspector in enumerate(inspectors):
+            df_insp = df_unit[df_unit["inspector"] == inspector]
+            visits_total = len(df_insp)
+            visits_month = len(df_insp[df_insp["date_dt"] >= today - pd.Timedelta(days=30)])
+            
+            # שליפת ציון אמינות אם קיים
+            if "reliability_score" in df_insp.columns:
+                avg_rel = df_insp["reliability_score"].mean()
+            else:
+                # שימוש בפונקציה שלנו כגיבוי
+                cred = calculate_inspector_credibility(inspector, df_unit)
+                avg_rel = cred['score']
+                
+            is_p1 = (df_insp["e_status"] == "תקין") if "e_status" in df_insp.columns else pd.Series([True]*len(df_insp))
+            is_p2 = (df_insp["k_cert"] == "כן") if "k_cert" in df_insp.columns else pd.Series([True]*len(df_insp))
+            is_p3 = (df_insp["k_issues"] == "לא") if "k_issues" in df_insp.columns else pd.Series([True]*len(df_insp))
+            
+            all_perfect = False
+            if len(df_insp) >= 3:
+                try:
+                    all_perfect = bool((is_p1 & is_p2 & is_p3).all())
+                except:
+                    all_perfect = False
+                    
+            last_visit = df_insp["date_dt"].max()
+            days_since = (today - last_visit).days if pd.notna(last_visit) else 999
 
-        # צבע כרטיס לפי מצב
-        if avg_rel and avg_rel < 50:
-            card_color = "#fef2f2"
-            border_color = "#ef4444"
-            status_label = "⚠️ חשוד בחיפוף"
-            status_color = "#ef4444"
-        elif all_perfect:
-            card_color = "#fff7ed"
-            border_color = "#f97316"
-            status_label = "🟠 הכל תקין תמיד — לבדוק"
-            status_color = "#f97316"
-        elif days_since > 14:
-            card_color = "#fafafa"
-            border_color = "#94a3b8"
-            status_label = f"💤 לא יצא {days_since} ימים"
-            status_color = "#94a3b8"
-        else:
-            card_color = "#f0fdf4"
-            border_color = "#10b981"
-            status_label = "✅ פעיל ותקין"
-            status_color = "#10b981"
+            # צבע כרטיס לפי מצב
+            if avg_rel and avg_rel < 50:
+                card_color = "#fef2f2"
+                border_color = "#ef4444"
+                status_label = "⚠️ חשוד בחיפוף"
+                status_color = "#ef4444"
+            elif all_perfect:
+                card_color = "#fff7ed"
+                border_color = "#f97316"
+                status_label = "🟠 הכל תקין תמיד — לבדוק"
+                status_color = "#f97316"
+            elif days_since > 14:
+                card_color = "#fafafa"
+                border_color = "#94a3b8"
+                status_label = f"💤 לא יצא {days_since} ימים"
+                status_color = "#94a3b8"
+            else:
+                card_color = "#f0fdf4"
+                border_color = "#10b981"
+                status_label = "✅ פעיל ותקין"
+                status_color = "#10b981"
 
-        with cols[idx % 3]:
-            st.markdown(f"""
-            <div style='background:{card_color}; border:1px solid {border_color};
-                        border-radius:12px; padding:14px; margin:6px 0;'>
-                <div style='font-weight:700; font-size:15px; color:#1e3a8a;'>👤 {inspector}</div>
-                <div style='font-size:12px; color:{status_color}; font-weight:600; margin:4px 0;'>{status_label}</div>
-                <div style='font-size:12px; color:#64748b;'>
-                    📋 {visits_month} ביקורות החודש ({visits_total} סה״כ)<br/>
-                    🛡️ אמינות ממוצעת: {f"{avg_rel:.0f}" if avg_rel else "—"}<br/>
-                    📅 ביקור אחרון: לפני {days_since} ימים
+            with cols[idx % 3]:
+                st.markdown(f"""
+                <div style='background:{card_color}; border:1px solid {border_color};
+                            border-radius:12px; padding:14px; margin:6px 0;'>
+                    <div style='font-weight:700; font-size:15px; color:#1e3a8a;'>👤 {inspector}</div>
+                    <div style='font-size:12px; color:{status_color}; font-weight:600; margin:4px 0;'>{status_label}</div>
+                    <div style='font-size:12px; color:#64748b;'>
+                        📋 {visits_month} ביקורות החודש ({visits_total} סה״כ)<br/>
+                        🛡️ אמינות ממוצעת: {f"{avg_rel:.0f}" if avg_rel else "—"}<br/>
+                        📅 ביקור אחרון: לפני {days_since} ימים
+                    </div>
                 </div>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+    else:
+        # הודעה חלופית אם אין מבקרים (ומונעת את הקריסה!)
+        st.info("📭 טרם הוזנו דוחות ומבקרים ביחידה זו.")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -6588,7 +6602,7 @@ def render_unit_report():
             st.warning("⚠️ לא נמצאה טיוטה שמורה")
 
     st.markdown("### 📍 מיקום ותאריך")
-    loc = streamlit_geolocation()
+    loc = streamlit_geolocation(key="main_form_gps_location")
     gps_lat, gps_lon = (loc['latitude'], loc['longitude']) if loc and loc.get('latitude') else (None, None)
     
     if gps_lat:
