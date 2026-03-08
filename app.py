@@ -480,9 +480,12 @@ def render_continuity_questions(base: str, unit: str) -> dict:
     return continuity_answers
 
 def render_gps_checkpoint(checkpoint_num: int, base: str):
-    if st.session_state.get(f"gps_done_{checkpoint_num}"):
-        saved = st.session_state.get(f"gps_data_{checkpoint_num}", {})
-        st.success(f"✅ מיקום נשמר ({saved.get('latitude',0):.4f}, {saved.get('longitude',0):.4f})")
+    done_key = f"gps_done_{checkpoint_num}_{base}"
+    data_key = f"gps_data_{checkpoint_num}_{base}"
+    
+    if st.session_state.get(done_key):
+        saved = st.session_state.get(data_key, {})
+        st.success(f"✅ מיקום נשמר בסביבת {base} ({saved.get('latitude',0):.4f}, {saved.get('longitude',0):.4f})")
         return True
 
     labels = {
@@ -492,18 +495,20 @@ def render_gps_checkpoint(checkpoint_num: int, base: str):
     }
     label, instruction = labels.get(checkpoint_num, ("📍", ""))
 
-    st.markdown(f"**{label}** — {instruction}")
-    loc = safe_geolocation(key=f"geo_widget_checkpoint_{checkpoint_num}")
-    
-    if isinstance(loc, dict) and loc.get("latitude"):
-        st.session_state[f"gps_data_{checkpoint_num}"] = {
-            "latitude": loc["latitude"],
-            "longitude": loc["longitude"],
-            "timestamp": time.time(),
-            "accuracy": loc.get("accuracy", 0)
-        }
-        st.session_state[f"gps_done_{checkpoint_num}"] = True
-        st.rerun()
+    with st.container():
+        st.markdown(f"**{label}** — {instruction}")
+        st.info("👇 לחץ על כפתור המיקום של הדפדפן להמשך:", icon="ℹ️")
+        loc = safe_geolocation(key=f"geo_widget_{checkpoint_num}_{base}")
+        
+        if isinstance(loc, dict) and loc.get("latitude"):
+            st.session_state[data_key] = {
+                "latitude": loc["latitude"],
+                "longitude": loc["longitude"],
+                "timestamp": time.time(),
+                "accuracy": loc.get("accuracy", 0)
+            }
+            st.session_state[done_key] = True
+            st.rerun()
     
     return False
 
@@ -5121,11 +5126,11 @@ def render_command_dashboard():
 
     # טאבים לפי תפקיד
     if role == 'pikud':
-        tab_names = ["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📋 מעקב חוסרים", "🏆 Executive Summary", "🎯 Risk Center", "🔍 אמינות מבקרים", "⚙️ ניהול", "🧠 מוח פיקודי", "📱 דשבורד חטמ״ר", "💬 עוזר AI"]
+        tab_names = ["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📋 מעקב חוסרים", "🏆 Executive Summary", "🎯 Risk Center", "🔍 אמינות מבקרים", "⚙️ ניהול", "🧠 מוח פיקודי", "💬 עוזר AI"]
     elif role == 'ugda':
         tab_names = ["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🔍 אמינות מבקרים", "🧠 מוח פיקודי", "💬 עוזר AI"]
     else:
-        tab_names = ["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📋 מעקב חוסרים", "🏆 Executive Summary", "🔍 אמינות מבקרים", "🧠 מוח פיקודי", "📱 דשבורד חטמ״ר", "💬 עוזר AI"]
+        tab_names = ["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📋 מעקב חוסרים", "🏆 Executive Summary", "🔍 אמינות מבקרים", "🧠 מוח פיקודי", "💬 עוזר AI"]
     
     tabs_obj = st.tabs(tab_names)
     t_map = {name: tabs_obj[i] for i, name in enumerate(tab_names)}
@@ -6671,7 +6676,9 @@ def render_unit_report():
             st.warning("⚠️ לא נמצאה טיוטה שמורה")
 
     st.markdown("### 📍 מיקום ותאריך")
-    loc = safe_geolocation(key="main_form_gps_location")
+    # ✅ מפתח ייחודי מבוסס מוצב למניעת תקיעות הווידג'ט
+    current_base_id = st.session_state.get('base_input', 'initial')
+    loc = safe_geolocation(key=f"main_form_gps_{current_base_id}")
 
     if loc.get('latitude') and loc.get('longitude'):
         gps_lat = loc['latitude']
