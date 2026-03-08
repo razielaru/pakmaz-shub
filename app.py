@@ -479,6 +479,79 @@ def render_continuity_questions(base: str, unit: str) -> dict:
     st.markdown("---")
     return continuity_answers
 
+# --- Honeypot Logic (Wave 2.15) ---
+HONEYPOT_POOL = [
+    {
+        "question": "האם מכונת הקפה בטרקלין קיבלה הכשר מיוחד לפסח?",
+        "trap": ["כן", "תקין"],
+        "context": "רוב המוצבים אין להם מכונת קפה בטרקלין"
+    },
+    {
+        "question": "האם פח הגניזה ב'חדר השמרים' ריק?",
+        "trap": ["כן", "תקין"],
+        "context": "רוב המוצבים אין להם חדר שמרים"
+    },
+    {
+        "question": "האם קפיטריית הקבע מפרידה כלים בשריים וחלביים?",
+        "trap": ["כן", "תקין"],
+        "context": "רוב המוצבים אין קפיטריית קבע"
+    },
+    {
+        "question": "האם מדיח הכלים הגדול בחדר האוכל מכושר?",
+        "trap": ["כן", "תקין"],
+        "context": "לא בכל מוצב יש מדיח"
+    },
+    {
+        "question": "האם הוכשר הדוד הקהילתי לחמים לשבת?",
+        "trap": ["כן", "תקין"],
+        "context": "לא בכל מוצב יש דוד קהילתי"
+    },
+    {
+        "question": "האם ספריית הקודש בחדר הפלוגה מסודרת?",
+        "trap": ["כן"],
+        "context": "זו שאלה לגיטימית — בודקת אם עונים בלי לבדוק"
+    },
+    {
+        "question": "האם חדר הבידוד מצויד בסידורים?",
+        "trap": ["כן", "תקין"],
+        "context": "לא בכל מוצב יש חדר בידוד"
+    },
+    {
+        "question": "האם הוכשר מכשיר ה-Nespresso בחדר הפיקוד?",
+        "trap": ["כן", "תקין"],
+        "context": "לא בכל מוצב יש Nespresso בפיקוד"
+    },
+]
+
+def get_honeypot_question(base: str) -> dict:
+    import hashlib, datetime
+    week = datetime.date.today().isocalendar()[1]
+    year = datetime.date.today().year
+    seed = f"{base}_{week}_{year}"
+    idx = int(hashlib.md5(seed.encode()).hexdigest(), 16) % len(HONEYPOT_POOL)
+    return HONEYPOT_POOL[idx]
+
+def render_honeypot_question(base: str) -> None:
+    if not base or len(base) < 2:
+        return
+    honeypot = get_honeypot_question(base)
+    key = f"honeypot_{base}"
+    answer = st.radio(
+        honeypot["question"],  # רק השאלה — בלי שום כותרת חשודה
+        options=["כן", "לא", "לא קיים במוצב זה"],
+        key=key,
+        index=None,
+        horizontal=True
+    )
+    if answer in honeypot["trap"]:
+        st.session_state["honeypot_triggered"] = True
+        st.session_state["honeypot_detail"] = {
+            "question": honeypot["question"],
+            "answer": answer,
+            "context": honeypot["context"]
+        }
+        st.session_state["reliability_score"] = 0
+
 def render_gps_checkpoint(checkpoint_num: int, base: str):
     done_key = f"gps_done_{checkpoint_num}_{base}"
     data_key = f"gps_data_{checkpoint_num}_{base}"
@@ -5138,7 +5211,7 @@ def render_command_dashboard():
 
     # טאבים לפי תפקיד
     if role == 'pikud':
-        tab_names = ["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📋 מעקב חוסרים", "🏆 Executive Summary", "🎯 Risk Center", "🔍 אמינות מבקרים", "⚙️ ניהול", "🧠 מוח פיקודי", "💬 עוזר AI"]
+        tab_names = ["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🎯 Risk Center", "🔍 אמינות מבקרים", "🧠 מוח פיקודי", "💬 עוזר AI", "⚙️ ניהול"]
     elif role == 'ugda':
         tab_names = ["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🔍 אמינות מבקרים", "🧠 מוח פיקודי", "💬 עוזר AI"]
     else:
@@ -6892,7 +6965,8 @@ def render_unit_report():
     # ===========================================
     with tab1:
         # 🆕 Wave 2.5: Continuity & GPS Checkpoint 1
-        continuity_answers = render_continuity_questions(base, unit)
+        if base and len(base) > 2:
+            continuity_answers = render_continuity_questions(base, unit)
         render_gps_checkpoint(1, base)
         
         # ⏱️ Tab timer
@@ -6929,6 +7003,10 @@ def render_unit_report():
         c1, c2 = st.columns(2)
         k_cert = radio_with_explanation("תעודת כשרות מתוקפת?", "k7", col=c1)
         k_bishul = radio_with_explanation("האם יש בישול ישראל?", "k8", col=c2)
+
+        # 🍯 Honeypot question (Wave 2.15)
+        if base and len(base) > 2:
+            render_honeypot_question(base)
 
         # OCR
         with st.expander("📄 סריקת תעודת כשרות (OCR)", expanded=False):
@@ -8069,32 +8147,41 @@ def render_unit_report():
 
 def render_executive_summary_dashboard():
     """
-    🎖\ufe0f \u05d3\u05e9\u05d1\u05d5\u05e8\u05d3 \u05d4\u05e4\u05d9\u05e7\u05d5\u05d3 \u2013 \u05ea\u05de\u05d5\u05e0\u05d4 \u05e9\u05dc\u05de\u05d4 \u05d1\u05d3\u05e7\u05d4 \u05d0\u05d7\u05ea
-    \u05e2\u05d9\u05e6\u05d5\u05d1: Dark Mode, \u05d2\u05e8\u05e4\u05d9\u05dd \u05d9\u05e4\u05d9\u05dd, \u05de\u05d3\u05d3\u05d9\u05dd \u05d1\u05d5\u05dc\u05d8\u05d9\u05dd
+    🎖️ דשבורד הפיקוד – תמונה שלמה בדקה אחת
+    עיצוב: Dark Mode, גרפים יפים, מדדי ביצוע מרכזיים עם הסברים בעברית
     """
-    st.markdown("""
-    <style>
-        .header-container {
-            background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
-            padding: 30px;
-            border-radius: 12px;
-            margin-bottom: 30px;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div class="header-container">
-        <h1 style='color: white; margin: 0;'>🎖\ufe0f Executive Summary \u2013 Pikud</h1>
-        <p style='color: rgba(255,255,255,0.9); margin: 8px 0 0 0;'>
-            Real-time operational intelligence \u00b7 Last updated: """ +
-            datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S') + """
-        </p>
+    import datetime as _dt
+    
+    # ===== Header Premium עם הסברים בעברית =====
+    st.markdown(f"""
+    <div style='background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%);
+                padding: 40px; border-radius: 16px; margin-bottom: 30px;
+                box-shadow: 0 10px 30px rgba(30,58,138,0.2);'>
+        <div style='display: flex; justify-content: space-between; align-items: center;'>
+            <div>
+                <h1 style='color: white; margin: 0; font-size: 36px; direction: ltr;'>
+                    🎖️ Executive Summary – Pikud
+                </h1>
+                <p style='color: rgba(255,255,255,0.9); font-size: 16px; font-weight: 600; margin: 5px 0 10px 0; direction: rtl;'>
+                    לוח מעקב פיקודי - תמונת מצב אוגדתית לאיתור מוקדי סיכון ניהוליים והלכתיים בחטיבות.
+                </p>
+                <p style='color: rgba(255,255,255,0.75); margin: 0; font-size: 14px; direction: ltr;'>
+                    Command Operations Intelligence · {_dt.datetime.now().strftime('%d/%m/%Y %H:%M:%S')}
+                </p>
+            </div>
+            <div style='text-align: right;'><div style='font-size: 48px;'>🎖️</div></div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
     # ===== KPI Cards =====
-    st.markdown("### 📊 Key Performance Indicators")
+    st.markdown("""
+    <h3 style='margin-bottom: 0;'>📊 Key Performance Indicators</h3>
+    <p style='color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 15px;'>
+        מדדי ביצוע מרכזיים - מספקים אינדיקציה מיידית לבריאות האוגדה: כמה דוחות מולאו, מה היקף החוסרים, ומה רמת הכשירות הממוצעת.
+    </p>
+    """, unsafe_allow_html=True)
+
     kpi_cols = st.columns(5)
 
     all_reports = load_reports_cached(None)
@@ -8114,20 +8201,20 @@ def render_executive_summary_dashboard():
     risk_status = "🔴 CRITICAL" if avg_risk >= 50 else "🟡 HIGH" if avg_risk >= 25 else "🟢 NORMAL"
 
     with kpi_cols[0]:
-        st.metric("🚧 Eruv Invalid", critical_bases,
-                  delta=f"\u2191 {critical_bases}" if critical_bases > 0 else "\u2705 \u05ea\u05e7\u05d9\u05df",
+        st.metric("🚧 Eruv Invalid", critical_bases, 
+                  delta=f"↑ {critical_bases} פסולים" if critical_bases > 0 else "✅ תקין",
                   delta_color="inverse" if critical_bases > 0 else "off")
     with kpi_cols[1]:
-        st.metric("🍽\ufe0f No Kashrut", no_kashrut,
-                  delta="\u05d3\u05d5\u05e8\u05e9 \u05d8\u05d9\u05e4\u05d5\u05dc" if no_kashrut > 0 else "\u05ea\u05e7\u05d9\u05df",
+        st.metric("🍽️ No Kashrut", no_kashrut,
+                  delta="בורש טיפול" if no_kashrut > 0 else "תקין",
                   delta_color="inverse" if no_kashrut > 0 else "off")
     with kpi_cols[2]:
         st.metric("📋 Open Deficits", open_deficits,
-                  delta=f"SLA: {count_overdue_deficits(accessible_units)}" if open_deficits > 0 else "\u05d1\u05e9\u05dc\u05d9\u05d8\u05d4",
+                  delta=f"SLA: {count_overdue_deficits(accessible_units)} חריגים" if open_deficits > 0 else "בשליטה",
                   delta_color="inverse")
     with kpi_cols[3]:
-        st.metric("\u23f0 Silent Units", silent_units,
-                  delta="\u05dc\u05d0 \u05d3\u05d9\u05d5\u05d5\u05d7\u05d5" if silent_units > 0 else "\u05db\u05d5\u05dc\u05dd \u05d1\u05e7\u05e9\u05e8",
+        st.metric("⏰ Silent Units", silent_units,
+                  delta="לא דיווחו" if silent_units > 0 else "כולם בקשר",
                   delta_color="inverse" if silent_units > 0 else "off")
     with kpi_cols[4]:
         st.metric("📊 Risk Index", f"{avg_risk:.0f}/100", delta=risk_status)
@@ -8139,6 +8226,12 @@ def render_executive_summary_dashboard():
 
     with col_gauge:
         st.markdown("### 🎯 Overall Risk Status")
+        st.markdown("""
+        <p style='color: #64748b; font-size: 14px; margin-top: -10px;'>
+            מדד סיכון כולל - משקלל את כלל הדיווחים מהשבועיים האחרונים לכדי ציון אחד. 
+            מעל 50 נחשב סיכון גבוה (אדום).
+        </p>
+        """, unsafe_allow_html=True)
         fig_gauge = go.Figure(data=[go.Indicator(
             mode="gauge+number+delta",
             value=avg_risk,
@@ -8162,6 +8255,11 @@ def render_executive_summary_dashboard():
 
     with col_issues:
         st.markdown("### 🚨 Critical Issues (Top Priority)")
+        st.markdown("""
+        <p style='color: #64748b; font-size: 14px; margin-top: -10px;'>
+            סוגיות קריטיות - ריכוז אוטומטי של תקלות חמורות הדורשות התערבות פיקודית מיידית.
+        </p>
+        """, unsafe_allow_html=True)
         critical_issues = []
 
         if not df.empty and 'e_status' in df.columns and 'base' in df.columns:
@@ -8194,7 +8292,12 @@ def render_executive_summary_dashboard():
     col_risk, col_trend = st.columns([1.2, 1])
 
     with col_risk:
-        st.markdown("### 🌡\ufe0f Unit Risk Matrix")
+        st.markdown("### 🌡️ Unit Risk Matrix")
+        st.markdown("""
+        <p style='color: #64748b; font-size: 14px; margin-top: -10px;'>
+            מטריצת סיכון יחידתית - השוואה בין היחידות השונות תחת הפיקוד לפי רמת הסיכון המחושבת שלהן.
+        </p>
+        """, unsafe_allow_html=True)
         if units_list:
             risk_rows = [{"unit": u,
                           "risk": calculate_operational_risk_index(u, df)['risk_score']}
@@ -8210,6 +8313,11 @@ def render_executive_summary_dashboard():
 
     with col_trend:
         st.markdown("### 📈 30-Day Trend")
+        st.markdown("""
+        <p style='color: #64748b; font-size: 14px; margin-top: -10px;'>
+            מגמת 30 יום - מעקב אחר כמות הליקויים לאורך זמן כדי לזהות שיפור או הידרדרות.
+        </p>
+        """, unsafe_allow_html=True)
         if not df.empty and 'date' in df.columns:
             try:
                 df_sorted = df.copy()
@@ -8237,6 +8345,11 @@ def render_executive_summary_dashboard():
 
     # ===== Row 3: Detailed deficit table =====
     st.markdown("### 📋 Detailed Deficit Breakdown")
+    st.markdown("""
+    <p style='color: #64748b; font-size: 14px; margin-top: -10px;'>
+        פירוט חוסרים מעמיק - רשימת כלל הפריטים החסרים בשטח, ממויינים לפי דחיפות (ימים מאז הגילוי).
+    </p>
+    """, unsafe_allow_html=True)
     all_open_deficits = get_open_deficits(accessible_units)
     if not all_open_deficits.empty and 'detected_date' in all_open_deficits.columns:
         all_open_deficits = all_open_deficits.copy()
