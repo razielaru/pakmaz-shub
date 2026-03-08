@@ -489,15 +489,14 @@ def render_gps_checkpoint(checkpoint_num: int, base: str):
         return True
 
     labels = {
-        1: ("🟢 נקודת פתיחה", "לחץ בתחילת הביקור — כשנכנסת למוצב"),
-        2: ("🟡 נקודת אמצע", "לחץ במהלך הביקור — בבדיקת המטבח או בית הכנסת"),
-        3: ("🔵 נקודת סיום", "לחץ לפני השליחה — כשאתה עומד לעזוב")
+        1: ("🟢 נקודת פתיחה", "תחילת הביקור — כשנכנסת למוצב"),
+        2: ("🟡 נקודת אמצע", "בדיקת המטבח או בית הכנסת"),
+        3: ("🔵 נקודת סיום", "סיום הביקור — כשאתה עומד לעזוב")
     }
     label, instruction = labels.get(checkpoint_num, ("📍", ""))
 
     with st.container():
         st.markdown(f"**{label}** — {instruction}")
-        st.info("👇 לחץ על כפתור המיקום של הדפדפן להמשך:", icon="ℹ️")
         loc = safe_geolocation(key=f"geo_widget_{checkpoint_num}_{base}")
         
         if isinstance(loc, dict) and loc.get("latitude"):
@@ -4640,6 +4639,19 @@ def render_morning_briefing(df: pd.DataFrame, unit: str):
     greeting = "בוקר טוב" if greeting_hour < 12 else "צהריים טובים" if greeting_hour < 17 else "ערב טוב"
 
     html_content = f"""
+    <style>
+        .briefing-scroll::-webkit-scrollbar {{
+            width: 4px;
+        }}
+        .briefing-scroll::-webkit-scrollbar-track {{
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+        }}
+        .briefing-scroll::-webkit-scrollbar-thumb {{
+            background: rgba(255,255,255,0.3);
+            border-radius: 10px;
+        }}
+    </style>
     <div style='background: linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%);
                 border-radius: 18px; padding: 24px; margin-bottom: 24px;
                 color: white; box-shadow: 0 10px 25px rgba(30,58,138,0.2); font-family: Arial, sans-serif; direction: rtl;'>
@@ -4662,8 +4674,8 @@ def render_morning_briefing(df: pd.DataFrame, unit: str):
             <div style='background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1); 
                         border-radius: 14px; padding: 16px; backdrop-filter: blur(4px);'>
                 <div style='font-size: 11px; opacity: 0.8; margin-bottom: 10px; font-weight: 600; text-transform: uppercase;'>🔥 דורש טיפול מיידי</div>
-                <div style='max-height: 100px; overflow-y: auto;'>
-                {"".join(f"<div style='font-size:13px; margin-bottom:6px; display:flex; align-items:center;'> <span style='margin-left:8px;'>{item['label']}</span> <span style='background:rgba(255,255,255,0.2); padding:2px 6px; border-radius:4px; font-size:11px;'>{item['base']}</span></div>" for item in burning_items[:5]) or
+                <div class='briefing-scroll' style='max-height: 160px; overflow-y: auto;'>
+                {"".join(f"<div style='font-size:13px; margin-bottom:6px; display:flex; align-items:center;'> <span style='margin-left:8px;'>{item['label']}</span> <span style='background:rgba(255,255,255,0.2); padding:2px 6px; border-radius:4px; font-size:11px;'>{item['base']}</span></div>" for item in burning_items[:10]) or
                  "<div style='font-size:13px; opacity:0.8;'>✅ הכל תקין בגזרה</div>"}
                 </div>
             </div>
@@ -4671,8 +4683,8 @@ def render_morning_briefing(df: pd.DataFrame, unit: str):
             <div style='background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1); 
                         border-radius: 14px; padding: 16px; backdrop-filter: blur(4px);'>
                 <div style='font-size: 11px; opacity: 0.8; margin-bottom: 10px; font-weight: 600; text-transform: uppercase;'>👤 לא דיווחו השבוע</div>
-                <div style='max-height: 100px; overflow-y: auto;'>
-                {"".join(f"<div style='font-size:13px; margin-bottom:4px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:2px;'>• {i}</div>" for i in inactive[:5]) or
+                <div class='briefing-scroll' style='max-height: 160px; overflow-y: auto;'>
+                {"".join(f"<div style='font-size:13px; margin-bottom:4px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:2px;'>• {i}</div>" for i in inactive[:10]) or
                  "<div style='font-size:13px; opacity:0.8;'>✅ כל המבקרים פעילים</div>"}
                 </div>
             </div>
@@ -4687,7 +4699,7 @@ def render_morning_briefing(df: pd.DataFrame, unit: str):
         </div>
     </div>
     """
-    st.components.v1.html(html_content, height=200)
+    st.components.v1.html(html_content, height=280)
 
 
 # ══════════════════════════════════════════════════════
