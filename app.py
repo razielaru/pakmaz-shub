@@ -30,7 +30,7 @@ def safe_geolocation(key: str) -> dict:
         return {}
     except Exception:
         return {}
-from typing import Tuple, Optional, List, Dict
+from typing import Tuple, Optional, List, Dict, Any
 import folium
 from streamlit_folium import st_folium
 try:
@@ -3839,14 +3839,16 @@ def analyze_photo_with_vision(image_bytes: bytes) -> dict:
         image_data = base64.b64encode(image_bytes).decode()
 
         prompt = """
-        אתה מומחה רבנות צבאית. נתח תמונה זו ודווח:
-        1. האם רואים בעיות כשרות גלויות? (ערבוב, אוכל לא כשר)
+        אתה מומחה רבנות צבאית (מומחה כשרות ועירוב). נתח תמונה זו מהשטח ודווח:
+        1. האם רואים בעיות כשרות גלויות? (ערבוב, אוכל לא כשר, חוסר הפרדה)
         2. מצב ניקיון המטבח (1-5)
-        3. האם רואים מזוזות / היעדרן
-        4. בעיות עירוב גלויות
-        5. ציון אמינות הדוח (האם התמונה תואמת את הדיווח?)
+        3. האם רואים מזוזות / היעדרן במקומות הנדרשים (דלתות)
+        4. בעיות עירוב גלויות (חוט קרוע, עמוד עקום)
+        5. ציון אמינות הדוח (האם התמונה תואמת את הדיווח המקובל בבסיס?)
+        6. הסבר מפורט בעברית על מה שאתה רואה, במיוחד אם יש בעיה.
         
-        ענה בפורמט JSON בלבד עם מפתחות באנגלית: kashrut_issues, kitchen_cleanliness, mezuzot, eruv_issues, reliability_score.
+        ענה בפורמט JSON בלבד עם מפתחות באנגלית: kashrut_issues, kitchen_cleanliness, mezuzot, eruv_issues, reliability_score, detailed_finding.
+        הסבר ה-detailed_finding חייב להיות בעברית שוטפת ומקצועית.
         """
 
         response = model.generate_content([
@@ -7486,6 +7488,7 @@ def render_unit_report():
         if photo:
             with st.spinner("🧠 המוח הפיקודי מנתח את התמונה..."):
                 vision_analysis = analyze_photo_with_vision(photo.getvalue())
+                st.session_state["last_vision_analysis"] = vision_analysis # Store for submission
                 if vision_analysis:
                     st.markdown("##### 👓 ממצאי AI מהתמונה:")
                     c_v1, c_v2 = st.columns(2)
@@ -7495,6 +7498,9 @@ def render_unit_report():
                     with c_v2:
                         st.write(f"🥩 כשרות: {vision_analysis.get('kashrut_issues', 'תקין')}")
                         st.write(f"🔍 אמינות דיווח: {vision_analysis.get('reliability_score', '?')}")
+                    
+                    if vision_analysis.get('detailed_finding'):
+                        st.info(f"🧠 **ניתוח המוח הפיקודי:** {vision_analysis.get('detailed_finding')}")
 
                     # 🔍 Vision-Text Crosscheck — "פוליגרף AI"
                     _contradictions = []
@@ -7511,12 +7517,14 @@ def render_unit_report():
                     except Exception:
                         pass
                     if _contradictions:
-                        st.warning("⚠️ **פוליגרף AI — זוהו סתירות בין התמונה לדיווח:**")
+                        st.warning("⚠️ **המוח הפיקודי זיהה סתירות אפשריות (למידע בלבד, לא חוסם שליחה):**")
                         for c in _contradictions:
-                            st.error(f"🚨 סתירה חמורה: {c}")
+                            st.write(f"🔍 {c}")
                         st.session_state["vision_contradictions"] = _contradictions
                     else:
                         st.session_state["vision_contradictions"] = []
+                    
+                    st.caption("ℹ️ ממצאי ה-AI נועדו לסייע ולשפר את איכות הדיווח. ניתן לשלוח את הדוח גם אם ישנן אזהרות.")
             # 🎉 Micro-interaction: הודיה על העלאת תמונה
             st.toast("📸 בום! תמונה פצצה, איזה תיעוד!", icon="📸")
 
@@ -7717,6 +7725,7 @@ def render_unit_report():
                     "honeypot_triggered": honeypot_failed,
                     "quick_fill_flags": str(_quick_fill_flags) if _quick_fill_flags else "",
                     "vision_contradictions": str(st.session_state.get("vision_contradictions", [])),
+                    "vision_detailed_finding": st.session_state.get("last_vision_analysis", {}).get("detailed_finding", ""),
                     "inspector_tip": inspector_tip,
                     **continuity_answers
                 }
@@ -7787,6 +7796,7 @@ def render_unit_report():
                                 "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone",
                                 "report_duration", "barcode_verified", "signature_url",
                                 "ai_risk_level", "ai_sla", "ai_action",
+                                "vision_detailed_finding",
                                 # שדות שיעורים של חטיבות סדירות
                                 "lesson_date", "lesson_location", "lesson_qty", "lesson_participants",
                                 "lesson_content", "lesson_instructors", "lesson_population",
@@ -8174,7 +8184,7 @@ def render_executive_summary_dashboard():
     </div>
     """, unsafe_allow_html=True)
 
-    # ===== KPI Cards =====
+    # ===== כרטיסי KPI פיקודיים =====
     st.markdown("""
     <h3 style='margin-bottom: 0;'>📊 Key Performance Indicators</h3>
     <p style='color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 15px;'>
@@ -8182,42 +8192,103 @@ def render_executive_summary_dashboard():
     </p>
     """, unsafe_allow_html=True)
 
-    kpi_cols = st.columns(5)
-
+    kpi_cols = st.columns(4)
+    
+    # חישוב אוגדות כפופות
+    subordinate_divisions = ["אוגדת 877", "אוגדת 96", "אוגדת 98"]
+    div_count = len(subordinate_divisions)
+    
     all_reports = load_reports_cached(None)
     df = pd.DataFrame(all_reports) if all_reports else pd.DataFrame()
     accessible_units = get_accessible_units(st.session_state.selected_unit, st.session_state.role)
 
-    critical_bases = len(df[df['e_status'] == '\u05e4\u05e1\u05d5\u05dc']) if not df.empty and 'e_status' in df.columns else 0
-    no_kashrut = len(df[df['k_cert'] == '\u05dc\u05d0']) if not df.empty and 'k_cert' in df.columns else 0
+    # Calculate metrics
+    issues_count = 0
+    if not df.empty:
+        if 'e_status' in df.columns: issues_count += len(df[df['e_status'] == 'פסול'])
+        if 'k_cert' in df.columns: issues_count += len(df[df['k_cert'] == 'לא'])
+
+    # Calculate average score (100 - risk)
+    div_scores = []
+    for d in subordinate_divisions:
+         try:
+             s = 100 - calculate_operational_risk_index(d, df)['risk_score']
+             div_scores.append(s)
+         except Exception:
+             div_scores.append(0)
+    
+    avg_score = sum(div_scores) / len(div_scores) if div_scores else 0
+    risk_status = "🔴 CRITICAL" if (100 - avg_score) >= 50 else "🟡 HIGH" if (100 - avg_score) >= 25 else "🟢 NORMAL"
+
+    # Recalculate metrics for display
+    critical_bases = len(df[df['e_status'] == 'פסול']) if not df.empty and 'e_status' in df.columns else 0
+    no_kashrut = len(df[df['k_cert'] == 'לא']) if not df.empty and 'k_cert' in df.columns else 0
     open_deficits = get_deficit_statistics(accessible_units)['total_open'] if not df.empty else 0
     silent_units = count_silent_units(df) if not df.empty else 0
-
     units_list = df['unit'].unique().tolist() if not df.empty else []
-    avg_risk = (
-        sum(calculate_operational_risk_index(u, df)['risk_score'] for u in units_list) / len(units_list)
-        if units_list else 0
-    )
-    risk_status = "🔴 CRITICAL" if avg_risk >= 50 else "🟡 HIGH" if avg_risk >= 25 else "🟢 NORMAL"
 
     with kpi_cols[0]:
-        st.metric("🚧 Eruv Invalid", critical_bases, 
-                  delta=f"↑ {critical_bases} פסולים" if critical_bases > 0 else "✅ תקין",
-                  delta_color="inverse" if critical_bases > 0 else "off")
+        st.metric(label="🏛️ Subordinate Divisions", value=div_count, 
+                  delta="אוגדות תחת הפיקוד", delta_color="off")
+
     with kpi_cols[1]:
-        st.metric("🍽️ No Kashrut", no_kashrut,
-                  delta="בורש טיפול" if no_kashrut > 0 else "תקין",
-                  delta_color="inverse" if no_kashrut > 0 else "off")
+        total_reports = len(df)
+        avg_reports = total_reports / div_count if div_count > 0 else 0
+        st.metric(label="📋 Total Reports", value=total_reports, 
+                  delta=f"ממוצע {avg_reports:.1f} לאוגדה", delta_color="normal")
+
     with kpi_cols[2]:
-        st.metric("📋 Open Deficits", open_deficits,
-                  delta=f"SLA: {count_overdue_deficits(accessible_units)} חריגים" if open_deficits > 0 else "בשליטה",
-                  delta_color="inverse")
+        st.metric(label="🔴 Open Issues", value=issues_count,
+                  delta="בעיות ליבה הדורשות התערבות" if issues_count > 0 else "הכל תקין",
+                  delta_color="inverse" if issues_count > 0 else "normal")
+
     with kpi_cols[3]:
-        st.metric("⏰ Silent Units", silent_units,
-                  delta="לא דיווחו" if silent_units > 0 else "כולם בקשר",
-                  delta_color="inverse" if silent_units > 0 else "off")
-    with kpi_cols[4]:
-        st.metric("📊 Risk Index", f"{avg_risk:.0f}/100", delta=risk_status)
+        score_status = "🟢 מצוין" if avg_score >= 80 else "🟡 סביר" if avg_score >= 60 else "🔴 טעון שיפור"
+        st.metric(label="📊 Avg Performance", value=f"{avg_score:.0f}/100", delta=score_status,
+                  delta_color="normal" if avg_score >= 70 else "inverse")
+        
+    st.markdown("---")
+
+    # ===== Subordinate Divisions Grid =====
+    st.markdown("""
+    <h3 style='margin-bottom: 0;'>🏛️ Subordinate Divisions Status</h3>
+    <p style='color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 15px;'>
+        כרטיסיית ניתוח אוגדתית - פירוט מדויק של כמות הדוחות, הציון, והחוסרים הפתוחים לכל אוגדה כפופה.
+    </p>
+    """, unsafe_allow_html=True)
+
+    grid_cols = st.columns(3)
+    for idx, div_name in enumerate(subordinate_divisions):
+        div_df = df[df['unit'].str.contains(div_name, na=False)] if not df.empty else pd.DataFrame()
+        score = 100 - calculate_operational_risk_index(div_name, df)['risk_score']
+        reports = len(div_df)
+        try:
+             # This is a bit complex as it needs unit-level access
+             # For now, we'll estimate or filter
+             open_def_count = len(get_open_deficits([u for u in ALL_UNITS if div_name in u]))
+        except:
+             open_def_count = 0
+             
+        border_color = "#10b981" if score >= 80 else "#f59e0b" if score >= 60 else "#ef4444"
+        badge = "✅ תקין ומבצעי" if score >= 80 else "👍 דורש השלמות" if score >= 60 else "⚠️ טעון התערבות"
+        
+        with grid_cols[idx % 3]:
+            st.markdown(f"""
+            <div style='background:linear-gradient(135deg,#f8fafc 0%,#e2e8f0 100%);
+                padding:20px;border-radius:12px;border-left:4px solid {border_color};
+                box-shadow:0 4px 12px rgba(0,0,0,0.1);margin-bottom:12px;'>
+                <h4 style='margin:0 0 12px 0;color:#0f172a;'>{div_name}</h4>
+                <div style='display:grid;grid-template-columns:1fr 1fr;gap:12px;'>
+                    <div><div style='color:#64748b;font-size:12px;'>ציון כשירות</div>
+                        <div style='font-size:24px;font-weight:bold;color:#0f172a;'>{score:.0f}</div></div>
+                    <div><div style='color:#64748b;font-size:12px;'>דוחות במערכת</div>
+                        <div style='font-size:24px;font-weight:bold;color:#0f172a;'>{reports}</div></div>
+                    <div><div style='color:#64748b;font-size:12px;'>חוסרים פתוחים</div>
+                        <div style='font-size:24px;font-weight:bold;color:{border_color};'>{open_def_count}</div></div>
+                </div>
+                <div style='margin-top:12px;padding-top:12px;border-top:1px solid #cbd5e1;
+                    font-size:12px;color:{border_color};font-weight:bold;'>{badge}</div>
+            </div>""", unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -8229,25 +8300,23 @@ def render_executive_summary_dashboard():
         st.markdown("""
         <p style='color: #64748b; font-size: 14px; margin-top: -10px;'>
             מדד סיכון כולל - משקלל את כלל הדיווחים מהשבועיים האחרונים לכדי ציון אחד. 
-            מעל 50 נחשב סיכון גבוה (אדום).
+            מדד זה הפוך לציון הכשירות (ציון גבוה = סיכון נמוך).
         </p>
         """, unsafe_allow_html=True)
         fig_gauge = go.Figure(data=[go.Indicator(
-            mode="gauge+number+delta",
-            value=avg_risk,
-            title={'text': "Risk Level"},
+            mode="gauge+number",
+            value=avg_score,
+            title={'text': "ציון פיקודי משוקלל"},
             domain={'x': [0, 1], 'y': [0, 1]},
-            delta={'reference': 30},
             gauge={
                 'axis': {'range': [None, 100]},
-                'bar': {'color': "#ef4444"},
+                'bar': {'color': "#1e3a8a"},
                 'steps': [
-                    {'range': [0, 25], 'color': "#d1fae5"},
+                    {'range': [0, 25], 'color': "#fee2e2"},
                     {'range': [25, 50], 'color': "#fef3c7"},
-                    {'range': [50, 75], 'color': "#fed7aa"},
-                    {'range': [75, 100], 'color': "#fee2e2"}
+                    {'range': [50, 100], 'color': "#d1fae5"}
                 ],
-                'threshold': {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 50}
+                'threshold': {'line': {'color': "green", 'width': 4}, 'thickness': 0.75, 'value': 70}
             }
         )])
         fig_gauge.update_layout(paper_bgcolor='rgba(0,0,0,0)', height=350)
@@ -8263,18 +8332,18 @@ def render_executive_summary_dashboard():
         critical_issues = []
 
         if not df.empty and 'e_status' in df.columns and 'base' in df.columns:
-            for base in df[df['e_status'] == '\u05e4\u05e1\u05d5\u05dc']['base'].unique()[:3]:
-                critical_issues.append({"icon": "🚧", "title": f"Eruv Invalid \u2013 {base}", "color": "#dc2626"})
+            for base in df[df['e_status'] == 'פסול']['base'].unique()[:3]:
+                critical_issues.append({"icon": "🚧", "title": f"עירוב פסול – {base}", "color": "#dc2626"})
 
         if not df.empty and 'k_cert' in df.columns and 'base' in df.columns:
-            for base in df[df['k_cert'] == '\u05dc\u05d0']['base'].unique()[:2]:
-                critical_issues.append({"icon": "🍽\ufe0f", "title": f"No Kashrut \u2013 {base}", "color": "#f59e0b"})
+            for base in df[df['k_cert'] == 'לא']['base'].unique()[:2]:
+                critical_issues.append({"icon": "🍽️", "title": f"ללא תעודת כשרות – {base}", "color": "#f59e0b"})
 
         overdue_count = count_overdue_deficits(accessible_units)
         if overdue_count > 0:
-            critical_issues.append({"icon": "\u23f0", "title": f"{overdue_count} Deficits Over SLA", "color": "#f59e0b"})
+            critical_issues.append({"icon": "⏰", "title": f"{overdue_count} חוסרים בחריגת SLA", "color": "#f59e0b"})
         if silent_units > 0:
-            critical_issues.append({"icon": "📡", "title": f"{silent_units} Units Not Reporting", "color": "#3b82f6"})
+            critical_issues.append({"icon": "📡", "title": f"{silent_units} יחידות שלא דיווחו", "color": "#3b82f6"})
 
         if critical_issues:
             for issue in critical_issues[:5]:
@@ -8284,7 +8353,46 @@ def render_executive_summary_dashboard():
                     <strong>{issue["icon"]} {issue["title"]}</strong>
                 </div>""", unsafe_allow_html=True)
         else:
-            st.success("\u2705 No critical issues detected")
+            st.success("✅ לא זוהו בעיות קריטיות")
+    
+    st.markdown("---")
+
+    # ===== Compliance Heatmap =====
+    st.markdown("""
+    <h3 style='margin-bottom: 0;'>🌡️ Compliance Matrix</h3>
+    <p style='color: #64748b; font-size: 14px; margin-top: 0; margin-bottom: 15px;'>
+        מפת חום ציות - מראה אחוז עמידה בדרישות לפי קטגוריה (כשרות, עירוב, ניקיון, לוח) עבור כל אוגדה. ירוק = תקין, אדום = דורש טיפול.
+    </p>
+    """, unsafe_allow_html=True)
+
+    heatmap_data = []
+    compliance_metrics = {'k_cert': 'כשרות', 'e_status': 'עירוב', 's_clean': 'ניקיון', 's_board': 'לוח'}
+    for div_name in subordinate_divisions:
+        div_df = df[df['unit'].str.contains(div_name, na=False)] if not df.empty else pd.DataFrame()
+        # Initialize with Any typed dict to avoid lint errors
+        row_data: dict[str, Any] = {"Division": str(div_name)}
+        for col_name, metric_name in compliance_metrics.items():
+            val = 0
+            if not div_df.empty and col_name in div_df.columns and len(div_df) > 0:
+                if col_name == 'k_cert':
+                    ok = len(div_df[div_df[col_name] == 'כן'])
+                elif col_name == 'e_status':
+                    ok = len(div_df[div_df[col_name] == 'תקין'])
+                elif col_name == 's_clean':
+                    ok = len(div_df[div_df[col_name].isin(['טוב', 'מצוין'])])
+                else:
+                    ok = len(div_df[div_df[col_name] == 'כן'])
+                val = int(ok / len(div_df) * 100)
+            row_data[str(metric_name)] = val
+        heatmap_data.append(row_data)
+
+    if heatmap_data:
+        heatmap_df = pd.DataFrame(heatmap_data).set_index('Division')
+        fig_hm = px.imshow(heatmap_df, color_continuous_scale='RdYlGn', text_auto='.0f',
+                           aspect='auto', color_continuous_midpoint=50, labels={'color': 'ציות %', 'x': 'קטגוריה', 'y': 'אוגדה'})
+        fig_hm.update_layout(height=350, font=dict(color='#1e293b'),
+                              paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        st.plotly_chart(fig_hm, use_container_width=True)
 
     st.markdown("---")
 
@@ -8333,7 +8441,8 @@ def render_executive_summary_dashboard():
                         issues += int((day_df['k_cert'] == '\u05dc\u05d0').sum())
                     trend_data.append({"date": d, "issues": issues})
                 trend_df = pd.DataFrame(trend_data)
-                fig_trend = px.line(trend_df, x='date', y='issues', markers=True)
+                fig_trend = px.line(trend_df, x='date', y='issues', markers=True,
+                                    labels={'issues': 'כמות ליקויים', 'date': 'תאריך'})
                 fig_trend.update_layout(height=350, showlegend=False, hovermode='x unified',
                                         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 fig_trend.update_traces(line_color='#3b82f6', marker_color='#60a5fa')
@@ -8374,7 +8483,7 @@ def render_executive_summary_dashboard():
             priority = 1 if days > 14 else 2 if days > 7 else 3
             priority_icon = "🔴" if priority == 1 else "🟡" if priority == 2 else "🟢"
             row_bg = "#fee2e2" if priority == 1 else "#fef3c7" if priority == 2 else "#f0fdf4"
-            status = "\u26a0\ufe0f OVERDUE" if days > 14 else "\u23f0 URGENT" if days > 7 else "\u2705 NEW"
+            status = "⚠️ חריגת SLA" if days > 14 else "⏰ דחוף" if days > 7 else "✅ חדש"
             table_html += f"""
             <tr style='background:{row_bg};'>
                 <td style='padding:10px;border:1px solid #e2e8f0;'>{priority_icon}</td>
@@ -8395,9 +8504,9 @@ def render_executive_summary_dashboard():
     render_weekly_insights_control_panel(key_suffix="_pikud")
     st.markdown("---")
     c1, c2, c3 = st.columns(3)
-    with c1: st.metric("📊 Total Reports", len(df) if not df.empty else 0)
-    with c2: st.metric("🎯 Active Units", df['unit'].nunique() if not df.empty else 0)
-    with c3: st.metric("🔄 Last Refresh", datetime.datetime.now().strftime('%H:%M:%S'))
+    with c1: st.metric("📊 סה\"כ דוחות", len(df) if not df.empty else 0)
+    with c2: st.metric("🎯 יחידות פעילות", df['unit'].nunique() if not df.empty else 0)
+    with c3: st.metric("🔄 רענון אחרון", _dt.datetime.now().strftime('%H:%M:%S'))
 
 
 def render_ogda_summary_dashboard():
