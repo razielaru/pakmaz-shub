@@ -7582,9 +7582,8 @@ def render_unit_report():
                 save_draft_locally(draft_data, f"{unit}_last_draft")
     
         with col_submit:
-            # הלחצן פעיל רק אם יש חתימה ואין אזהרות חובה
-            is_submit_disabled = (not sig_url) or (len(_mandatory_warnings) > 0)
-            submitted = st.button("🚀 שגר דיווח", type="primary", use_container_width=True, key="submit_new_report", disabled=is_submit_disabled)
+            # הלחצן תמיד פעיל כדי לאפשר למשתמש לקבל משוב על מה חסר
+            submitted = st.button("🚀 שגר דיווח", type="primary", use_container_width=True, key="submit_new_report")
 
 
         if submitted:
@@ -7616,10 +7615,8 @@ def render_unit_report():
                     if _telapsed < _tmin:
                         _quick_fill_flags.append(f"{_tlabel} — {_telapsed:.1f} שניות")
             if _quick_fill_flags:
-                st.warning(
-                    "⚡ **זיהינו מילוי מהיר מדי בטאבים הבאים** — אנא ודא שעברת על כל הסעיפים:\n" +
-                    "\n".join(f"• {f}" for f in _quick_fill_flags)
-                )
+                # Note: We will handle this in the final check below
+                pass
 
             # בדיקת יום בשבוע - חמישי (3) ושישי (4) ב-Python weekday
             current_weekday = datetime.datetime.now().weekday()
@@ -7660,6 +7657,20 @@ def render_unit_report():
                 for item in missing_explanations:
                     st.warning(f"⚠️ {item} - חובה לפרט סיבה בתיבת הטקסט")
             
+            # 🆕 בדיקת תנאי חובה (אזהרות שהוגדרו למעלה)
+            elif _mandatory_warnings:
+                st.error("❌ **לא ניתן לשלוח את הדוח! חסרים פרטי חובה:**")
+                for w in _mandatory_warnings:
+                    st.error(w)
+                st.info("💡 אנא השלם את כל השדות המסומנים ב-⚠️ ועבור שוב על הלשוניות.")
+
+            # 🆕 בדיקת מילוי מהיר (speed-check)
+            elif _quick_fill_flags:
+                st.error("⚡ **לא ניתן לשלוח - זיהינו מילוי מהיר מדי!**")
+                st.info("אנא וודא שעברת על כל הסעיפים ביסודיות ולא רק סימנת 'וי'.")
+                for f in _quick_fill_flags:
+                    st.warning(f"⚠️ {f}")
+
             # בדיקת חובת תמונת נאמן כשרות בחמישי-שישי
             elif is_thursday_or_friday and k_shabbat_supervisor == "כן" and not k_shabbat_photo:
                 st.error("⚠️ **חובה להעלות תמונת נאמן כשרות בימי חמישי ושישי!**")
