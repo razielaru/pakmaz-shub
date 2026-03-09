@@ -8229,9 +8229,9 @@ def render_unit_report():
                     for field in new_fields:
                         clean_data.pop(field, None)
                     
-                    # גם שדות מה-Continuity (אם קיימים)
-                    if 'continuity_answers' in locals():
-                        for k in continuity_answers.keys():
+                    # הסרה בטוחה של כל שדות ה-hq_ וה-continuity מתוך ה-data
+                    for k in list(clean_data.keys()):
+                        if k.startswith('hq_') or k.startswith('cont_') or k in continuity_answers:
                             clean_data.pop(k, None)
                             
                     try:
