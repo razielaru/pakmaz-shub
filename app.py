@@ -21,48 +21,44 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")
 
 def render_gps_button(key: str = "gps") -> tuple:
-    # 1. בדיקה אם יש לנו מיקום נעול ב"כספת" (מפתח שלא קשור לאף ווידג'ט)
     vault_lat_key = f"VAULT_LAT_{key}"
     vault_lon_key = f"VAULT_LON_{key}"
     
+    # 1. אם יש מיקום בכספת, נציג אותו מתוך השרת ונחזיר
     if st.session_state.get(vault_lat_key) and st.session_state.get(vault_lon_key):
         lat = st.session_state[vault_lat_key]
         lon = st.session_state[vault_lon_key]
         col1, col2 = st.columns([4,1])
         with col1:
-            st.success(f"✅ מיקום נקלט ({lat:.4f}, {lon:.4f})")
+            st.success(f"✅ מיקום נקלט וננעל בשרת ({lat:.4f}, {lon:.4f})")
         with col2:
-            if st.button("🔄", key=f"reset_gps_{key}"):
+            if st.button("🔄 רענן", key=f"reset_gps_{key}"):
                 del st.session_state[vault_lat_key]
                 del st.session_state[vault_lon_key]
                 st.rerun()
         return lat, lon
 
-    # 2. שדות נסתרים שה-JS ימלא (עם מפתחות ווידג'ט זמניים בלבד!)
+    # 2. שדות נסתרים להעברת הנתונים
     st.markdown("""
         <style>
         div[data-testid="stTextInput"]:has(input[aria-label="lat"]), 
         div[data-testid="stTextInput"]:has(input[aria-label="lon"]) {
-            width: 0 !important; height: 0 !important; opacity: 0 !important;
-            margin: 0 !important; padding: 0 !important; overflow: hidden !important; min-height: 0 !important; border: none !important;
+            width: 0 !important; height: 0 !important; opacity: 0 !important; margin: 0 !important; padding: 0 !important;
         }
         </style>
     """, unsafe_allow_html=True)
     
-    widget_lat_key = f"_temp_widget_lat_{key}"
-    widget_lon_key = f"_temp_widget_lon_{key}"
+    widget_lat_key = f"_temp_lat_{key}"
+    widget_lon_key = f"_temp_lon_{key}"
     
     lat_val = st.text_input("lat", value="", key=widget_lat_key, label_visibility="hidden")
     lon_val = st.text_input("lon", value="", key=widget_lon_key, label_visibility="hidden")
 
-    # קוד ה-JS נשאר זהה
+    # 3. הכפתור והזרקת הנתונים (כולל דימוי לחיצת Enter!)
     st.components.v1.html("""
     <div dir="rtl" style="font-family:Arial, sans-serif;">
-        <button id="gpsBtn" onclick="getGPS()"
-            style="width:100%; background:#1d4ed8; color:white; border:none;
-                   padding:14px; border-radius:10px; font-size:16px; 
-                   cursor:pointer; font-family:Arial;">
-            📍 שלח מיקום
+        <button id="gpsBtn" onclick="getGPS()" style="width:100%; background:#1d4ed8; color:white; border:none; padding:14px; border-radius:10px; font-size:16px; cursor:pointer; font-weight:bold;">
+            📍 לחץ לקבלת מיקום
         </button>
         <div id="msg" style="margin-top:8px; font-size:13px; color:#64748b; text-align:right;"></div>
     </div>
@@ -71,15 +67,11 @@ def render_gps_button(key: str = "gps") -> tuple:
     function getGPS() {
         var btn = document.getElementById('gpsBtn');
         var msg = document.getElementById('msg');
-        btn.innerText = '🔄 מחפש מיקום...';
-        btn.disabled = true;
-        btn.style.background = '#94a3b8';
+        btn.innerText = '🔄 מושך נתונים...';
         
         if (!navigator.geolocation) {
-            msg.innerText = '❌ GPS לא נתמך';
-            btn.innerText = '📍 שלח מיקום';
-            btn.disabled = false;
-            btn.style.background = '#1d4ed8';
+            msg.innerText = '❌ GPS לא נתמך בדפדפן'; 
+            btn.innerText = '📍 נסה שוב';
             return;
         }
         
@@ -87,55 +79,52 @@ def render_gps_button(key: str = "gps") -> tuple:
             function(pos) {
                 var lat = pos.coords.latitude;
                 var lon = pos.coords.longitude;
-                msg.innerHTML = '✅ מיקום נמצא';
                 btn.style.background = '#10b981';
-                btn.innerText = '✅ מיקום נשמר';
+                btn.innerText = '✅ מיקום נתפס (מעביר לשרת...)';
                 
                 var doc = window.parent.document;
                 var inputs = doc.querySelectorAll('input[type="text"]');
                 var latSet = false, lonSet = false;
-                var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
 
                 inputs.forEach(function(inp) {
-                    if (!latSet && inp.value === '' && inp.closest('[data-testid]') && inp.getAttribute('aria-label') === 'lat') {
-                        nativeInputValueSetter.call(inp, String(lat));
+                    if (!latSet && inp.value === '' && inp.getAttribute('aria-label') === 'lat') {
+                        setter.call(inp, String(lat));
                         inp.dispatchEvent(new Event('input', {bubbles:true}));
                         inp.dispatchEvent(new Event('change', {bubbles:true}));
+                        // פקודת האנטר - בלעדיה פייתון פשוט מתעלם מהנתון!
+                        inp.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true}));
                         latSet = true;
                     }
                     if (!lonSet && inp.value === '' && inp.getAttribute('aria-label') === 'lon') {
-                        nativeInputValueSetter.call(inp, String(lon));
+                        setter.call(inp, String(lon));
                         inp.dispatchEvent(new Event('input', {bubbles:true}));
                         inp.dispatchEvent(new Event('change', {bubbles:true}));
+                        inp.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true}));
                         lonSet = true;
                     }
                 });
             },
             function(err) {
-                msg.innerText = '❌ שגיאת מיקום, נסה שוב';
+                msg.innerText = '❌ שגיאת מיקום: אנא אשר הרשאות';
                 btn.innerText = '📍 נסה שוב';
-                btn.disabled = false;
-                btn.style.background = '#ef4444';
             },
             { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
     }
     </script>
-    """, height=100)
+    """, height=90)
 
-    # 3. תפיסת המידע מהווידג'טים הזמניים ושמירתו ב"כספת" לצמיתות!
+    # 4. חטיפת הנתון בפייתון ושמירתו לנצח בכספת
     try:
         if lat_val and lon_val:
-            lat = float(lat_val)
-            lon = float(lon_val)
-            if 29.0 <= lat <= 34.0 and 34.0 <= lon <= 36.5:
-                # הנה הקסם: שומרים את זה למפתח נפרד לחלוטין שאינו קשור לווידג'ט
-                st.session_state[vault_lat_key] = lat
-                st.session_state[vault_lon_key] = lon
-                st.rerun()
-            else:
-                st.warning(f"⚠️ מיקום מחוץ לגבולות ישראל ({lat:.3f}, {lon:.3f})")
-    except Exception:
+            lat_f = float(lat_val)
+            lon_f = float(lon_val)
+            # שמירה בכספת
+            st.session_state[vault_lat_key] = lat_f
+            st.session_state[vault_lon_key] = lon_f
+            st.rerun()
+    except Exception as e:
         pass
 
     return None, None
@@ -7192,17 +7181,10 @@ def render_unit_report():
 
     st.markdown("### 📍 מיקום ותאריך")
     
-    # 🆕 הצגת GPS אם נשמר, אחרת מראה כפתור
-    gps_lat_sess = st.session_state.get(f"gps_lat_main")
-    gps_lon_sess = st.session_state.get(f"gps_lon_main")
+    # הפעלת מנגנון המיקום החדש
+    gps_lat, gps_lon = render_gps_button(key="main")
 
-    if gps_lat_sess and gps_lon_sess:
-        gps_lat, gps_lon = gps_lat_sess, gps_lon_sess
-        st.success(f"✅ מיקום נשמר: {gps_lat:.5f}, {gps_lon:.5f}")
-    else:
-        gps_lat, gps_lon = render_gps_button(key="main")
-
-    if not (gps_lat_sess and gps_lon_sess) and gps_lat:
+    if gps_lat:
         # ✅ הדפסה ללוג (תוכל לראות בקונסול של Streamlit)
         print(f"🔍 DEBUG - GPS נקלט: lat={gps_lat}, lon={gps_lon}, base={base if 'base' in locals() else 'לא הוגדר'}")
         
@@ -7224,7 +7206,7 @@ def render_unit_report():
             st.warning(f"⚠️ **מרחק בינוני:** {nearest_base} ({distance:.1f} ק\"מ) - וודא שהמיקום נכון")
         else:
             st.error(f"🚨 **התראה:** {distance:.1f} ק\"מ מ-{nearest_base} - מיקום חריג!")
-    elif not (gps_lat_sess and gps_lon_sess):
+    elif not gps_lat:
         pass # Waiting for GPS to be captured
     
     # --- ניהול ברקוד למציאת מיקום (סריקה חיה בלבד) ---
@@ -7440,7 +7422,7 @@ def render_unit_report():
 
     tab1, tab_lounge, tab2, tab3, tab4, tab5 = st.tabs([
         "🍽️ כשרות",
-        "☕ טרקלין/ויקוק ",
+        "☕ טרקלין/וויקוק תוסיף/ הגנ״ש פילבוקס",
         "🕍 ביהכ\"נ ועירוב",
         "📜 נהלים ורוח",
         "📖 שיחת חתך",
@@ -7468,21 +7450,7 @@ def render_unit_report():
                     st.info(voice_text)
                     if st.button("📝 העתק להערות הכלליות"):
                         st.session_state.voice_note_transcription = voice_text
-        _show_pillbox = unit not in NO_LOUNGE_WECOOK_UNITS
-        if _show_pillbox:
-            st.markdown("#### 🏠 פילבוקס / הגנ״ש")
-            c1, c2 = st.columns(2)
-            p_pakal = radio_with_explanation("האם יש פק״ל רבנות?", "p1", col=c1)
-            p_marked = radio_with_explanation("האם הכלים מסומנים?", "p2", col=c2)
-            c1, c2 = st.columns(2)
-            # שאלת קונטרול – מתחלפת כל 3 שבועות
-            if _flip == 0:
-                p_mix = radio_with_explanation("האם זוהה ערבוב כלים?", "p3", col=c1)
-            else:
-                p_mix = radio_with_explanation("האם זוהה ערבוב כלים?", "p3", col=c1)
-            p_kasher = radio_with_explanation("האם נדרשת הכשרה כלים?", "p4", col=c2)
-        else:
-            p_pakal = p_marked = p_mix = p_kasher = "לא רלוונטי"
+        # פילבוקס הועבר לטאב טרקלין/ויקוק
 
         st.markdown("#### 🍽️ מטבח")
         k_cook_type = st.selectbox("סוג מטבח", ["מבשל", "מחמם"])
@@ -7626,7 +7594,7 @@ def render_unit_report():
         st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
             <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[3].click()" 
                 style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
-                ⬅️ עבור לטאב הבא: ☕ טרקלין/ויקוק
+                ⬅️ עבור לטאב הבא: ☕ טרקלין/וויקוק תוסיף/ הגנ״ש פילבוקס
             </button></div>""", height=70)
 
     # ===========================================
@@ -7652,10 +7620,23 @@ def render_unit_report():
             c1, c2 = st.columns(2)
             w_procedure = radio_with_explanation("האם עובד לפי פקודה?", "w3", col=c1)
             w_guidelines = radio_with_explanation("האם יש הנחיות?", "w4", col=c2)
+            
+            st.markdown("#### 🏠 פילבוקס / הגנ״ש")
+            c1, c2 = st.columns(2)
+            p_pakal = radio_with_explanation("האם יש פק״ל רבנות?", "p1", col=c1)
+            p_marked = radio_with_explanation("האם הכלים מסומנים?", "p2", col=c2)
+            c1, c2 = st.columns(2)
+            # שאלת קונטרול – מתחלפת כל 3 שבועות
+            if _flip == 0:
+                p_mix = radio_with_explanation("האם זוהה ערבוב כלים?", "p3", col=c1)
+            else:
+                p_mix = radio_with_explanation("האם זוהה ערבוב כלים?", "p3", col=c1)
+            p_kasher = radio_with_explanation("האם נדרשת הכשרה כלים?", "p4", col=c2)
         else:
             t_private = t_kitchen_tools = t_procedure = t_friday = t_app = "לא רלוונטי"
             w_location = ""
             w_private = w_kitchen_tools = w_procedure = w_guidelines = "לא רלוונטי"
+            p_pakal = p_marked = p_mix = p_kasher = "לא רלוונטי"
 
         st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
             <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[4].click()" 
@@ -8005,6 +7986,16 @@ def render_unit_report():
         if not missing:
             _mandatory_warnings.append("⚠️ חובה למלא את שדה הפירוט (במידה ואין חוסרים כתוב 'אין')")
 
+        # ⚠️ חובות לחטמ"רים בלבד (Wave latest)
+        if not is_combat_brigade:
+            if k_cert == "לא יודע / לא בדקתי" or not k_cert:
+                if "⚠️ חובה לבדוק תעודת כשרות (לשונית 🍽️ כשרות)" not in _mandatory_warnings:
+                    _mandatory_warnings.append("⚠️ חובה לבדוק תעודת כשרות (לשונית 🍽️ כשרות)")
+            if s_havdala == "לא יודע / לא בדקתי" or not s_havdala:
+                _mandatory_warnings.append("⚠️ חובה לבדוק ערכת הבדלה ונרות שבת (לשונית 🕍 ביהכ\"נ ועירוב)")
+            if r_sg == "לא יודע / לא בדקתי" or not r_sg:
+                _mandatory_warnings.append("⚠️ חובה לבדוק הוראות רבנות בש.ג (לשונית 📜 נהלים ורוח)")
+
         # 🧠 ניתוח ראייה ממוחשבת (Vision AI)
         if photo:
             with st.spinner("🧠 המוח הפיקודי מנתח את התמונה..."):
@@ -8197,13 +8188,13 @@ def render_unit_report():
                 st.error("⚠️ **חובה להעלות תמונת נאמן כשרות בימי חמישי ושישי!**")
                 st.warning("💡 נא להעלות תמונה של נאמן הכשרות בשדה המתאים למעלה")
             
-            # --- משיכת המיקום ישירות מהכספת חסינת-המחיקות ---
+            # --- משיכת המיקום ישירות מהכספת ---
             check_lat = st.session_state.get("VAULT_LAT_main")
             check_lon = st.session_state.get("VAULT_LON_main")
             
             if not is_combat_brigade and not (check_lat and check_lon):
                 st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח בחטמ\"ר!")
-                st.warning("💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום (הכפתור צריך להיות ירוק)")
+                st.warning("💡 שים לב: עליך ללחוץ על 'קבל מיקום' ולראות את ההודעה הירוקה המאשרת שהמיקום ננעל בשרת לפני השליחה.")
             
             elif not base or not inspector or not photo:
                 st.error("❌ חסרים פרטי חובה בסיסיים לשליחת הדוח")
