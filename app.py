@@ -3077,12 +3077,8 @@ def generate_inspector_stats(df):
     if df.empty or 'inspector' not in df.columns:
         return None
     
-    # סינון דוחות מהחודש הנוכחי
-    today = pd.Timestamp.now()
-    current_month = df[df['date'].dt.month == today.month]
-    
-    if current_month.empty:
-        current_month = df  # אם אין דוחות החודש, קח הכל
+    # נשתמש בכל הדאטה שסופק (ללא סינון חודשי מחמיר שהעלים נתונים)
+    current_month = df
     
     # ספירת דוחות לפי מבקר
     inspector_counts = current_month['inspector'].value_counts()
@@ -8341,7 +8337,7 @@ def render_unit_report():
             # מדדים עיקריים
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("📝 סה\"כ דוחות החודש", stats['total_reports'])
+                st.metric("📝 סה\"כ דוחות", stats['total_reports'])
             with col2:
                 st.metric("👥 מבקרים פעילים", stats['unique_inspectors'])
             with col3:
