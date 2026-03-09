@@ -16,7 +16,7 @@ import shutil
 import os
 import random
 import streamlit.components.v1 as components
-from streamlit_geolocation import streamlit_geolocation
+from streamlit_js_eval import streamlit_js_eval, get_geolocation
 st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")  # title intentionally unchanged
 
 
@@ -561,16 +561,17 @@ def render_gps_checkpoint(checkpoint_num: int, base: str):
     
     st.markdown(f"**{label}** — {instruction}")
     
-    # שימוש ברכיב הסטנדרטי והיציב לזיהוי מיקום
-    loc_data = streamlit_geolocation(key=f"gps_cp_{checkpoint_num}_{base}")
+    # שימוש ב-streamlit-js-eval לקבלת מיקום (יציב יותר בענן)
+    loc_data = get_geolocation(key=f"gps_cp_{checkpoint_num}_{base}")
     
-    # אם התקבלו נתונים מהכפתור (המשתמש לחץ ואישר)
-    if loc_data and loc_data.get("latitude"):
+    # אם התקבלו נתונים (המשתמש לחץ ואישר)
+    if loc_data and "coords" in loc_data:
+        coords = loc_data["coords"]
         st.session_state[data_key] = {
-            "latitude": loc_data["latitude"],
-            "longitude": loc_data["longitude"],
+            "latitude": coords["latitude"],
+            "longitude": coords["longitude"],
             "timestamp": time.time(),
-            "accuracy": loc_data.get("accuracy", 0)
+            "accuracy": coords.get("accuracy", 0)
         }
         st.session_state[done_key] = True
         st.rerun()
@@ -6758,12 +6759,13 @@ def render_unit_report():
             st.warning("⚠️ לא נמצאה טיוטה שמורה")
 
     st.markdown("### 📍 מיקום ותאריך")
-    # שימוש ברכיב הסטנדרטי והיציב לזיהוי מיקום
-    loc_data = streamlit_geolocation(key=f"main_gps_{unit}")
+    # שימוש ב-streamlit-js-eval לקבלת מיקום
+    loc_data = get_geolocation(key=f"main_gps_{unit}")
 
-    if loc_data and loc_data.get('latitude'):
-        gps_lat = loc_data['latitude']
-        gps_lon = loc_data['longitude']
+    if loc_data and "coords" in loc_data:
+        coords = loc_data["coords"]
+        gps_lat = coords['latitude']
+        gps_lon = coords['longitude']
     else:
         gps_lat = None
         gps_lon = None
