@@ -20,90 +20,8 @@ import streamlit.components.v1 as components
 # Move to the absolute top to ensure it's the first streamlit command
 st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")
 
-# Zero-dependency GPS component (Inline HTML to avoid deployment issues)
-_whatsapp_loc_html = """
-<!DOCTYPE html>
-<html>
-<head>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/streamlit-component-lib/1.3.0/streamlit.index.js"></script>
-    <style>
-        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; }
-        .wa-btn {
-            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
-            color: white;
-            border: none;
-            padding: 16px 20px;
-            border-radius: 12px;
-            font-size: 18px;
-            font-weight: bold;
-            width: 100%;
-            cursor: pointer;
-            box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            transition: all 0.2s ease;
-        }
-        .wa-btn:active { transform: scale(0.96); box-shadow: 0 2px 6px rgba(37, 211, 102, 0.2); }
-        #status { text-align: center; margin-top: 8px; font-size: 14px; color: #475569; font-weight: 600; }
-    </style>
-</head>
-<body>
-    <button class="wa-btn" onclick="getLocation()">
-        <span style="font-size: 24px;">📍</span> שמור מיקום מדויק עכשיו
-    </button>
-    <div id="status"></div>
-    
-    <script>
-        function onRender(event) { Streamlit.setFrameHeight(); }
-        Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
-        Streamlit.setComponentReady();
-        Streamlit.setFrameHeight();
-
-        function getLocation() {
-            const status = document.getElementById('status');
-            status.innerText = "⏳ מתחבר ללוויין... (אנא אשר גישה אם קופצת הודעה)";
-            status.style.color = "#f59e0b";
-            
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        status.innerText = "✅ המיקום נקלט בהצלחה!";
-                        status.style.color = "#16a34a";
-                        Streamlit.setComponentValue({
-                            lat: position.coords.latitude,
-                            lon: position.coords.longitude,
-                            acc: position.coords.accuracy
-                        });
-                    },
-                    (error) => {
-                        let msg = "❌ שגיאה: ";
-                        if (error.code === 1) msg += "חסמת את הגישה למיקום בטלפון.";
-                        else if (error.code === 2) msg += "אין קליטת GPS כרגע.";
-                        else if (error.code === 3) msg += "זמן הבקשה פג (נסה שוב).";
-                        status.innerText = msg;
-                        status.style.color = "#dc2626";
-                    },
-                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-                );
-            } else {
-                status.innerText = "❌ הדפדפן שלך לא תומך במיקום.";
-            }
-        }
-    </script>
-</body>
-</html>
-"""
-
-# שימוש בייצור דינמי של התיקייה כדי למנוע שגיאות נתיב בענן
-_comp_dir = "gps_wa_component"
-os.makedirs(_comp_dir, exist_ok=True)
-_index_path = os.path.join(_comp_dir, "index.html")
-with open(_index_path, "w", encoding="utf-8") as f:
-    f.write(_whatsapp_loc_html)
-
-gps_component = components.declare_component("whatsapp_loc_button", path=_comp_dir)
+# טעינת הכפתור המעוצב מתוך התיקייה שיצרנו
+custom_location_button = components.declare_component("whatsapp_loc_button", path="wa_loc_component")
 
 
 import math
@@ -647,8 +565,8 @@ def render_gps_checkpoint(checkpoint_num: int, base: str):
     
     st.markdown(f"**{label}** — {instruction}")
     
-    # שימוש ברכיב ה-GPS המובנה (אמין ב-100% בענן)
-    loc_data = gps_component(key=f"gps_cp_{checkpoint_num}_{base}")
+    # שימוש ברכיב ה-GPS המובנה (אמין ב-100% בעיר)
+    loc_data = custom_location_button(key=f"gps_cp_{checkpoint_num}_{base}")
     
     # אם התקבלו נתונים (המשתמש לחץ ואישר)
     if loc_data and "lat" in loc_data:
@@ -6844,12 +6762,12 @@ def render_unit_report():
             st.warning("⚠️ לא נמצאה טיוטה שמורה")
 
     st.markdown("### 📍 מיקום ותאריך")
-    # שימוש ברכיב ה-GPS המובנה
-    loc_data = gps_component(key=f"main_gps_{unit}")
+    # קריאה לכפתור המיקום שלנו!
+    loc = custom_location_button(key="main_form_gps_btn")
 
-    if loc_data and "lat" in loc_data:
-        gps_lat = loc_data['lat']
-        gps_lon = loc_data['lon']
+    if loc and loc.get('lat'):
+        gps_lat = loc['lat']
+        gps_lon = loc['lon']
     else:
         gps_lat = None
         gps_lon = None
