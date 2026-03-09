@@ -40,6 +40,21 @@ def render_gps_button(key: str = "gps") -> tuple:
         return lat, lon
 
     # שדות נסתרים שה-JS ימלא
+    st.markdown("""
+        <style>
+        div[data-testid="stTextInput"]:has(input[aria-label="lat"]), 
+        div[data-testid="stTextInput"]:has(input[aria-label="lon"]) {
+            width: 0 !important;
+            height: 0 !important;
+            opacity: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+            border: none !important;
+            min-height: 0 !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
     lat_val = st.text_input("lat", value="", key=f"_gps_lat_{key}", 
                             label_visibility="hidden")
     lon_val = st.text_input("lon", value="", key=f"_gps_lon_{key}",
@@ -5531,7 +5546,7 @@ def render_hatmar_rabbi_dashboard():
     # ← בריפינג בוקר תמיד מוצג בראש, לפני הטאבים (Wave 2.7)
     render_morning_briefing(df, unit)
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10 = st.tabs([
+    t1, t2, t3, t4, t5, t6, t7, t8, t9 = st.tabs([
         "🚦 סטטוס מוצבים",
         "🕯️ הכנה לשבת",
         "📖 הלכה",
@@ -5540,8 +5555,7 @@ def render_hatmar_rabbi_dashboard():
         "📜 היסטוריית דוחות",
         "🗺️ מפה",
         "🛣️ תכנון מסלול",
-        "⚙️ ניהול מתקדם",
-        "🏷️ ניהול ברקודים"
+        "⚙️ ניהול מתקדם"
     ])
 
     with t1: render_bases_status_board(df, unit)
@@ -5650,10 +5664,6 @@ def render_hatmar_rabbi_dashboard():
         # ניהול מתקדם (Wave 2.7)
         render_hatmar_management_tab(df, unit)
 
-    with t10:
-        # ניהול ברקודים (Wave 2.20)
-        render_barcode_manager()
-
 
 def render_command_dashboard():
     role = st.session_state.role
@@ -5703,11 +5713,11 @@ def render_command_dashboard():
 
     # טאבים לפי תפקיד
     if role == 'pikud':
-        tab_names = ["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🎯 Risk Center", "🔍 אמינות מבקרים", "🧠 מוח פיקודי", "💬 עוזר AI", "⚙️ ניהול"]
+        tab_names = ["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🎯 Risk Center", "🔍 אמינות מבקרים", "🧠 מוח פיקודי", "💬 עוזר AI", "🏷️ ניהול ברקודים", "⚙️ ניהול"]
     elif role == 'ugda':
-        tab_names = ["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🔍 אמינות מבקרים", "🧠 מוח פיקודי", "💬 עוזר AI"]
+        tab_names = ["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📈 ניתוח יחידה", "📋 מעקב חוסרים", "🏆 Executive Summary", "🗺️ Map", "🔍 אמינות מבקרים", "🧠 מוח פיקודי", "💬 עוזר AI", "🏷️ ניהול ברקודים"]
     else:
-        tab_names = ["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📋 מעקב חוסרים", "🏆 Executive Summary", "🔍 אמינות מבקרים", "🧠 מוח פיקודי", "💬 עוזר AI"]
+        tab_names = ["📊 סקירה כללית", "🏆 ליגת יחידות", "🤖 תובנות AI", "📋 מעקב חוסרים", "🏆 Executive Summary", "🔍 אמינות מבקרים", "🧠 מוח פיקודי", "💬 עוזר AI", "🏷️ ניהול ברקודים"]
     
     tabs_obj = st.tabs(tab_names)
     t_map = {name: tabs_obj[i] for i, name in enumerate(tab_names)}
@@ -7011,6 +7021,11 @@ def render_command_dashboard():
         with t_map["💬 עוזר AI"]:
             render_ai_chatbot(df, accessible_units if isinstance(accessible_units, list) else list(accessible_units))
 
+    # ===== טאב 🏷️ ניהול ברקודים =====
+    if "🏷️ ניהול ברקודים" in t_map:
+        with t_map["🏷️ ניהול ברקודים"]:
+            render_barcode_manager()
+
 def create_enhanced_excel_report(df, unit_name=""):
     """
     🔧 תיקון: יצירת Excel מוגן משגיאות 'No visible sheets'
@@ -7247,9 +7262,10 @@ def render_unit_report():
             st.warning("⚠️ לא נמצאה טיוטה שמורה")
 
     st.markdown("### 📍 מיקום ותאריך")
-    # ✅ המיקום נלקח כעת מתמונת ההוכחה ומסריקת הברקוד
-    gps_lat, gps_lon = st.session_state.get("gps_lat_main", None), st.session_state.get("gps_lon_main", None)
+    # כפתור ה-GPS ממוקם בראש הפסקה
+    gps_lat, gps_lon = render_gps_button(key="main")
     
+
     if gps_lat:
         # ✅ הצגת המיקום המדויק שנקלט
         st.success(f"✅ מיקום GPS נקלט: {gps_lat:.6f}, {gps_lon:.6f}")
@@ -7394,6 +7410,19 @@ def render_unit_report():
                                     } else {
                                         statusEl.textContent = '⚠️ לא הוגדר ברקוד אימות למיקום זה';
                                     }
+                                    
+                                    // עדכון סטרימליט באמצעות שדה נסתר
+                                    try {
+                                        var doc = window.parent.document;
+                                        var inputs = doc.querySelectorAll('input[type="text"]');
+                                        inputs.forEach(function(inp) {
+                                            if (inp.getAttribute('aria-label') === 'barcode' || inp.placeholder === 'barcode') {
+                                                inp.value = val;
+                                                inp.dispatchEvent(new Event('input', {bubbles:true}));
+                                            }
+                                        });
+                                    } catch(e) {}
+                                    
                                     stream.getTracks().forEach(function(t) { t.stop(); });
                                     btn.style.display = 'block';
                                     btn.textContent = '🔄 סרוק שוב';
@@ -7420,8 +7449,21 @@ def render_unit_report():
             </script>
             """.replace("{{EXPECTED}}", expected_barcode)
             import streamlit.components.v1 as _components
-            # Removed manual input to ensure security
-            pass
+            
+            # שדה נסתר להעברת הברקוד לסטרימליט
+            st.markdown("""
+                <style>
+                div[data-testid="stTextInput"]:has(input[aria-label="barcode"]) {
+                    width: 0 !important; height: 0 !important; opacity: 0 !important;
+                    margin: 0 !important; padding: 0 !important; overflow: hidden !important; min-height: 0 !important;
+                }
+                </style>
+            """, unsafe_allow_html=True)
+            barcode_val = st.text_input("barcode", value="", key=f"_barcode_scan_{base}", label_visibility="hidden")
+            if barcode_val:
+                st.session_state['barcode_scanned_val'] = barcode_val
+                
+            _components.html(scanner_js, height=350)
         with barcode_tab_img:
             st.error("❌ העלאת תמונת ברקוד הופסקה מטעמי אבטחה. השתמש בסריקה חיה בלבד.")
             st.info("💡 במידה והסורק לא עובד, יש לאמת נוכחות באמצעות 'תמונת הוכחת נוכחות' למטה.")
