@@ -872,6 +872,275 @@ def save_report_with_analysis(data: dict, unit: str):
 
 
 # ════════════════════════════════════════════════════════════
+# 🏷️ ניהול ברקודים (Wave 2.20)
+# ════════════════════════════════════════════════════════════
+
+def render_barcode_manager():
+    """
+    ניהול וסריקת ברקודים — רק לרב חטמ״ר / פיקוד.
+    מאפשר הגדרה, עריכה, הדפסה.
+    """
+    st.markdown("### 🏷️ ניהול ברקודים למוצבים")
+
+    # ══════════════════════════════════════════
+    # טעינת ברקודים קיימים מ-Supabase
+    # ══════════════════════════════════════════
+    try:
+        result = supabase.table("base_barcodes") \
+            .select("*") \
+            .eq("unit", st.session_state.selected_unit) \
+            .execute()
+        saved_barcodes = {r["base"]: r["barcode"] for r in (result.data or [])}
+    except Exception:
+        saved_barcodes = {}
+
+    # משלב עם ברקודים קבועים מהקוד
+    all_barcodes = {**BASE_BARCODES, **saved_barcodes}
+
+    # ══════════════════════════════════════════
+    # טבלת עריכה
+    # ══════════════════════════════════════════
+    st.markdown("#### ✏️ הגדרת ברקודים")
+    st.caption("לכל מוצב — הגדר קוד ייחודי. הקוד יקודד בתוך ה-QR להדפסה.")
+
+    # הוספת מוצב חדש
+    with st.expander("➕ הוסף מוצב חדש", expanded=False):
+        col1, col2, col3 = st.columns([2, 2, 1])
+        with col1:
+            new_base = st.text_input("שם מוצב", key="new_base_name",
+                                     placeholder="לדוגמה: מחנה גלעד")
+        with col2:
+            new_code = st.text_input("קוד ברקוד", key="new_base_code",
+                                     placeholder="לדוגמה: RB_GILAD_01")
+            st.caption("💡 השתמש באותיות, מספרים וקו תחתון בלבד")
+        with col3:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("✅ הוסף", key="add_barcode_btn", use_container_width=True):
+                if new_base and new_code:
+                    # בדיקת ייחודיות
+                    if new_code in all_barcodes.values():
+                        st.error("❌ קוד זה כבר קיים למוצב אחר")
+                    else:
+                        try:
+                            supabase.table("base_barcodes").upsert({
+                                "unit": st.session_state.selected_unit,
+                                "base": new_base,
+                                "barcode": new_code,
+                                "created_by": st.session_state.get("inspector", "מפקד"),
+                                "created_at": datetime.datetime.now().isoformat()
+                            }).execute()
+                            st.success(f"✅ {new_base} נוסף בהצלחה")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"שגיאה: {e}")
+                else:
+                    st.warning("יש למלא שם מוצב וקוד")
+
+    # ══════════════════════════════════════════
+    # רשימת כל הברקודים הקיימים
+    # ══════════════════════════════════════════
+    st.markdown("#### 📋 ברקודים מוגדרים")
+
+    if not all_barcodes:
+        st.info("אין ברקודים מוגדרים עדיין")
+        return
+
+    for base_name, barcode_val in all_barcodes.items():
+        col_base, col_code, col_edit, col_del, col_qr = st.columns([2, 2, 1, 1, 1])
+
+        with col_base:
+            st.markdown(f"**📍 {base_name}**")
+
+        with col_code:
+            # עריכה ישירה של הקוד
+            edited_code = st.text_input(
+                "קוד",
+                value=barcode_val,
+                key=f"edit_code_{base_name}",
+                label_visibility="collapsed"
+            )
+
+        with col_edit:
+            if st.button("💾", key=f"save_{base_name}",
+                         help="שמור שינויים", use_container_width=True):
+                if edited_code != barcode_val:
+                    if edited_code in all_barcodes.values() and edited_code != barcode_val:
+                        st.error("קוד כבר קיים")
+                    else:
+                        try:
+                            supabase.table("base_barcodes").upsert({
+                                "unit": st.session_state.selected_unit,
+                                "base": base_name,
+                                "barcode": edited_code,
+                            }).execute()
+                            st.toast(f"✅ {base_name} עודכן", icon="✅")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"שגיאה: {e}")
+
+        with col_del:
+            if st.button("🗑️", key=f"del_{base_name}",
+                         help="מחק", use_container_width=True):
+                try:
+                    supabase.table("base_barcodes") \
+                        .delete() \
+                        .eq("base", base_name) \
+                        .eq("unit", st.session_state.selected_unit) \
+                        .execute()
+                    st.toast(f"🗑️ {base_name} נמחק", icon="🗑️")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"שגיאה: {e}")
+
+        with col_qr:
+            if st.button("🖨️", key=f"print_{base_name}",
+                         help="הצג QR להדפסה", use_container_width=True):
+                st.session_state[f"show_qr_{base_name}"] = True
+
+        # QR popup
+        if st.session_state.get(f"show_qr_{base_name}"):
+            _render_qr_popup(base_name, barcode_val)
+
+    # ══════════════════════════════════════════
+    # הדפסת כל הברקודים בבת אחת
+    # ══════════════════════════════════════════
+    st.markdown("---")
+    st.markdown("#### 🖨️ הדפסה מרוכזת")
+
+    selected_for_print = st.multiselect(
+        "בחר מוצבים להדפסה:",
+        options=list(all_barcodes.keys()),
+        default=list(all_barcodes.keys()),
+        key="print_selection"
+    )
+
+    if selected_for_print and st.button("🖨️ הפק דף הדפסה לכל הנבחרים",
+                                         type="primary",
+                                         use_container_width=True):
+        _render_print_page(
+            {k: v for k, v in all_barcodes.items() if k in selected_for_print}
+        )
+
+
+def _render_qr_popup(base_name: str, barcode_val: str):
+    """מציג QR בודד עם כפתור הורדה."""
+    import qrcode, io
+
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=10, border=4
+    )
+    qr.add_data(barcode_val)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#1e3a8a", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    qr_bytes = buf.getvalue()
+
+    with st.container():
+        st.markdown(f"""
+        <div style='background:white; border:2px solid #1e3a8a; border-radius:12px;
+                    padding:16px; text-align:center; margin:8px 0;'>
+            <div style='font-size:16px; font-weight:700; color:#1e3a8a;
+                        margin-bottom:8px;'>📍 {base_name}</div>
+            <div style='font-size:12px; color:#64748b;'>קוד: {barcode_val}</div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.image(qr_bytes, width=200)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button(
+                "⬇️ הורד PNG",
+                data=qr_bytes,
+                file_name=f"QR_{base_name}.png",
+                mime="image/png",
+                key=f"dl_{base_name}",
+                use_container_width=True
+            )
+        with col2:
+            if st.button("✖️ סגור", key=f"close_qr_{base_name}",
+                         use_container_width=True):
+                del st.session_state[f"show_qr_{base_name}"]
+                st.rerun()
+
+
+def _render_print_page(barcodes: dict):
+    """מייצר דף HTML להדפסה עם כל הברקודים."""
+    import qrcode, io, base64
+
+    cards_html = ""
+    for base_name, barcode_val in barcodes.items():
+        # יצירת QR
+        qr = qrcode.QRCode(version=1,
+                           error_correction=qrcode.constants.ERROR_CORRECT_H,
+                           box_size=8, border=3)
+        qr.add_data(barcode_val)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="#1e3a8a", back_color="white")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        img_b64 = base64.b64encode(buf.getvalue()).decode()
+
+        cards_html += f"""
+        <div class="card">
+            <img src="data:image/png;base64,{img_b64}" width="160"/>
+            <div class="base-name">{base_name}</div>
+            <div class="code">{barcode_val}</div>
+            <div class="instruction">סרוק לאימות נוכחות בביקורת רבנות</div>
+        </div>
+        """
+
+    full_html = f"""
+    <!DOCTYPE html>
+    <html dir="rtl">
+    <head>
+    <meta charset="UTF-8">
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; }}
+        .grid {{ display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; }}
+        .card {{
+            border: 2px solid #1e3a8a; border-radius: 12px;
+            padding: 16px; text-align: center; width: 200px;
+            page-break-inside: avoid;
+        }}
+        .base-name {{ font-size: 16px; font-weight: bold;
+                      color: #1e3a8a; margin: 8px 0 4px; }}
+        .code {{ font-size: 11px; color: #64748b; margin-bottom: 6px; }}
+        .instruction {{ font-size: 11px; color: #374151; }}
+        @media print {{
+            body {{ margin: 0; }}
+            .no-print {{ display: none; }}
+        }}
+    </style>
+    </head>
+    <body>
+        <div class="no-print" style="text-align:center; margin-bottom:20px;">
+            <button onclick="window.print()"
+                    style="padding:10px 30px; background:#1e3a8a; color:white;
+                           border:none; border-radius:8px; font-size:16px; cursor:pointer;">
+                🖨️ הדפס
+            </button>
+        </div>
+        <h2 style="text-align:center; color:#1e3a8a;">ברקודי מוצבים — רבנות פיקוד מרכז</h2>
+        <div class="grid">{cards_html}</div>
+    </body>
+    </html>
+    """
+
+    # הורדת קובץ HTML
+    st.download_button(
+        "⬇️ הורד דף הדפסה (HTML)",
+        data=full_html.encode("utf-8"),
+        file_name="barcodes_print.html",
+        mime="text/html",
+        use_container_width=True
+    )
+    st.info("💡 פתח את הקובץ בדפדפן ולחץ הדפס — יודפסו כל הברקודים בדף אחד")
+
+
+# ════════════════════════════════════════════════════════════
 # פיצ'ר 8 — חתימה דיגיטלית
 # ════════════════════════════════════════════════════════════
 def render_signature_pad() -> str | None:
@@ -5262,7 +5531,7 @@ def render_hatmar_rabbi_dashboard():
     # ← בריפינג בוקר תמיד מוצג בראש, לפני הטאבים (Wave 2.7)
     render_morning_briefing(df, unit)
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9 = st.tabs([
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10 = st.tabs([
         "🚦 סטטוס מוצבים",
         "🕯️ הכנה לשבת",
         "📖 הלכה",
@@ -5271,7 +5540,8 @@ def render_hatmar_rabbi_dashboard():
         "📜 היסטוריית דוחות",
         "🗺️ מפה",
         "🛣️ תכנון מסלול",
-        "⚙️ ניהול מתקדם"
+        "⚙️ ניהול מתקדם",
+        "🏷️ ניהול ברקודים"
     ])
 
     with t1: render_bases_status_board(df, unit)
@@ -5379,6 +5649,10 @@ def render_hatmar_rabbi_dashboard():
     with t9:
         # ניהול מתקדם (Wave 2.7)
         render_hatmar_management_tab(df, unit)
+
+    with t10:
+        # ניהול ברקודים (Wave 2.20)
+        render_barcode_manager()
 
 
 def render_command_dashboard():
