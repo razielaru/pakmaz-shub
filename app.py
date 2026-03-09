@@ -7212,7 +7212,7 @@ def render_unit_report():
 
 
     # ===== סריקת ברקוד מוצב =====
-    with st.expander("📷 סריקת ברקוד מוצב (רשות)", expanded=True):
+    with st.expander("📷 סריקת ברקוד מוצב (רשות)", expanded=False):
         barcode_tab_cam, barcode_tab_img = st.tabs(["📷 סריקה חיה", "🖼️ העלאת תמונה"])
         with barcode_tab_cam:
             expected_barcode = BASE_BARCODES.get(base, "NONE")
@@ -7393,56 +7393,6 @@ def render_unit_report():
         if base and len(base) > 2:
             render_honeypot_question(base)
 
-        # OCR
-        with st.expander("📄 סריקת תעודת כשרות (OCR)", expanded=False):
-            cert_photo_ocr = st.file_uploader(
-                "העלה תמונה של תעודת הכשרות",
-                type=['jpg', 'png', 'jpeg'],
-                key="cert_ocr"
-            )
-            
-            if cert_photo_ocr:
-                st.image(cert_photo_ocr, width=300, caption="תעודה שהועלתה")
-                
-                with st.spinner("🔍 מפענח תעודה..."):
-                    extracted = extract_kashrut_cert_data(cert_photo_ocr.getvalue())
-                
-                if not extracted:
-                    st.error("❌ לא ניתן היה לפענח את התעודה — נסה תמונה ברורה יותר")
-                
-                elif 'error' in extracted:
-                    st.warning(f"⚠️ {extracted['error']}")
-                    st.caption("💡 טיפ: צלם בתאורה טובה, ללא טשטוש, עם כל הטקסט בפריים")
-                
-                else:
-                    st.success("✅ נתונים חולצו בהצלחה!")
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.info(f"📌 ספק: {extracted.get('supplier_name', 'לא זוהה')}")
-                        st.info(f"🔢 מספר: {extracted.get('certificate_number', 'לא זוהה')}")
-                    with col2:
-                        expiry = extracted.get('expiry_date')
-                        st.info(f"📅 תוקף עד: {expiry or 'לא זוהה'}")
-                        
-                        if expiry:
-                            status, status_type = validate_cert_status(expiry)
-                            
-                            color_map = {
-                                "valid": "✅",
-                                "warning": "⚠️", 
-                                "expired": "❌"
-                            }
-                            icon = color_map.get(status_type, "❓")
-                            st.markdown(f"**סטטוס:** {icon} {status}")
-                            
-                            if status_type == "valid":
-                                st.session_state["k_cert_auto"] = "כן"
-                                st.session_state["k_cert_expiry_auto"] = expiry
-                                st.toast("✅ תעודה תקינה — הטופס עודכן אוטומטית", icon="✅")
-                            elif status_type == "expired":
-                                st.session_state["k_cert_auto"] = "לא"
-                                st.error("🚨 התעודה פגת תוקף — יש לטפל מיידית")
 
         st.markdown("#### 📸 תקלות ונאמן כשרות")
         c1, c2 = st.columns(2)
@@ -8280,7 +8230,7 @@ def render_unit_report():
                         <div style='font-size:64px; margin-bottom:8px;'>🎯</div>
                         <h2 style='color:#10b981; margin:0 0 8px 0;'>הדוח שוגר לחפ"ק!</h2>
                         <p style='font-size:16px; color:#374151; margin:6px 0;'>
-                            בזכותך, <b>{soldiers_impacted} לוחמים</b> יאכלו כשר וייטלטלו בשבת.
+                            אשריכם ישראל בזכותך <b>{soldiers_impacted} חיילים</b> ישמרו שבת ולא יטלטלו באיסור בשבת!
                         </p>
                         <p style='font-size:15px; color:#374151; margin:4px 0;'>
                             {streak_emoji} <b>רצף דיווחים:</b> {streak_count}
