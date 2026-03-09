@@ -7261,8 +7261,12 @@ def render_unit_report():
         else:
             st.error(f"🚨 **התראה:** {distance:.1f} ק\"מ מ-{nearest_base} - מיקום חריג!")
     elif not (gps_lat_sess and gps_lon_sess):
-        st.info("📡 מחפש מיקום GPS... אנא המתן עד להופעת אישור ירוק לפני השליחה")
-        st.caption("ירושלים: lat ~31.7, lon ~35.2")
+        # בדוק שוב בכל המפתחות לפני שמציג הודעה
+        any_gps = next((st.session_state[k] for k in st.session_state 
+                        if k.startswith("gps_lat_") and st.session_state[k]), None)
+        if not any_gps:
+            st.info("📡 מחפש מיקום GPS... אנא המתן עד להופעת אישור ירוק לפני השליחה")
+            st.caption("ירושלים: lat ~31.7, lon ~35.2")
     
     # --- ניהול ברקוד למציאת מיקום (סריקה חיה בלבד) ---
     scanned_val = st.session_state.get('barcode_scanned_val')
@@ -8230,8 +8234,19 @@ def render_unit_report():
             
             # בדיקת מיקום חובה (פטור לחטיבות סדירות)
             elif not is_combat_brigade:
-                check_lat = gps_lat or st.session_state.get("gps_lat_main")
-                check_lon = gps_lon or st.session_state.get("gps_lon_main")
+                check_lat = (gps_lat or 
+                             st.session_state.get("gps_lat_main") or 
+                             st.session_state.get("gps_lat_main_form") or
+                             st.session_state.get("gps_lat_gps_cp_1") or
+                             next((st.session_state[k] for k in st.session_state 
+                                   if k.startswith("gps_lat_") and st.session_state[k]), None))
+                                   
+                check_lon = (gps_lon or 
+                             st.session_state.get("gps_lon_main") or 
+                             st.session_state.get("gps_lon_main_form") or
+                             next((st.session_state[k] for k in st.session_state 
+                                   if k.startswith("gps_lon_") and st.session_state[k]), None))
+                                   
                 if not (check_lat and check_lon):
                     st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח בחטמ\"ר!")
                     st.warning("💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום")
