@@ -8218,23 +8218,22 @@ def render_unit_report():
                 st.warning("💡 נא להעלות תמונה של נאמן הכשרות בשדה המתאים למעלה")
             
             # בדיקת מיקום חובה (פטור לחטיבות סדירות)
-            elif not is_combat_brigade:
-                check_lat = (gps_lat or 
-                             st.session_state.get("gps_lat_main") or 
-                             st.session_state.get("gps_lat_main_form") or
-                             st.session_state.get("gps_lat_gps_cp_1") or
-                             next((st.session_state[k] for k in st.session_state 
-                                   if k.startswith("gps_lat_") and st.session_state[k]), None))
-                                   
-                check_lon = (gps_lon or 
-                             st.session_state.get("gps_lon_main") or 
-                             st.session_state.get("gps_lon_main_form") or
-                             next((st.session_state[k] for k in st.session_state 
-                                   if k.startswith("gps_lon_") and st.session_state[k]), None))
-                                   
-                if not (check_lat and check_lon):
-                    st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח בחטמ\"ר!")
-                    st.warning("💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום")
+            check_lat = (gps_lat or 
+                         st.session_state.get("gps_lat_main") or 
+                         st.session_state.get("gps_lat_main_form") or
+                         st.session_state.get("gps_lat_gps_cp_1") or
+                         next((st.session_state[k] for k in st.session_state 
+                               if k.startswith("gps_lat_") and st.session_state[k]), None))
+                               
+            check_lon = (gps_lon or 
+                         st.session_state.get("gps_lon_main") or 
+                         st.session_state.get("gps_lon_main_form") or
+                         next((st.session_state[k] for k in st.session_state 
+                               if k.startswith("gps_lon_") and st.session_state[k]), None))
+                               
+            if not is_combat_brigade and not (check_lat and check_lon):
+                st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח בחטמ\"ר!")
+                st.warning("💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום")
                  
             elif base and inspector and photo:
                 photo_url = upload_report_photo(photo.getvalue(), unit, base)
