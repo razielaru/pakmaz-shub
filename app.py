@@ -1457,6 +1457,12 @@ st.markdown("""
         text-align: right !important;
     }
 
+    /* תיקון לשדות זמן ותאריך (מונע היעלמות השעה בתוך התיבה, בייחוד במובייל) */
+    [data-testid="stTimeInput"] input, [data-testid="stDateInput"] input {
+        direction: ltr !important;
+        text-align: center !important;
+    }
+
     /* כל תוכן Markdown Container מיושר לימין */
     div[data-testid="stMarkdownContainer"] {
         direction: rtl !important;
@@ -7464,7 +7470,7 @@ def render_unit_report():
 
     tab1, tab_lounge, tab2, tab3, tab4, tab5 = st.tabs([
         "🍽️ כשרות",
-        "☕ טרקלין/ויקוק (אינו חובה)",
+        "☕ טרקלין/ויקוק ",
         "🕍 ביהכ\"נ ועירוב",
         "📜 נהלים ורוח",
         "📖 שיחת חתך (אינו חובה)",
