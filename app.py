@@ -7281,14 +7281,15 @@ def render_unit_report():
     c1, c2, c3 = st.columns(3)
     date = c1.date_input("תאריך", datetime.date.today())
     
-    # 🆕 הצגת שעה שמתעדכנת כראוי - משתמשים ב-time_input כברירת מחדל כדי לאפשר למשתמש לשלוט בזה
-    if "report_hour" not in st.session_state:
-        st.session_state["report_hour"] = datetime.datetime.now().time()
+    # 🆕 חזרה לתיבת טקסט פשוטה בגלל באגים של Streamlit במובייל עם רכיב הזמן. הערך ההתחלתי יהיה השעה הנוכחית.
+    if "report_hour_str" not in st.session_state:
+        st.session_state["report_hour_str"] = datetime.datetime.now().strftime("%H:%M")
         
-    time_v = c2.time_input("שעה", value=st.session_state["report_hour"], key="hour_input_widget")
+    time_v = c2.text_input("שעה", value=st.session_state["report_hour_str"], key="hour_input_str")
     
-    # במקרה שהעיצוב המקורי של Streamlit לשעות עדין קרס ב-iOS, נשמור גם כטקסט ב-state
-    st.session_state["report_hour_str"] = time_v.strftime("%H:%M") if time_v else ""
+    # שמירת הערך חזרה לסטייט כדי שלא יילך לאיבוד ברפרש
+    if time_v != st.session_state.get("report_hour_str"):
+        st.session_state["report_hour_str"] = time_v
 
     inspector = c3.text_input("מבקר *")
     
@@ -8320,13 +8321,13 @@ def render_unit_report():
                     data.update(hq_vars)
                 
                 # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
-                if gps_lat and gps_lon:
+                if check_lat and check_lon:
                     # ✅ בדיקה נוספת שהמיקום תקין
-                    if 29.5 <= gps_lat <= 33.5 and 34.2 <= gps_lon <= 35.9:
+                    if 29.5 <= float(check_lat) <= 33.5 and 34.2 <= float(check_lon) <= 35.9:
                         # הוספת רעש למיקום GPS לצורכי אבטחה (~500 מטר)
                         # ✅ שימוש ב-secure_location_offset עם ID יציב
                         unique_id_for_offset = f"{unit}_{base}"
-                        lat_with_offset, lon_with_offset = secure_location_offset(gps_lat, gps_lon, unique_id_for_offset, offset_meters=500)
+                        lat_with_offset, lon_with_offset = secure_location_offset(float(check_lat), float(check_lon), unique_id_for_offset, offset_meters=500)
                         data["latitude"] = lat_with_offset
                         data["longitude"] = lon_with_offset
                         
