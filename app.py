@@ -31,7 +31,7 @@ def render_gps_button(key: str = "gps") -> tuple:
     if lat and lon:
         col1, col2 = st.columns([4, 1])
         with col1:
-            st.success("✅ המיקום נקלט ומאובטח במערכת")
+            st.success("✅ מיקום מזוהה ומאובטח במערכת")
         with col2:
             if st.button("🔄 עדכן", key=f"reset_gps_{key}"):
                 del st.session_state[vault_lat_key]
@@ -39,41 +39,21 @@ def render_gps_button(key: str = "gps") -> tuple:
                 st.rerun()
         return lat, lon
 
-    # Hidden text inputs for communication with JS
-    st.markdown("""
-        <style>
-        .hidden-gps-input {
-            position: absolute;
-            left: -9999px;
-            top: -9999px;
-            visibility: hidden;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-    
-    # We use stable keys for these temporary inputs to ensure we can find them in the DOM
+    # Communication area
     t_lat = st.text_input("lat", key=f"tmp_lat_{key}", label_visibility="collapsed")
     t_lon = st.text_input("lon", key=f"tmp_lon_{key}", label_visibility="collapsed")
 
-    # The GPS Button Component
+    # Ultra-robust GPS Button
     st.components.v1.html(f"""
     <div dir="rtl" style="font-family: system-ui, -apple-system, sans-serif;">
         <button id="gps-trigger" onclick="captureGPS()" style="
-            width: 100%;
-            background: #2563eb;
-            color: white;
-            border: none;
-            padding: 16px;
-            border-radius: 12px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            width: 100%; background: #2563eb; color: white; border: none;
+            padding: 16px; border-radius: 12px; font-size: 16px; font-weight: 700;
+            cursor: pointer; transition: 0.3s;
         ">
-            📍 לחץ כאן לקבלת מיקום מדויק
+            📍 לחץ כאן לנעילת מיקום (חובה)
         </button>
-        <p id="gps-status" style="margin-top: 8px; font-size: 13px; color: #64748b; text-align: center;"></p>
+        <p id="gps-status" style="margin-top: 8px; font-size: 14px; color: #475569; text-align: center; font-weight: 500;"></p>
     </div>
 
     <script>
@@ -86,14 +66,6 @@ def render_gps_button(key: str = "gps") -> tuple:
         btn.innerText = '🔍 מחפש לוויינים...';
         status.innerText = 'מזהה מיקום נוכחי...';
 
-        if (!navigator.geolocation) {{
-            status.innerText = '❌ הדפדפן שלך אינו תומך ב-GPS';
-            btn.disabled = false;
-            btn.style.background = '#ef4444';
-            btn.innerText = 'נסה שוב';
-            return;
-        }}
-
         navigator.geolocation.getCurrentPosition(
             (pos) => {{
                 const lat = pos.coords.latitude;
@@ -101,14 +73,12 @@ def render_gps_button(key: str = "gps") -> tuple:
                 
                 status.innerText = '✅ מיקום זוהה! מעביר למערכת...';
                 btn.style.background = '#10b981';
-                btn.innerText = '✅ המיקום נשמר';
+                btn.innerText = '✅ המיקום ננעל';
 
-                // Find the parent document and the specific inputs
                 const doc = window.parent.document;
                 const inputs = doc.querySelectorAll('input');
                 let latInput, lonInput;
 
-                // Robust discovery based on label or key
                 inputs.forEach(input => {{
                     const label = input.getAttribute('aria-label');
                     if (label === 'lat') latInput = input;
@@ -116,29 +86,21 @@ def render_gps_button(key: str = "gps") -> tuple:
                 }});
 
                 if (latInput && lonInput) {{
-                    // Update values and trigger Streamlit's internal state update
                     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
                     
                     setter.call(latInput, String(lat));
-                    latInput.value = String(lat); // Direct set as fallback
                     latInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
                     
                     setter.call(lonInput, String(lon));
-                    lonInput.value = String(lon); // Direct set as fallback
                     lonInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
                     
-                    // Trigger a change event to be doubly sure
+                    // Trigger mandatory change events
                     latInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
                     lonInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-
-                    // We add a small delay to ensure Streamlit registers the changes before any potential rerun
-                    setTimeout(() => {{
-                        // No explicit click needed if we use st.rerun on the Python side when values appear
-                    }}, 100);
                 }}
             }},
             (err) => {{
-                status.innerText = '❌ שגיאה: ' + err.message;
+                status.innerText = '❌ שגיאה: נא אשר הרשאות מיקום במכשיר';
                 btn.disabled = false;
                 btn.style.background = '#ef4444';
                 btn.innerText = 'נסה שוב';
@@ -149,13 +111,12 @@ def render_gps_button(key: str = "gps") -> tuple:
     </script>
     """, height=100)
 
-    # Capture the values on the Python side
     if t_lat and t_lon:
         try:
             st.session_state[vault_lat_key] = float(t_lat)
             st.session_state[vault_lon_key] = float(t_lon)
             st.rerun()
-        except ValueError:
+        except:
             pass
 
     return None, None
@@ -7219,22 +7180,13 @@ def render_unit_report():
         # ✅ הדפסה ללוג (תוכל לראות בקונסול של Streamlit)
         print(f"🔍 DEBUG - GPS נקלט: lat={gps_lat}, lon={gps_lon}, base={base if 'base' in locals() else 'לא הוגדר'}")
         
-        # ✅ בדיקה אם המיקום בגבולות ישראל
-        if not (29.5 <= gps_lat <= 33.5 and 34.2 <= gps_lon <= 35.9):
-            st.warning("⚠️ המיקום שזוהה נראה חריג. וודא שה-GPS פועל ושנתת הרשאה.")
-        else:
-            st.success("✅ המיקום זוהה ומוכן לשליחה")
+        if gps_lat:
+            st.success("✅ המיקום מזוהה ומוכן לשליחה")
 
     if gps_lat:
-        # בדיקת מרחק מבסיסים ידועים
+        # מרחק מבסיס (לוגיקה פנימית בלבד)
         nearest_base, distance = find_nearest_base(gps_lat, gps_lon)
-        
-        if distance < 2.0:
-            st.info(f"📍 מזוהה בקרבת: **{nearest_base}**")
-        elif distance < 5.0:
-            st.info(f"📍 מזוהה בטווח של: **{nearest_base}**")
-        else:
-            st.warning(f"📍 מיקום חריג יחסית ל{nearest_base}. מומלץ לוודא.")
+        st.info(f"📍 מזוהה בקרבת: **{nearest_base}**")
     elif not gps_lat:
         pass # Waiting for GPS to be captured
     
@@ -8307,24 +8259,14 @@ def render_unit_report():
                 if hq_vars:
                     data.update(hq_vars)
                 
-                # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
+                # הוספת מיקום (חובה ללא בדיקת גבולות)
                 if check_lat and check_lon:
-                    # ✅ בדיקה נוספת שהמיקום תקין
-                    if 29.5 <= float(check_lat) <= 33.5 and 34.2 <= float(check_lon) <= 35.9:
-                        # הוספת רעש למיקום GPS לצורכי אבטחה (~500 מטר)
-                        # ✅ שימוש ב-secure_location_offset עם ID יציב
-                        unique_id_for_offset = f"{unit}_{base}"
-                        lat_with_offset, lon_with_offset = secure_location_offset(float(check_lat), float(check_lon), unique_id_for_offset, offset_meters=500)
-                        data["latitude"] = lat_with_offset
-                        data["longitude"] = lon_with_offset
+                    # הוספת רעש למיקום GPS לצורכי אבטחה (~500 מטר)
+                    unique_id_for_offset = f"{unit}_{base}"
+                    lat_with_offset, lon_with_offset = secure_location_offset(float(check_lat), float(check_lon), unique_id_for_offset, offset_meters=500)
+                    data["latitude"] = lat_with_offset
+                    data["longitude"] = lon_with_offset
                         
-                        # ✅ הדפסה ללוג
-                        print(f"💾 שומר למסד נתונים: lat={lat_with_offset:.6f}, lon={lon_with_offset:.6f}")
-                    else:
-                        print(f"⚠️ המיקום לא נשמר כי הוא מחוץ לגבולות ישראל ({check_lat}, {check_lon})")
-                        # למרות זאת אנחנו רוצים לאפשר להם לשלוח דוח (תחת חריגת מיקום)
-                        pass
-
                 try:
                     result = supabase.table("reports").insert(data).execute()
                 except Exception as e:
