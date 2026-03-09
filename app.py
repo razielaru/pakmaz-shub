@@ -35,14 +35,25 @@ def render_gps_button(key: str = "gps") -> tuple:
         with col1:
             st.success("✅ מיקום נשמר ומאובטח במערכת")
         with col2:
-            if st.button("🔄", key=f"reset_gps_{key}", help="עדכן מיקום"):
+            if st.button("📍", key=f"reset_gps_{key}", help="עדכן מיקום"):
                 del st.session_state[vault_lat_key]
                 del st.session_state[vault_lon_key]
                 st.rerun()
         return lat, lon
     
-    # Get geolocation using the new component
-    loc = get_geolocation(component_key=f"geo_{key}")
+    # Get geolocation using the new component - wrapped in a hidden container
+    with st.container():
+        # Inject CSS to hide the streamlit-js-eval component effectively
+        st.markdown("""
+            <style>
+            iframe[title="streamlit_js_eval.streamlit_js_eval"] {
+                display: none;
+                height: 0;
+                width: 0;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+        loc = get_geolocation(component_key=f"geo_{key}")
     
     if loc and isinstance(loc, dict) and loc.get("coords"):
         lat = loc["coords"]["latitude"]
@@ -54,7 +65,8 @@ def render_gps_button(key: str = "gps") -> tuple:
         st.toast("🎯 המיקום הסתנכרן בהצלחה!", icon="✅")
         st.rerun()
     else:
-        st.info("📍 לחץ אישור בחלון הדפדפן לשליחת מיקום (חובה)")
+        # Show a subtle message instead of st.info to be even more "implicit"
+        st.caption("📍 מחכה לאישור מיקום מהדפדפן...")
     
     return None, None
 
@@ -7100,10 +7112,8 @@ def render_unit_report():
         draft_key = f"{unit}_last_draft"
         draft_data = load_draft(draft_key)
         if draft_data:
-            # עדכון Session State כדי שהטופס יתמלא
-            # הערה: זה דורש מיפוי חכם של מפתחות, כרגע נציג הודעה
             st.success(f"✅ טיוטה נטענה מ-{draft_data.get('timestamp', 'לא ידוע')}")
-            st.json(draft_data) # זמני - להצגת הנתונים
+            # st.json(draft_data)  # הוסר כדי לשמור על ממשק נקי
             st.info("מנגנון מילוי אוטומטי מלא בבנייה...")
         else:
             st.warning("⚠️ לא נמצאה טיוטה שמורה")
@@ -7113,13 +7123,10 @@ def render_unit_report():
     # הפעלת מנגנון המיקום החדש
     gps_lat, gps_lon = render_gps_button(key="main")
 
-
-
-
     if gps_lat:
         # מרחק מבסיס (לוגיקה פנימית בלבד)
         nearest_base, distance = find_nearest_base(gps_lat, gps_lon)
-        st.info(f"📍 מזוהה בקרבת: **{nearest_base}**")
+        # st.info(f"📍 מזוהה בקרבת: **{nearest_base}**") # מוסתר לבקשת המשתמש לממשק נקי
     elif not gps_lat:
         pass # Waiting for GPS to be captured
     
@@ -7963,7 +7970,7 @@ def render_unit_report():
             k_issues_photo = None
 
 
-        sig_url = True  # מאפשר שליחה ללא חתימה
+        sig_url = ""  # מאפשר שליחה ללא חתימה
 
         
         # 🎉 Micro-interactions: תגובות מידיות לפעילות חייל
@@ -8215,6 +8222,7 @@ def render_unit_report():
                             "lesson_date", "lesson_location", "lesson_qty", "lesson_participants",
                             "lesson_content", "lesson_instructors", "lesson_population",
                             "honeypot_failed", "quick_fill_flags", "vision_contradictions", "inspector_tip",
+                            "vision_findings", "gps_source"
                         ]
                         for field in new_fields:
                             data.pop(field, None)
