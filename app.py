@@ -8301,7 +8301,7 @@ def render_unit_report():
                     render_report_diff(data, unit, base)
 
                     st.session_state.voice_note_transcription = None
-                    st.cache_data.clear()
+                    # st.cache_data.clear() # נמחק כדי לא לאפס את הסטטיסטיקה של המבקרים מיד אחרי השליחה
                     time.sleep(1)
                     st.rerun()
 
@@ -8314,7 +8314,7 @@ def render_unit_report():
                             data.pop("photo_url", None)
                             supabase.table("reports").insert(data).execute()
                             st.success("✅ הדוח נשלח בהצלחה!")
-                            st.cache_data.clear()
+                            # st.cache_data.clear()
                             time.sleep(1)
                             st.rerun()
                         except Exception as e2:
@@ -8326,9 +8326,8 @@ def render_unit_report():
     st.markdown("## 📊 סטטיסטיקות מבקרים")
     
     # טעינת דוחות של היחידה (ללא קאש)
-    # ניקוי קאש לפני טעינה כדי להבטיח נתונים עדכניים
-    clear_cache()
-    res = supabase.table("reports").select("*").eq("unit", st.session_state.selected_unit).execute().data
+    # clear_cache() # השורה הזו גורמת לאיבוד הנתונים במהלך הריצה
+    res = supabase.table("reports").select("*").eq("unit", unit).execute().data
     unit_reports_raw = [d for d in res if not str(d.get('inspector', '')).startswith('🗑️')] if res else []
     unit_df = pd.DataFrame(unit_reports_raw)
     
