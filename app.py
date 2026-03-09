@@ -16,8 +16,12 @@ import shutil
 import os
 import random
 import streamlit.components.v1 as components
-from streamlit_js_eval import streamlit_js_eval, get_geolocation
 st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")  # title intentionally unchanged
+
+# Declaration of the zero-dependency GPS component
+_parent_dir = os.path.dirname(os.path.abspath(__file__))
+gps_component_path = os.path.join(_parent_dir, "gps_component")
+gps_component = components.declare_component("gps_component", path=gps_component_path)
 
 
 import math
@@ -561,17 +565,16 @@ def render_gps_checkpoint(checkpoint_num: int, base: str):
     
     st.markdown(f"**{label}** — {instruction}")
     
-    # שימוש ב-streamlit-js-eval לקבלת מיקום (יציב יותר בענן)
-    loc_data = get_geolocation(key=f"gps_cp_{checkpoint_num}_{base}")
+    # שימוש ברכיב ה-GPS המובנה (אמין ב-100% בענן)
+    loc_data = gps_component(key=f"gps_cp_{checkpoint_num}_{base}")
     
     # אם התקבלו נתונים (המשתמש לחץ ואישר)
-    if loc_data and "coords" in loc_data:
-        coords = loc_data["coords"]
+    if loc_data and "lat" in loc_data:
         st.session_state[data_key] = {
-            "latitude": coords["latitude"],
-            "longitude": coords["longitude"],
+            "latitude": loc_data["lat"],
+            "longitude": loc_data["lon"],
             "timestamp": time.time(),
-            "accuracy": coords.get("accuracy", 0)
+            "accuracy": loc_data.get("acc", 0)
         }
         st.session_state[done_key] = True
         st.rerun()
@@ -6759,13 +6762,12 @@ def render_unit_report():
             st.warning("⚠️ לא נמצאה טיוטה שמורה")
 
     st.markdown("### 📍 מיקום ותאריך")
-    # שימוש ב-streamlit-js-eval לקבלת מיקום
-    loc_data = get_geolocation(key=f"main_gps_{unit}")
+    # שימוש ברכיב ה-GPS המובנה
+    loc_data = gps_component(key=f"main_gps_{unit}")
 
-    if loc_data and "coords" in loc_data:
-        coords = loc_data["coords"]
-        gps_lat = coords['latitude']
-        gps_lon = coords['longitude']
+    if loc_data and "lat" in loc_data:
+        gps_lat = loc_data['lat']
+        gps_lon = loc_data['lon']
     else:
         gps_lat = None
         gps_lon = None
