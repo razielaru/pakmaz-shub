@@ -21,50 +21,41 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")
 
 def render_gps_button(key: str = "gps") -> tuple:
-    """
-    לחצן GPS אחד — הדפדפן שואל רשות ומכניס מיקום אוטומטית.
-    מחזיר (latitude, longitude) או (None, None)
-    """
+    # 1. בדיקה אם יש לנו מיקום נעול ב"כספת" (מפתח שלא קשור לאף ווידג'ט)
+    vault_lat_key = f"VAULT_LAT_{key}"
+    vault_lon_key = f"VAULT_LON_{key}"
     
-    # אם כבר יש מיקום שמור — מציג אותו
-    if st.session_state.get(f"gps_done_{key}"):
-        lat = st.session_state[f"gps_lat_{key}"]
-        lon = st.session_state[f"gps_lon_{key}"]
+    if st.session_state.get(vault_lat_key) and st.session_state.get(vault_lon_key):
+        lat = st.session_state[vault_lat_key]
+        lon = st.session_state[vault_lon_key]
         col1, col2 = st.columns([4,1])
         with col1:
             st.success(f"✅ מיקום נקלט ({lat:.4f}, {lon:.4f})")
         with col2:
             if st.button("🔄", key=f"reset_gps_{key}"):
-                del st.session_state[f"gps_done_{key}"]
+                del st.session_state[vault_lat_key]
+                del st.session_state[vault_lon_key]
                 st.rerun()
         return lat, lon
 
-    # שדות נסתרים שה-JS ימלא
+    # 2. שדות נסתרים שה-JS ימלא (עם מפתחות ווידג'ט זמניים בלבד!)
     st.markdown("""
         <style>
         div[data-testid="stTextInput"]:has(input[aria-label="lat"]), 
         div[data-testid="stTextInput"]:has(input[aria-label="lon"]) {
-            width: 0 !important;
-            height: 0 !important;
-            opacity: 0 !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            overflow: hidden !important;
-            border: none !important;
-            min-height: 0 !important;
+            width: 0 !important; height: 0 !important; opacity: 0 !important;
+            margin: 0 !important; padding: 0 !important; overflow: hidden !important; min-height: 0 !important; border: none !important;
         }
         </style>
     """, unsafe_allow_html=True)
-    def sync_gps_to_state(key_name):
-        if st.session_state.get(f"_gps_{key_name}_{key}"):
-            st.session_state[f"gps_{key_name}_{key}"] = st.session_state[f"_gps_{key_name}_{key}"]
-            
-    lat_val = st.text_input("lat", value="", key=f"_gps_lat_{key}", 
-                            label_visibility="hidden", on_change=sync_gps_to_state, args=("lat",))
-    lon_val = st.text_input("lon", value="", key=f"_gps_lon_{key}",
-                            label_visibility="hidden", on_change=sync_gps_to_state, args=("lon",))
+    
+    widget_lat_key = f"_temp_widget_lat_{key}"
+    widget_lon_key = f"_temp_widget_lon_{key}"
+    
+    lat_val = st.text_input("lat", value="", key=widget_lat_key, label_visibility="hidden")
+    lon_val = st.text_input("lon", value="", key=widget_lon_key, label_visibility="hidden")
 
-    # הכפתור + JS
+    # קוד ה-JS נשאר זהה
     st.components.v1.html("""
     <div dir="rtl" style="font-family:Arial, sans-serif;">
         <button id="gpsBtn" onclick="getGPS()"
@@ -73,21 +64,19 @@ def render_gps_button(key: str = "gps") -> tuple:
                    cursor:pointer; font-family:Arial;">
             📍 שלח מיקום
         </button>
-        <div id="msg" style="margin-top:8px; font-size:13px; 
-                              color:#64748b; text-align:right;"></div>
+        <div id="msg" style="margin-top:8px; font-size:13px; color:#64748b; text-align:right;"></div>
     </div>
 
     <script>
     function getGPS() {
         var btn = document.getElementById('gpsBtn');
         var msg = document.getElementById('msg');
-        
         btn.innerText = '🔄 מחפש מיקום...';
         btn.disabled = true;
         btn.style.background = '#94a3b8';
         
         if (!navigator.geolocation) {
-            msg.innerText = '❌ GPS לא נתמך בדפדפן זה';
+            msg.innerText = '❌ GPS לא נתמך';
             btn.innerText = '📍 שלח מיקום';
             btn.disabled = false;
             btn.style.background = '#1d4ed8';
@@ -98,68 +87,51 @@ def render_gps_button(key: str = "gps") -> tuple:
             function(pos) {
                 var lat = pos.coords.latitude;
                 var lon = pos.coords.longitude;
-                
-                msg.innerHTML = '✅ מיקום נמצא: ' + lat.toFixed(5) + ', ' + lon.toFixed(5);
+                msg.innerHTML = '✅ מיקום נמצא';
                 btn.style.background = '#10b981';
                 btn.innerText = '✅ מיקום נשמר';
                 
-                // מחפש את שדות הקלט הנסתרים ומכניס את הערכים
                 var doc = window.parent.document;
                 var inputs = doc.querySelectorAll('input[type="text"]');
-                
                 var latSet = false, lonSet = false;
                 var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
 
                 inputs.forEach(function(inp) {
-                    if (!latSet && inp.value === '' && 
-                        inp.closest('[data-testid]') && 
-                        inp.getAttribute('aria-label') === 'lat') {
+                    if (!latSet && inp.value === '' && inp.closest('[data-testid]') && inp.getAttribute('aria-label') === 'lat') {
                         nativeInputValueSetter.call(inp, String(lat));
                         inp.dispatchEvent(new Event('input', {bubbles:true}));
                         inp.dispatchEvent(new Event('change', {bubbles:true}));
-                        inp.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true}));
                         latSet = true;
                     }
-                    if (!lonSet && inp.value === '' && 
-                        inp.getAttribute('aria-label') === 'lon') {
+                    if (!lonSet && inp.value === '' && inp.getAttribute('aria-label') === 'lon') {
                         nativeInputValueSetter.call(inp, String(lon));
                         inp.dispatchEvent(new Event('input', {bubbles:true}));
                         inp.dispatchEvent(new Event('change', {bubbles:true}));
-                        inp.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true}));
                         lonSet = true;
                     }
                 });
             },
             function(err) {
-                var errors = {
-                    1: 'לא אישרת גישה למיקום — בדוק הגדרות הדפדפן',
-                    2: 'לא ניתן לקבל מיקום כרגע',
-                    3: 'הזמן פג — נסה שוב'
-                };
-                msg.innerText = '❌ ' + (errors[err.code] || err.message);
+                msg.innerText = '❌ שגיאת מיקום, נסה שוב';
                 btn.innerText = '📍 נסה שוב';
                 btn.disabled = false;
                 btn.style.background = '#ef4444';
             },
-            {
-                enableHighAccuracy: true,  // GPS מדויק
-                timeout: 15000,            // 15 שניות
-                maximumAge: 0              // תמיד מיקום רענן
-            }
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
         );
     }
     </script>
     """, height=100)
 
-    # בדיקה אם ה-JS מילא את השדות
+    # 3. תפיסת המידע מהווידג'טים הזמניים ושמירתו ב"כספת" לצמיתות!
     try:
         if lat_val and lon_val:
             lat = float(lat_val)
             lon = float(lon_val)
             if 29.0 <= lat <= 34.0 and 34.0 <= lon <= 36.5:
-                st.session_state[f"gps_lat_{key}"] = lat
-                st.session_state[f"gps_lon_{key}"] = lon
-                st.session_state[f"gps_done_{key}"] = True
+                # הנה הקסם: שומרים את זה למפתח נפרד לחלוטין שאינו קשור לווידג'ט
+                st.session_state[vault_lat_key] = lat
+                st.session_state[vault_lon_key] = lon
                 st.rerun()
             else:
                 st.warning(f"⚠️ מיקום מחוץ לגבולות ישראל ({lat:.3f}, {lon:.3f})")
@@ -8225,27 +8197,13 @@ def render_unit_report():
                 st.error("⚠️ **חובה להעלות תמונת נאמן כשרות בימי חמישי ושישי!**")
                 st.warning("💡 נא להעלות תמונה של נאמן הכשרות בשדה המתאים למעלה")
             
-            # בדיקת מיקום חובה (פטור לחטיבות סדירות)
-            # יש מספר מפתחות פוטנציאליים ל-GPS בעקבות העדכונים העקשניים של Streamlit
-            check_lat = (gps_lat or 
-                         st.session_state.get("gps_lat_main") or 
-                         st.session_state.get("gps_lat_main_form") or
-                         st.session_state.get("_gps_lat_main_form") or 
-                         st.session_state.get("_gps_lat_main") or 
-                         next((st.session_state[k] for k in st.session_state 
-                               if (k.startswith("gps_lat") or k.startswith("_gps_lat")) and st.session_state[k]), None))
-                               
-            check_lon = (gps_lon or 
-                         st.session_state.get("gps_lon_main") or 
-                         st.session_state.get("gps_lon_main_form") or
-                         st.session_state.get("_gps_lon_main_form") or
-                         st.session_state.get("_gps_lon_main") or 
-                         next((st.session_state[k] for k in st.session_state 
-                               if (k.startswith("gps_lon") or k.startswith("_gps_lon")) and st.session_state[k]), None))
-                               
+            # --- משיכת המיקום ישירות מהכספת חסינת-המחיקות ---
+            check_lat = st.session_state.get("VAULT_LAT_main")
+            check_lon = st.session_state.get("VAULT_LON_main")
+            
             if not is_combat_brigade and not (check_lat and check_lon):
                 st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח בחטמ\"ר!")
-                st.warning(f"💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום (הכפתור צריך להיות ירוק)")
+                st.warning("💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום (הכפתור צריך להיות ירוק)")
             
             elif not base or not inspector or not photo:
                 st.error("❌ חסרים פרטי חובה בסיסיים לשליחת הדוח")
