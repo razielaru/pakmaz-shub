@@ -55,10 +55,14 @@ def render_gps_button(key: str = "gps") -> tuple:
         }
         </style>
     """, unsafe_allow_html=True)
+    def sync_gps_to_state(key_name):
+        if st.session_state.get(f"_gps_{key_name}_{key}"):
+            st.session_state[f"gps_{key_name}_{key}"] = st.session_state[f"_gps_{key_name}_{key}"]
+            
     lat_val = st.text_input("lat", value="", key=f"_gps_lat_{key}", 
-                            label_visibility="hidden")
+                            label_visibility="hidden", on_change=sync_gps_to_state, args=("lat",))
     lon_val = st.text_input("lon", value="", key=f"_gps_lon_{key}",
-                            label_visibility="hidden")
+                            label_visibility="hidden", on_change=sync_gps_to_state, args=("lon",))
 
     # הכפתור + JS
     st.components.v1.html("""
@@ -8222,25 +8226,26 @@ def render_unit_report():
                 st.warning("💡 נא להעלות תמונה של נאמן הכשרות בשדה המתאים למעלה")
             
             # בדיקת מיקום חובה (פטור לחטיבות סדירות)
-            # יש מספר מפתחות פוטנציאליים ל-GPS. פה נאסוף אותם מחדש לפני השמירה.
+            # יש מספר מפתחות פוטנציאליים ל-GPS בעקבות העדכונים העקשניים של Streamlit
             check_lat = (gps_lat or 
                          st.session_state.get("gps_lat_main") or 
                          st.session_state.get("gps_lat_main_form") or
-                         st.session_state.get("gps_lat_gps_cp_1") or
                          st.session_state.get("_gps_lat_main_form") or 
+                         st.session_state.get("_gps_lat_main") or 
                          next((st.session_state[k] for k in st.session_state 
-                               if (k.startswith("gps_lat_") or k.startswith("_gps_lat")) and st.session_state[k]), None))
+                               if (k.startswith("gps_lat") or k.startswith("_gps_lat")) and st.session_state[k]), None))
                                
             check_lon = (gps_lon or 
                          st.session_state.get("gps_lon_main") or 
                          st.session_state.get("gps_lon_main_form") or
-                         st.session_state.get("_gps_lon_main_form") or 
+                         st.session_state.get("_gps_lon_main_form") or
+                         st.session_state.get("_gps_lon_main") or 
                          next((st.session_state[k] for k in st.session_state 
-                               if (k.startswith("gps_lon_") or k.startswith("_gps_lon")) and st.session_state[k]), None))
+                               if (k.startswith("gps_lon") or k.startswith("_gps_lon")) and st.session_state[k]), None))
                                
             if not is_combat_brigade and not (check_lat and check_lon):
                 st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח בחטמ\"ר!")
-                st.warning("💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום (הכפתור צריך להיות ירוק)")
+                st.warning(f"💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום (הכפתור צריך להיות ירוק)")
             
             elif not base or not inspector or not photo:
                 st.error("❌ חסרים פרטי חובה בסיסיים לשליחת הדוח")
@@ -8336,7 +8341,9 @@ def render_unit_report():
                         # ✅ הדפסה ללוג
                         print(f"💾 שומר למסד נתונים: lat={lat_with_offset:.6f}, lon={lon_with_offset:.6f}")
                     else:
-                        st.warning("⚠️ המיקום לא נשמר כי הוא מחוץ לגבולות ישראל")
+                        print(f"⚠️ המיקום לא נשמר כי הוא מחוץ לגבולות ישראל ({check_lat}, {check_lon})")
+                        # למרות זאת אנחנו רוצים לאפשר להם לשלוח דוח (תחת חריגת מיקום)
+                        pass
 
                 try:
                     result = supabase.table("reports").insert(data).execute()
