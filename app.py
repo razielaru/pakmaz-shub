@@ -3077,6 +3077,11 @@ def generate_inspector_stats(df):
     if df.empty or 'inspector' not in df.columns:
         return None
     
+    # 📋 סינון דוחות שנמחקו (מתחילים ב-🗑️)
+    df = df[~df['inspector'].astype(str).str.startswith('🗑️')].copy()
+    if df.empty:
+        return None
+    
     # 1. דאטה לכל הזמנים (All-time)
     all_time_counts = df['inspector'].value_counts()
     
@@ -7395,6 +7400,13 @@ def render_unit_report():
 
 
         st.markdown("#### 📸 תקלות ונאמן כשרות")
+
+        # 🆕 Wave 2.5: Contradiction Alert (Kashrut)
+        if st.session_state.get("vision_contradictions"):
+            for c in st.session_state["vision_contradictions"]:
+                if "מטבח" in c or "כשרות" in c:
+                    st.warning(f"🔍 **התראת אמינות (AI):** {c}")
+
         c1, c2 = st.columns(2)
         k_issues = radio_with_explanation("יש תקלות כשרות?", "k_issues", col=c1)
         k_shabbat_supervisor = radio_with_explanation("יש נאמן כשרות בשבת?", "k_shabbat_sup", col=c2)
@@ -7475,7 +7487,7 @@ def render_unit_report():
         st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
             <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[3].click()" 
                 style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
-                ⬅️ עבור לטאב הבא: ☕ טרקלין/וויקוק תוסיף/ הגנ״ש פילבוקס
+                ⬅️ עבור לטאב הבא: ☕ טרקלין/וויקוק / הגנ״ש פילבוקס
             </button></div>""", height=70)
 
     # ===========================================
@@ -7625,6 +7637,12 @@ def render_unit_report():
         c1, c2 = st.columns(2)
         r_mezuzot_missing = c1.number_input("כמה מזוזות חסרות?", 0)
         r_shabbat_device = c2.radio("האם קיימים התקני שבת?", ["כן", "לא", "חלקי"], horizontal=True, key="r5")
+
+        # 🆕 Wave 2.5: Contradiction Alert (Mezuzot)
+        if st.session_state.get("vision_contradictions"):
+            for c in st.session_state["vision_contradictions"]:
+                if "מזוזות" in c:
+                    st.warning(f"🔍 **התראת אמינות (AI):** {c}")
 
         # שדות נהלים מורחבים לחטיבות
         hq_shabbat_conduct = "לא רלוונטי"
@@ -7909,10 +7927,6 @@ def render_unit_report():
                             _contradictions.append(f"📸 AI מזהה בעיות כשרות ({kashrut_vision}) — אך דיווחת תעודת כשרות תקפה")
                     except Exception:
                         pass
-                    if _contradictions:
-                        st.warning("⚠️ **המוח הפיקודי זיהה סתירות אפשריות (למידע בלבד, לא חוסם שליחה):**")
-                        for c in _contradictions:
-                            st.write(f"🔍 {c}")
                         st.session_state["vision_contradictions"] = _contradictions
                     else:
                         st.session_state["vision_contradictions"] = []
@@ -8080,7 +8094,8 @@ def render_unit_report():
             elif not base or not inspector:
                 st.error("❌ חסרים פרטי חובה בסיסיים לשליחת הדוח")
                  
-            else:
+            # 🆕 Final Check: Ensure speed check/mandatory fields actually block submission
+            elif not _quick_fill_flags and not _mandatory_warnings and not missing_explanations:
                 photo_url = None
                 if photo:
                     photo_url = upload_report_photo(photo.getvalue(), unit, base)
