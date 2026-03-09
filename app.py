@@ -104,17 +104,19 @@ def render_gps_button(key: str = "gps") -> tuple:
                 var inputs = doc.querySelectorAll('input[type="text"]');
                 
                 var latSet = false, lonSet = false;
+                var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+
                 inputs.forEach(function(inp) {
                     if (!latSet && inp.value === '' && 
                         inp.closest('[data-testid]') && 
                         inp.getAttribute('aria-label') === 'lat') {
-                        inp.value = String(lat);
+                        nativeInputValueSetter.call(inp, String(lat));
                         inp.dispatchEvent(new Event('input', {bubbles:true}));
                         latSet = true;
                     }
                     if (!lonSet && inp.value === '' && 
                         inp.getAttribute('aria-label') === 'lon') {
-                        inp.value = String(lon);
+                        nativeInputValueSetter.call(inp, String(lon));
                         inp.dispatchEvent(new Event('input', {bubbles:true}));
                         lonSet = true;
                     }
@@ -124,12 +126,12 @@ def render_gps_button(key: str = "gps") -> tuple:
                 if (!latSet || !lonSet) {
                     inputs.forEach(function(inp) {
                         if (!latSet && inp.placeholder === 'lat') {
-                            inp.value = String(lat);
+                            nativeInputValueSetter.call(inp, String(lat));
                             inp.dispatchEvent(new Event('input', {bubbles:true}));
                             latSet = true;
                         }
                         if (!lonSet && inp.placeholder === 'lon') {
-                            inp.value = String(lon);
+                            nativeInputValueSetter.call(inp, String(lon));
                             inp.dispatchEvent(new Event('input', {bubbles:true}));
                             lonSet = true;
                         }
@@ -1461,6 +1463,11 @@ st.markdown("""
     [data-testid="stTimeInput"] input, [data-testid="stDateInput"] input {
         direction: ltr !important;
         text-align: center !important;
+        -webkit-appearance: none !important;
+        opacity: 1 !important;
+        min-height: 40px !important;
+        flex: 1 !important;
+        color: inherit !important;
     }
 
     /* כל תוכן Markdown Container מיושר לימין */
@@ -4308,10 +4315,10 @@ def analyze_photo_with_vision(image_bytes: bytes) -> dict:
         3. האם רואים מזוזות / היעדרן במקומות הנדרשים (דלתות)
         4. בעיות עירוב גלויות (חוט קרוע, עמוד עקום)
         5. ציון אמינות הדוח (האם התמונה תואמת את הדיווח המקובל בבסיס?)
-        6. הסבר מפורט בעברית על מה שאתה רואה, במיוחד אם יש בעיה.
+        6. הסבר תמציתי וממוקד (עד 5-6 שורות לכל היותר) בעברית על מה שאתה רואה, במיוחד אם יש בעיה.
         
         ענה בפורמט JSON בלבד עם מפתחות באנגלית: kashrut_issues, kitchen_cleanliness, mezuzot, eruv_issues, reliability_score, detailed_finding.
-        הסבר ה-detailed_finding חייב להיות בעברית שוטפת ומקצועית.
+        הסבר ה-detailed_finding חייב להיות בעברית שוטפת, מקצועית וקצרה.
         """
 
         response = model.generate_content([
@@ -7473,7 +7480,7 @@ def render_unit_report():
         "☕ טרקלין/ויקוק ",
         "🕍 ביהכ\"נ ועירוב",
         "📜 נהלים ורוח",
-        "📖 שיחת חתך (אינו חובה)",
+        "📖 שיחת חתך",
         "⚠️ חוסרים ושליחה"
     ])
 
@@ -7867,7 +7874,7 @@ def render_unit_report():
         st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
             <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[5].click()" 
                 style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
-                ⬅️ עבור לטאב הבא: 📖 שיחת חתך (אינו חובה)
+                ⬅️ עבור לטאב הבא: 📖 שיחת חתך
             </button></div>""", height=70)
 
     # ===========================================
@@ -8307,12 +8314,6 @@ def render_unit_report():
                 
                 # הוספת שאלות הלכה לחטיבות 35/89/900
                 if hq_vars:
-                    data.update(hq_vars)
-                
-                # 🆕 Wave 2.5: שדרוג שמירה עם ניתוח אמינות
-                if save_report_with_analysis(data, unit):
-                    time.sleep(2)
-                    st.rerun()
                     data.update(hq_vars)
                 
                 # הוספת מיקום רק אם קיים ואם הטבלה תומכת בזה
