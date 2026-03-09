@@ -56,9 +56,9 @@ def render_gps_button(key: str = "gps") -> tuple:
         </style>
     """, unsafe_allow_html=True)
     lat_val = st.text_input("lat", value="", key=f"_gps_lat_{key}", 
-                            label_visibility="hidden", placeholder="lat_secret")
+                            label_visibility="hidden")
     lon_val = st.text_input("lon", value="", key=f"_gps_lon_{key}",
-                            label_visibility="hidden", placeholder="lon_secret")
+                            label_visibility="hidden")
 
     # הכפתור + JS
     st.components.v1.html("""
@@ -107,14 +107,17 @@ def render_gps_button(key: str = "gps") -> tuple:
                 var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
 
                 inputs.forEach(function(inp) {
-                    if (!latSet && inp.placeholder === 'lat_secret' && inp.value === '') {
+                    if (!latSet && inp.value === '' && 
+                        inp.closest('[data-testid]') && 
+                        inp.getAttribute('aria-label') === 'lat') {
                         nativeInputValueSetter.call(inp, String(lat));
                         inp.dispatchEvent(new Event('input', {bubbles:true}));
                         inp.dispatchEvent(new Event('change', {bubbles:true}));
                         inp.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true}));
                         latSet = true;
                     }
-                    if (!lonSet && inp.placeholder === 'lon_secret' && inp.value === '') {
+                    if (!lonSet && inp.value === '' && 
+                        inp.getAttribute('aria-label') === 'lon') {
                         nativeInputValueSetter.call(inp, String(lon));
                         inp.dispatchEvent(new Event('input', {bubbles:true}));
                         inp.dispatchEvent(new Event('change', {bubbles:true}));
@@ -7246,12 +7249,7 @@ def render_unit_report():
         else:
             st.error(f"🚨 **התראה:** {distance:.1f} ק\"מ מ-{nearest_base} - מיקום חריג!")
     elif not (gps_lat_sess and gps_lon_sess):
-        # בדוק שוב בכל המפתחות לפני שמציג הודעה
-        any_gps = next((st.session_state[k] for k in st.session_state 
-                        if k.startswith("gps_lat_") and st.session_state[k]), None)
-        if not any_gps:
-            st.info("📡 מחפש מיקום GPS... אנא המתן עד להופעת אישור ירוק לפני השליחה")
-            st.caption("ירושלים: lat ~31.7, lon ~35.2")
+        pass # Waiting for GPS to be captured
     
     # --- ניהול ברקוד למציאת מיקום (סריקה חיה בלבד) ---
     scanned_val = st.session_state.get('barcode_scanned_val')
@@ -7281,16 +7279,12 @@ def render_unit_report():
     c1, c2, c3 = st.columns(3)
     date = c1.date_input("תאריך", datetime.date.today())
     
-    # 🆕 חזרה לתיבת טקסט פשוטה בגלל באגים של Streamlit במובייל עם רכיב הזמן. הערך ההתחלתי יהיה השעה הנוכחית.
-    if "report_hour_str" not in st.session_state:
-        st.session_state["report_hour_str"] = datetime.datetime.now().strftime("%H:%M")
+    # 🆕 שימוש ב- time_input אבל מוגן ע"י session_state כדי שלא יידרס ברענון 
+    if "initial_report_hour" not in st.session_state:
+        st.session_state["initial_report_hour"] = datetime.datetime.now().time()
         
-    time_v = c2.text_input("שעה", value=st.session_state["report_hour_str"], key="hour_input_str")
+    time_v = c2.time_input("שעה", value=st.session_state["initial_report_hour"], key="hour_input_widget")
     
-    # שמירת הערך חזרה לסטייט כדי שלא יילך לאיבוד ברפרש
-    if time_v != st.session_state.get("report_hour_str"):
-        st.session_state["report_hour_str"] = time_v
-
     inspector = c3.text_input("מבקר *")
     
     # בחירת מוצב (Text input בלבד)
@@ -8274,7 +8268,7 @@ def render_unit_report():
                     "soldier_shabbat_training": soldier_shabbat_training, "soldier_knows_rabbi": soldier_knows_rabbi,
                     "soldier_prayers": soldier_prayers, "soldier_talk_cmd": soldier_talk_cmd, 
                     "free_text": free_text + (f"\n[תמלול קולי]: {st.session_state.get('voice_note_transcription', '')}" if st.session_state.get('voice_note_transcription') else ""),
-                    "time": st.session_state.get("report_hour_str", str(time_v)), "p_pakal": p_pakal, "missing_items": missing,
+                    "time": str(time_v), "p_pakal": p_pakal, "missing_items": missing,
                     "r_mezuzot_missing": r_mezuzot_missing, "k_cook_type": k_cook_type,
                     "p_marked": p_marked, "p_mix": p_mix, "p_kasher": p_kasher,
                     "r_sg": r_sg, "r_hamal": r_hamal, "r_sign": r_sign, "r_netilot": r_netilot,
