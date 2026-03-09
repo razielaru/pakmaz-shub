@@ -20,8 +20,237 @@ import streamlit.components.v1 as components
 # Move to the absolute top to ensure it's the first streamlit command
 st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")
 
-# טעינת הכפתור המעוצב מתוך התיקייה שיצרנו
-custom_location_button = components.declare_component("whatsapp_loc_button", path="wa_loc_component")
+def render_gps_button(key: str = "gps") -> tuple:
+    """
+    לחצן GPS אחד — הדפדפן שואל רשות ומכניס מיקום אוטומטית.
+    מחזיר (latitude, longitude) או (None, None)
+    """
+    
+    # אם כבר יש מיקום שמור — מציג אותו
+    if st.session_state.get(f"gps_done_{key}"):
+        lat = st.session_state[f"gps_lat_{key}"]
+        lon = st.session_state[f"gps_lon_{key}"]
+        col1, col2 = st.columns([4,1])
+        with col1:
+            st.success(f"✅ מיקום נקלט ({lat:.4f}, {lon:.4f})")
+        with col2:
+            if st.button("🔄", key=f"reset_gps_{key}"):
+                del st.session_state[f"gps_done_{key}"]
+                st.rerun()
+        return lat, lon
+
+    # שדות נסתרים שה-JS ימלא
+    col_lat, col_lon = st.columns(2)
+    with col_lat:
+        lat_val = st.text_input("lat", value="", key=f"_gps_lat_{key}", 
+                                label_visibility="collapsed")
+    with col_lon:
+        lon_val = st.text_input("lon", value="", key=f"_gps_lon_{key}",
+                                label_visibility="collapsed")
+
+    # הכפתור + JS
+    st.components.v1.html("""
+    <div dir="rtl" style="font-family:Arial, sans-serif;">
+        <button id="gpsBtn" onclick="getGPS()"
+            style="width:100%; background:#1d4ed8; color:white; border:none;
+                   padding:14px; border-radius:10px; font-size:16px; 
+                   cursor:pointer; font-family:Arial;">
+            📍 שלח מיקום
+        </button>
+        <div id="msg" style="margin-top:8px; font-size:13px; 
+                              color:#64748b; text-align:right;"></div>
+    </div>
+
+    <script>
+    function getGPS() {
+        var btn = document.getElementById('gpsBtn');
+        var msg = document.getElementById('msg');
+        
+        btn.innerText = '🔄 מחפש מיקום...';
+        btn.disabled = true;
+        btn.style.background = '#94a3b8';
+        
+        if (!navigator.geolocation) {
+            msg.innerText = '❌ GPS לא נתמך בדפדפן זה';
+            btn.innerText = '📍 שלח מיקום';
+            btn.disabled = false;
+            btn.style.background = '#1d4ed8';
+            return;
+        }
+        
+        navigator.geolocation.getCurrentPosition(
+            function(pos) {
+                var lat = pos.coords.latitude;
+                var lon = pos.coords.longitude;
+                
+                msg.innerHTML = '✅ מיקום נמצא: ' + lat.toFixed(5) + ', ' + lon.toFixed(5);
+                btn.style.background = '#10b981';
+                btn.innerText = '✅ מיקום נשמר';
+                
+                // מחפש את שדות הקלט הנסתרים ומכניס את הערכים
+                var doc = window.parent.document;
+                var inputs = doc.querySelectorAll('input[type="text"]');
+                
+                var latSet = false, lonSet = false;
+                inputs.forEach(function(inp) {
+                    if (!latSet && inp.value === '' && 
+                        inp.closest('[data-testid]') && 
+                        inp.getAttribute('aria-label') === 'lat') {
+                        inp.value = String(lat);
+                        inp.dispatchEvent(new Event('input', {bubbles:true}));
+                        latSet = true;
+                    }
+                    if (!lonSet && inp.value === '' && 
+                        inp.getAttribute('aria-label') === 'lon') {
+                        inp.value = String(lon);
+                        inp.dispatchEvent(new Event('input', {bubbles:true}));
+                        lonSet = true;
+                    }
+                });
+
+                // אם לא הצליח למצוא דרך aria-label — מנסה דרך placeholder
+                if (!latSet || !lonSet) {
+                    inputs.forEach(function(inp) {
+                        if (!latSet && inp.placeholder === 'lat') {
+                            inp.value = String(lat);
+                            inp.dispatchEvent(new Event('input', {bubbles:true}));
+                            latSet = true;
+                        }
+                        if (!lonSet && inp.placeholder === 'lon') {
+                            inp.value = String(lon);
+                            inp.dispatchEvent(new Event('input', {bubbles:true}));
+                            lonSet = true;
+                        }
+                    });
+                }
+            },
+            function(err) {
+                var errors = {
+                    1: 'לא אישרת גישה למיקום — בדוק הגדרות הדפדפן',
+                    2: 'לא ניתן לקבל מיקום כרגע',
+                    3: 'הזמן פג — נסה שוב'
+                };
+                msg.innerText = '❌ ' + (errors[err.code] || err.message);
+                btn.innerText = '📍 נסה שוב';
+                btn.disabled = false;
+                btn.style.background = '#ef4444';
+            },
+            {
+                enableHighAccuracy: true,  // GPS מדויק
+                timeout: 15000,            // 15 שניות
+                maximumAge: 0              // תמיד מיקום רענן
+            }
+        );
+    }
+    </script>
+    """, height=100)
+
+    # בדיקה אם ה-JS מילא את השדות
+    try:
+        if lat_val and lon_val:
+            lat = float(lat_val)
+            lon = float(lon_val)
+            if 29.0 <= lat <= 34.0 and 34.0 <= lon <= 36.5:
+                st.session_state[f"gps_lat_{key}"] = lat
+                st.session_state[f"gps_lon_{key}"] = lon
+                st.session_state[f"gps_done_{key}"] = True
+                st.rerun()
+            else:
+                st.warning(f"⚠️ מיקום מחוץ לגבולות ישראל ({lat:.3f}, {lon:.3f})")
+    except Exception:
+        pass
+
+    return None, None
+
+
+def extract_gps_from_image(uploaded_file) -> tuple:
+    """
+    שולף GPS מתמונה שהועלתה (EXIF).
+    מחזיר (lat, lon) או (None, None)
+    """
+    from PIL import Image
+    from PIL.ExifTags import TAGS, GPSTAGS
+    import io
+
+    try:
+        img = Image.open(uploaded_file)
+        exif_data = img._getexif()
+        if not exif_data:
+            return None, None
+
+        # מציאת תגית ה-GPS
+        gps_info = {}
+        for tag_id, value in exif_data.items():
+            tag = TAGS.get(tag_id, tag_id)
+            if tag == "GPSInfo":
+                for gps_tag_id, gps_value in value.items():
+                    gps_tag = GPSTAGS.get(gps_tag_id, gps_tag_id)
+                    gps_info[gps_tag] = gps_value
+
+        if not gps_info:
+            return None, None
+
+        # המרה לדצימלי
+        def dms_to_dd(dms, ref):
+            d, m, s = dms
+            dd = float(d) + float(m)/60 + float(s)/3600
+            if ref in ['S', 'W']:
+                dd *= -1
+            return dd
+
+        lat = dms_to_dd(gps_info["GPSLatitude"], gps_info["GPSLatitudeRef"])
+        lon = dms_to_dd(gps_info["GPSLongitude"], gps_info["GPSLongitudeRef"])
+        return lat, lon
+
+    except Exception:
+        return None, None
+
+
+def render_proof_photo(base: str):
+    """
+    מבקש תמונת הוכחה — שולף GPS ומוודא שהחייל במוצב.
+    """
+    st.markdown("#### 📸 תמונת הוכחת נוכחות")
+    st.caption("צלם תמונה כלשהי במוצב ועלה אותה — המיקום יאומת אוטומטית")
+
+    photo = st.file_uploader(
+        "העלה תמונה מהמוצב",
+        type=["jpg", "jpeg"],  # רק JPG — כי PNG לא שומר EXIF
+        key=f"proof_photo_{base}"
+    )
+
+    if not photo:
+        return False
+
+    st.image(photo, width=300)
+
+    # שליפת GPS
+    lat, lon = extract_gps_from_image(photo)
+
+    if lat is None:
+        # אין GPS בתמונה — קרוב לוודאי צולם מחדש מסך
+        st.warning("⚠️ התמונה לא מכילה מידע מיקום. צלם ישירות מהמצלמה (לא מצילום מסך)")
+        st.session_state["photo_gps_ok"] = False
+        return False
+
+    # בדיקת מרחק מהמוצב
+    base_coords = BASE_COORDINATES.get(base)
+    if base_coords:
+        dist = haversine_distance(lat, lon, base_coords[0], base_coords[1])
+        if dist > 2.0:
+            st.error(f"🚨 המיקום בתמונה ({lat:.4f}, {lon:.4f}) — {dist:.1f} ק\"מ מהמוצב!")
+            st.session_state["photo_gps_ok"] = False
+            return False
+        else:
+            st.success(f"✅ מיקום אומת — {dist:.1f} ק\"מ מ{base}")
+            st.session_state["photo_gps_ok"] = True
+            st.session_state["photo_lat"] = lat
+            st.session_state["photo_lon"] = lon
+            return True
+    else:
+        st.info(f"📍 GPS בתמונה: {lat:.5f}, {lon:.5f} — לא הוגדר מיקום ייחוס למוצב זה")
+        st.session_state["photo_gps_ok"] = True
+        return True
 
 
 import math
@@ -565,36 +794,21 @@ def render_gps_checkpoint(checkpoint_num: int, base: str):
     
     st.markdown(f"**{label}** — {instruction}")
     
-    # שימוש ברכיב ה-GPS המובנה (אמין ב-100% בעיר)
-    loc_data = custom_location_button(key=f"gps_cp_{checkpoint_num}_{base}")
+    # שימוש ברכיב ה-GPS החדש
+    gps_lat, gps_lon = render_gps_button(key=f"gps_cp_{checkpoint_num}_{base}")
     
     # אם התקבלו נתונים (המשתמש לחץ ואישר)
-    if loc_data and "lat" in loc_data:
+    if gps_lat and gps_lon:
         st.session_state[data_key] = {
-            "latitude": loc_data["lat"],
-            "longitude": loc_data["lon"],
+            "latitude": gps_lat,
+            "longitude": gps_lon,
             "timestamp": time.time(),
-            "accuracy": loc_data.get("acc", 0)
+            "accuracy": 0 # JS accuracy not passed here yet, could be 0
         }
         st.session_state[done_key] = True
         st.rerun()
-
-    # במקרה נדיר של חוסר קליטה מוחלט, נשאיר גם אופציה לבחור מוצב מהרשימה
-    with st.expander("⚙️ ה-GPS חסום? בחר ידנית מהרשימה"):
-        if base in BASE_COORDINATES:
-            if st.button(f"📍 השתמש במיקום של '{base}'", key=f"use_dict_{checkpoint_num}", use_container_width=True):
-                base_lat, base_lon = BASE_COORDINATES[base]
-                st.session_state[data_key] = {"latitude": base_lat, "longitude": base_lon, "timestamp": time.time(), "accuracy": 999}
-                st.session_state[done_key] = True
-                st.rerun()
-        else:
-            known_bases = ["-- בחר מוצב מוכר --"] + list(BASE_COORDINATES.keys())
-            selected_base = st.selectbox("בחר מיקום:", known_bases, key=f"sel_dict_{checkpoint_num}")
-            if st.button("💾 שמור", key=f"save_dict_{checkpoint_num}", use_container_width=True) and selected_base != "-- בחר מוצב מוכר --":
-                base_lat, base_lon = BASE_COORDINATES[selected_base]
-                st.session_state[data_key] = {"latitude": base_lat, "longitude": base_lon, "timestamp": time.time(), "accuracy": 999}
-                st.session_state[done_key] = True
-                st.rerun()
+    
+    return False
 
     return False
 
@@ -6762,15 +6976,8 @@ def render_unit_report():
             st.warning("⚠️ לא נמצאה טיוטה שמורה")
 
     st.markdown("### 📍 מיקום ותאריך")
-    # קריאה לכפתור המיקום שלנו!
-    loc = custom_location_button(key="main_form_gps_btn")
-
-    if loc and loc.get('lat'):
-        gps_lat = loc['lat']
-        gps_lon = loc['lon']
-    else:
-        gps_lat = None
-        gps_lon = None
+    # קריאה לכפתור המיקום החדש שלנו!
+    gps_lat, gps_lon = render_gps_button(key="main_form_gps_btn")
     
     if gps_lat:
         # ✅ הצגת המיקום המדויק שנקלט
@@ -6786,7 +6993,8 @@ def render_unit_report():
             st.info("📍 **למידע:** ירושלים היא בערך lat=31.7683, lon=35.2137")
         else:
             st.info(f"✅ המיקום תקין - בגבולות ישראל")
-        
+
+    if gps_lat:
         # בדיקת מרחק מבסיסים ידועים
         nearest_base, distance = find_nearest_base(gps_lat, gps_lon)
         
@@ -6799,22 +7007,18 @@ def render_unit_report():
     else:
         st.warning("📡 מחפש מיקום GPS... אנא המתן עד להופעת אישור ירוק לפני השליחה")
         st.caption("ירושלים: lat ~31.7, lon ~35.2")
-    
-    # --- 🆕 ניהול ברקוד למציאת מיקום ---
-    if 'barcode_manual_input' in st.session_state and st.session_state.barcode_manual_input:
-        scanned_val = st.session_state.barcode_manual_input
-        # חיפוש הבסיס לפי הברקוד
-        found_base = None
-        for b_name, b_code in BASE_BARCODES.items():
-            if b_code == scanned_val:
-                found_base = b_name
-                break
-        if found_base and st.session_state.get('base_input') != found_base:
-            st.session_state.base_input = found_base
-            st.toast(f"📍 נמצא מיקום: {found_base}", icon="✅")
 
-    if 'barcode_from_image_input' in st.session_state and st.session_state.barcode_from_image_input:
-        scanned_val = st.session_state.barcode_from_image_input
+    # 📸 תמונת הוכחת נוכחות
+    photo_ok = render_proof_photo(base)
+    
+    # חסימת שליחה אם אין אימות
+    if not photo_ok and not st.session_state.get("photo_gps_ok"):
+        st.warning("יש לאמת נוכחות לפני שליחת הדוח (צילום תמונה במוצב)")
+        st.stop()
+    
+    # --- ניהול ברקוד למציאת מיקום (סריקה חיה בלבד) ---
+    scanned_val = st.session_state.get('barcode_scanned_val')
+    if scanned_val:
         found_base = None
         for b_name, b_code in BASE_BARCODES.items():
             if b_code == scanned_val:
@@ -6944,20 +7148,13 @@ def render_unit_report():
             </script>
             """.replace("{{EXPECTED}}", expected_barcode)
             import streamlit.components.v1 as _components
-            _components.html(scanner_js, height=350)
-            barcode_manual = st.text_input("📟 או הזן ברקוד ידנית", placeholder="לדוגמא: ABC-12345", key="barcode_manual_input")
-            if barcode_manual:
-                st.success(f"📷 ברקוד: {barcode_manual}")
+            # Removed manual input to ensure security
+            pass
         with barcode_tab_img:
-            st.caption("העלה תמונה של ברקוד – הזן את הערך ידנית למטה")
-            barcode_image_file = st.file_uploader("🖼️ העלה תמונת ברקוד", type=['jpg', 'png', 'jpeg'], key="barcode_image_upload")
-            if barcode_image_file:
-                st.image(barcode_image_file, caption="תמונת ברקוד שהועלתה", use_column_width=True)
-            barcode_from_image = st.text_input("הזן את ערך הברקוד מהתמונה", placeholder="לדוגמא: ABC-12345", key="barcode_from_image_input")
-            if barcode_from_image:
-                st.success(f"✅ ברקוד מתמונה: {barcode_from_image}")
+            st.error("❌ העלאת תמונת ברקוד הופסקה מטעמי אבטחה. השתמש בסריקה חיה בלבד.")
+            st.info("💡 במידה והסורק לא עובד, יש לאמת נוכחות באמצעות 'תמונת הוכחת נוכחות' למטה.")
 
-    barcode_value = st.session_state.get('barcode_manual_input', '') or st.session_state.get('barcode_from_image_input', '')
+    barcode_value = st.session_state.get('barcode_scanned_val', '')
         
     # ========================================
     # 📁 טאבי הטופס (5 טאבים)
