@@ -4,8 +4,6 @@ pandas
 plotly
 Pillow
 bcrypt
-pydeck
-streamlit-geolocation
 folium
 streamlit-folium
 jinja2
@@ -14,3 +12,4 @@ streamlit-drawable-canvas
 google-generativeai==0.8.3
 opencv-python-headless
 pytesseract
+scikit-learn
