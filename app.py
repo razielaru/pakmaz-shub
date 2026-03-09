@@ -7282,10 +7282,18 @@ def render_unit_report():
     date = c1.date_input("תאריך", datetime.date.today())
     
     current_hour = datetime.datetime.now().strftime("%H:%M")
-    if "report_hour" not in st.session_state:
-        st.session_state["report_hour"] = current_hour
-    time_v = c2.text_input("שעה", value=st.session_state["report_hour"], key="hour_input")
+    c1, c2, c3 = st.columns(3)
+    date = c1.date_input("תאריך", datetime.date.today())
     
+    # 🆕 הצגת שעה שמתעדכנת כראוי - משתמשים ב-time_input כברירת מחדל כדי לאפשר למשתמש לשלוט בזה
+    if "report_hour" not in st.session_state:
+        st.session_state["report_hour"] = datetime.datetime.now().time()
+        
+    time_v = c2.time_input("שעה", value=st.session_state["report_hour"], key="hour_input_widget")
+    
+    # במקרה שהעיצוב המקורי של Streamlit לשעות עדין קרס ב-iOS, נשמור גם כטקסט ב-state
+    st.session_state["report_hour_str"] = time_v.strftime("%H:%M") if time_v else ""
+
     inspector = c3.text_input("מבקר *")
     
     # בחירת מוצב (Text input בלבד)
@@ -8234,8 +8242,11 @@ def render_unit_report():
             if not is_combat_brigade and not (check_lat and check_lon):
                 st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח בחטמ\"ר!")
                 st.warning("💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום")
+                
+            elif not base or not inspector or not photo:
+                st.error("❌ חסרים פרטי חובה בסיסיים לשליחת הדוח")
                  
-            elif base and inspector and photo:
+            else:
                 photo_url = upload_report_photo(photo.getvalue(), unit, base)
                 
                 # העלאת תמונות נוספות (תקלות כשרות ונאמן כשרות)
@@ -8266,7 +8277,7 @@ def render_unit_report():
                     "soldier_shabbat_training": soldier_shabbat_training, "soldier_knows_rabbi": soldier_knows_rabbi,
                     "soldier_prayers": soldier_prayers, "soldier_talk_cmd": soldier_talk_cmd, 
                     "free_text": free_text + (f"\n[תמלול קולי]: {st.session_state.get('voice_note_transcription', '')}" if st.session_state.get('voice_note_transcription') else ""),
-                    "time": str(time_v), "p_pakal": p_pakal, "missing_items": missing,
+                    "time": st.session_state.get("report_hour_str", str(time_v)), "p_pakal": p_pakal, "missing_items": missing,
                     "r_mezuzot_missing": r_mezuzot_missing, "k_cook_type": k_cook_type,
                     "p_marked": p_marked, "p_mix": p_mix, "p_kasher": p_kasher,
                     "r_sg": r_sg, "r_hamal": r_hamal, "r_sign": r_sign, "r_netilot": r_netilot,
@@ -8431,9 +8442,6 @@ def render_unit_report():
                             st.error(f"❌ שגיאה בשמירה: {e2}")
                     else:
                         st.error(f"❌ שגיאה בשמירה: {error_msg}")
-            else:
-                st.error("⚠️ חסרים פרטי חובה (מוצב, מבקר או תמונה)")
-    
     # --- סטטיסטיקות מבקרים ---
     st.markdown("---")
     st.markdown("## 📊 סטטיסטיקות מבקרים")
