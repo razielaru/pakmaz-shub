@@ -14,91 +14,13 @@ import hashlib
 import bcrypt
 import shutil
 import os
-import pydeck as pdk
 import random
 import streamlit.components.v1 as components
-import time
-
-# בניית כפתור מיקום שמרגיש כמו אפליקציה (וואטסאפ)
-_whatsapp_loc_html = """
-<!DOCTYPE html>
-<html>
-<head>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/streamlit-component-lib/1.3.0/streamlit.index.js"></script>
-    <style>
-        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; }
-        .wa-btn {
-            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
-            color: white;
-            border: none;
-            padding: 16px 20px;
-            border-radius: 12px;
-            font-size: 18px;
-            font-weight: bold;
-            width: 100%;
-            cursor: pointer;
-            box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            transition: all 0.2s ease;
-        }
-        .wa-btn:active { transform: scale(0.96); box-shadow: 0 2px 6px rgba(37, 211, 102, 0.2); }
-        #status { text-align: center; margin-top: 8px; font-size: 14px; color: #475569; font-weight: 600; }
-    </style>
-</head>
-<body>
-    <button class="wa-btn" onclick="getLocation()">
-        <span style="font-size: 24px;">📍</span> שמור מיקום מדויק עכשיו
-    </button>
-    <div id="status"></div>
-    
-    <script>
-        function onRender(event) { Streamlit.setFrameHeight(); }
-        Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
-        Streamlit.setComponentReady();
-        Streamlit.setFrameHeight();
-
-        function getLocation() {
-            const status = document.getElementById('status');
-            status.innerText = "⏳ מתחבר ללוויין... (אנא אשר גישה אם קופצת הודעה)";
-            status.style.color = "#f59e0b";
-            
-            if (navigator.geolocation) {
-                // שימוש בהגדרות GPS מחמירות לקבלת מיקום מדויק (כמו בוואטסאפ)
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        status.innerText = "✅ המיקום נקלט בהצלחה!";
-                        status.style.color = "#16a34a";
-                        // שולח את הנתונים חזרה לפייתון
-                        Streamlit.setComponentValue({
-                            lat: position.coords.latitude,
-                            lon: position.coords.longitude,
-                            acc: position.coords.accuracy
-                        });
-                    },
-                    (error) => {
-                        let msg = "❌ שגיאה: ";
-                        if (error.code === 1) msg += "חסמת את הגישה למיקום בטלפון.";
-                        else if (error.code === 2) msg += "אין קליטת GPS כרגע.";
-                        else if (error.code === 3) msg += "זמן הבקשה פג (נסה שוב).";
-                        status.innerText = msg;
-                        status.style.color = "#dc2626";
-                    },
-                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-                );
-            } else {
-                status.innerText = "❌ הדפדפן שלך לא תומך במיקום.";
-            }
-        }
-    </script>
-</body>
-</html>
-"""
+st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")  # title intentionally unchanged
 
 # הצהרה על הרכיב מול Streamlit (מבוצע פעם אחת)
-custom_location_button = components.declare_component("whatsapp_loc_button", html=_whatsapp_loc_html)
+COMPONENT_PATH = os.path.join(os.path.dirname(__file__), "assets", "whatsapp_loc")
+custom_location_button = components.declare_component("whatsapp_loc_button", path=COMPONENT_PATH)
 import math
 from typing import Tuple, Optional, List, Dict, Any
 import folium
@@ -108,7 +30,7 @@ try:
 except ImportError:
     st_canvas = None
 
-st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")  # title intentionally unchanged
+
 
 # WhatsApp phones for Hatmar Rabbis
 
@@ -10296,6 +10218,48 @@ def render_deficit_heat_map(df: pd.DataFrame, accessible_units: list):
     with s4: st.metric("📋 סה\"כ דוחות", total_rep)
 
 
+def make_pwa_app():
+    """
+    הופך את האתר לאפליקציית רשת (PWA).
+    מעלים את שורת הכתובת, מגדיר שם לאייקון וצבע לשורת הסטטוס.
+    """
+    import streamlit.components.v1 as components
+    components.html("""
+    <script>
+        // גישה ל-head של הדף הראשי
+        const head = window.parent.document.querySelector('head');
+        
+        // 1. הגדרת מסך מלא (ללא שורת כתובת של דפדפן) לאייפון ואנדרואיד
+        if (!window.parent.document.querySelector('meta[name="apple-mobile-web-app-capable"]')) {
+            const metaApple = window.parent.document.createElement('meta');
+            metaApple.name = "apple-mobile-web-app-capable";
+            metaApple.content = "yes";
+            head.appendChild(metaApple);
+            
+            const metaAndroid = window.parent.document.createElement('meta');
+            metaAndroid.name = "mobile-web-app-capable";
+            metaAndroid.content = "yes";
+            head.appendChild(metaAndroid);
+        }
+        
+        // 2. הגדרת השם שיופיע מתחת לאייקון במסך הבית
+        if (!window.parent.document.querySelector('meta[name="apple-mobile-web-app-title"]')) {
+            const metaTitle = window.parent.document.createElement('meta');
+            metaTitle.name = "apple-mobile-web-app-title";
+            metaTitle.content = "רבנות פקמ״ז";
+            head.appendChild(metaTitle);
+        }
+        
+        // 3. הגדרת צבע שורת הסטטוס (השורה של הסוללה/שעון) לצבע של המערכת
+        if (!window.parent.document.querySelector('meta[name="theme-color"]')) {
+            const metaTheme = window.parent.document.createElement('meta');
+            metaTheme.name = "theme-color";
+            metaTheme.content = "#1e3a8a"; // הכחול המבצעי של המערכת
+            head.appendChild(metaTheme);
+        }
+    </script>
+    """, height=0)
+
 # --- 10. Main ---
 def main():
     # הגנה על תקציב API - מקסימום 50 קריאות ל-Session
@@ -10305,6 +10269,9 @@ def main():
     if st.session_state.api_call_count > 50:
         st.error("🚨 חרגת ממכסת השימוש המותרת לחיבור זה. המערכת ננעלה למניעת חיובי יתר.")
         st.stop()
+
+    # הפעלת הגדרות האפליקציה למובייל
+    make_pwa_app()
 
     # החלת עיצוב CSS גלובלי
     apply_custom_css()
