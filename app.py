@@ -40,13 +40,10 @@ def render_gps_button(key: str = "gps") -> tuple:
         return lat, lon
 
     # שדות נסתרים שה-JS ימלא
-    col_lat, col_lon = st.columns(2)
-    with col_lat:
-        lat_val = st.text_input("lat", value="", key=f"_gps_lat_{key}", 
-                                label_visibility="collapsed")
-    with col_lon:
-        lon_val = st.text_input("lon", value="", key=f"_gps_lon_{key}",
-                                label_visibility="collapsed")
+    lat_val = st.text_input("lat", value="", key=f"_gps_lat_{key}", 
+                            label_visibility="hidden")
+    lon_val = st.text_input("lon", value="", key=f"_gps_lon_{key}",
+                            label_visibility="hidden")
 
     # הכפתור + JS
     st.components.v1.html("""
@@ -6976,8 +6973,8 @@ def render_unit_report():
             st.warning("⚠️ לא נמצאה טיוטה שמורה")
 
     st.markdown("### 📍 מיקום ותאריך")
-    # קריאה לכפתור המיקום החדש שלנו!
-    gps_lat, gps_lon = render_gps_button(key="main_form_gps_btn")
+    # ✅ המיקום נלקח כעת מתמונת ההוכחה ומסריקת הברקוד
+    gps_lat, gps_lon = st.session_state.get("gps_lat_main", None), st.session_state.get("gps_lon_main", None)
     
     if gps_lat:
         # ✅ הצגת המיקום המדויק שנקלט
@@ -7071,7 +7068,7 @@ def render_unit_report():
             st.stop()
 
     # ===== סריקת ברקוד מוצב =====
-    with st.expander("📷 סריקת ברקוד מוצב (רשות)"):
+    with st.expander("📷 סריקת ברקוד מוצב (רשות)", expanded=True):
         barcode_tab_cam, barcode_tab_img = st.tabs(["📷 סריקה חיה", "🖼️ העלאת תמונה"])
         with barcode_tab_cam:
             expected_barcode = BASE_BARCODES.get(base, "NONE")
