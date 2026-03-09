@@ -14,3 +14,4 @@ opencv-python-headless
 pytesseract
 scikit-learn
 qrcode[pil]
+streamlit-geolocation
