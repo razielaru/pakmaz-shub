@@ -7007,14 +7007,6 @@ def render_unit_report():
     else:
         st.warning("📡 מחפש מיקום GPS... אנא המתן עד להופעת אישור ירוק לפני השליחה")
         st.caption("ירושלים: lat ~31.7, lon ~35.2")
-
-    # 📸 תמונת הוכחת נוכחות
-    photo_ok = render_proof_photo(base)
-    
-    # חסימת שליחה אם אין אימות
-    if not photo_ok and not st.session_state.get("photo_gps_ok"):
-        st.warning("יש לאמת נוכחות לפני שליחת הדוח (צילום תמונה במוצב)")
-        st.stop()
     
     # --- ניהול ברקוד למציאת מיקום (סריקה חיה בלבד) ---
     scanned_val = st.session_state.get('barcode_scanned_val')
@@ -7068,6 +7060,15 @@ def render_unit_report():
             st.info("💡 בחר מוצב מהרשימה או בחר 'הזנה ידנית'")
     
     render_base_history_card(base, unit)
+
+    # 📸 תמונת הוכחת נוכחות (רק אם נבחר מוצב)
+    if base and len(base) > 2:
+        photo_ok = render_proof_photo(base)
+        
+        # חסימת שליחה אם אין אימות
+        if not photo_ok and not st.session_state.get("photo_gps_ok"):
+            st.warning("יש לאמת נוכחות לפני שליחת הדוח (צילום תמונה במוצב)")
+            st.stop()
 
     # ===== סריקת ברקוד מוצב =====
     with st.expander("📷 סריקת ברקוד מוצב (רשות)"):
