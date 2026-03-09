@@ -1464,10 +1464,12 @@ st.markdown("""
         direction: ltr !important;
         text-align: center !important;
         -webkit-appearance: none !important;
-        opacity: 1 !important;
         min-height: 40px !important;
-        flex: 1 !important;
-        color: inherit !important;
+        font-size: 16px !important;
+    }
+    
+    [data-testid="stTimeInput"] div[data-baseweb="input"] {
+        background-color: transparent !important;
     }
 
     /* כל תוכן Markdown Container מיושר לימין */
@@ -7288,11 +7290,11 @@ def render_unit_report():
     time_v = c2.time_input("שעה", datetime.datetime.now().time())
     inspector = c3.text_input("מבקר *")
     
-    # בחירת מוצב (Selectbox + Manual input)
+    # בחירת מוצב (Text input בלבד)
     st.markdown("---")
     
-    # 2. מחפשים מוצב קרוב
-    default_base = "-- בחר --"
+    # מחפשים מוצב קרוב
+    default_base = ""
     distance_found = None
     
     if gps_lat and gps_lon:
@@ -7300,36 +7302,19 @@ def render_unit_report():
         if distance_found and distance_found < 5.0:
             default_base = nearest
             
-    # 3. בונים את הרשימה עם ברירת מחדל
-    # מוסיפים את כל הבסיסים ל-all_bases
-    all_bases = ["-- בחר --", "📝 מוצב אחר (הזנה ידנית)"] + suggested_bases
-    default_idx = all_bases.index(default_base) if default_base in all_bases else 0
-    
-    # 4. ה-selectbox נפתח כשהמוצב כבר נבחר
-    base_selection = st.selectbox(
-        "בחר מוצב / מיקום *", 
-        options=all_bases,
-        index=default_idx,
-        key="base_selection_dropdown"
+    base = st.text_input(
+        "הזן שם מוצב / מיקום *", 
+        value=default_base,
+        placeholder="לדוגמה: מוצב מנורה", 
+        key="base_input_manual"
     )
     
-    base = ""
-    if base_selection == "📝 מוצב אחר (הזנה ידנית)":
-        base = st.text_input("הזן שם מוצב / מיקום ידנית *", placeholder="לדוגמה: מוצב מנורה", key="base_input_manual")
-    elif base_selection != "-- בחר --":
-        base = base_selection
-        st.session_state.base_input = base
-    else:
-        base = st.session_state.get('base_input', '')
-        if not base:
-            st.info("💡 בחר מוצב מהרשימה או בחר 'הזנה ידנית'")
-            
     # 🆕 שמירת מיקום במאגר אם זה בסיס חדש עם קואורדינטות GPS
-    if gps_lat and base and base != "-- בחר --":
+    if gps_lat and base:
         save_base_location_if_new(base, gps_lat, gps_lon)
             
-    # 5. הודעה לחייל
-    if default_base != "-- בחר --" and base == default_base and distance_found:
+    # הודעה לחייל
+    if default_base and base == default_base and distance_found:
         st.success(f"📍 זוהה אוטומטית: {default_base} ({distance_found:.1f} ק\"מ ממך)")
     
     render_base_history_card(base, unit)
