@@ -8210,25 +8210,35 @@ def render_unit_report():
                 try:
                     result = supabase.table("reports").insert(data).execute()
                 except Exception as e:
-                    if "PGRST204" in str(e) or "Could not find" in str(e):
-                        new_fields = [
-                            "k_issues", "k_issues_description", "k_shabbat_supervisor",
-                            "k_shabbat_supervisor_name", "k_shabbat_supervisor_phone",
-                            "k_issues_photo_url", "k_shabbat_photo_url",
-                            "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone",
-                            "report_duration", "barcode_verified", "signature_url",
-                            "ai_risk_level", "ai_sla", "ai_action",
-                            "vision_detailed_finding",
-                            "lesson_date", "lesson_location", "lesson_qty", "lesson_participants",
-                            "lesson_content", "lesson_instructors", "lesson_population",
-                            "honeypot_failed", "quick_fill_flags", "vision_contradictions", "inspector_tip",
-                            "vision_findings", "gps_source"
-                        ]
-                        for field in new_fields:
-                            data.pop(field, None)
-                        result = supabase.table("reports").insert(data).execute()
-                    else:
-                        raise e
+                    # מנגנון הגנה אגרסיבי מפני עמודות חסרות (שגיאת APIError במובייל)
+                    new_fields = [
+                        "k_issues", "k_issues_description", "k_shabbat_supervisor",
+                        "k_shabbat_supervisor_name", "k_shabbat_supervisor_phone",
+                        "k_issues_photo_url", "k_shabbat_photo_url",
+                        "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone",
+                        "report_duration", "barcode_verified", "signature_url",
+                        "ai_risk_level", "ai_sla", "ai_action",
+                        "vision_detailed_finding", "vision_contradictions", "inspector_tip",
+                        "lesson_date", "lesson_location", "lesson_qty", "lesson_participants",
+                        "lesson_content", "lesson_instructors", "lesson_population",
+                        "honeypot_triggered", "quick_fill_flags", "hq_shabbat_conduct",
+                        "vision_findings", "gps_source"
+                    ]
+                    # נסה להסיר את כל השדות החדשים שנכנסו לאחרונה
+                    clean_data = data.copy()
+                    for field in new_fields:
+                        clean_data.pop(field, None)
+                    
+                    # גם שדות מה-Continuity (אם קיימים)
+                    if 'continuity_answers' in locals():
+                        for k in continuity_answers.keys():
+                            clean_data.pop(k, None)
+                            
+                    try:
+                        result = supabase.table("reports").insert(clean_data).execute()
+                    except Exception as e2:
+                        st.error(f"❌ שגיאה קריטית בבסיס הנתונים: {e2}")
+                        raise e2
 
                 try:
                     if result.data and len(result.data) > 0:
