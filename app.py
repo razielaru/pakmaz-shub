@@ -19,7 +19,7 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")  # title intentionally unchanged
 
 # הצהרה על הרכיב מול Streamlit (מבוצע פעם אחת)
-COMPONENT_PATH = os.path.join(os.path.dirname(__file__), "assets", "whatsapp_loc")
+COMPONENT_PATH = os.path.join(os.path.dirname(__file__), "gps_widget")
 custom_location_button = components.declare_component("whatsapp_loc_button", path=COMPONENT_PATH)
 import math
 from typing import Tuple, Optional, List, Dict, Any
