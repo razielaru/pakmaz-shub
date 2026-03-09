@@ -56,9 +56,9 @@ def render_gps_button(key: str = "gps") -> tuple:
         </style>
     """, unsafe_allow_html=True)
     lat_val = st.text_input("lat", value="", key=f"_gps_lat_{key}", 
-                            label_visibility="hidden")
+                            label_visibility="hidden", placeholder="lat_secret")
     lon_val = st.text_input("lon", value="", key=f"_gps_lon_{key}",
-                            label_visibility="hidden")
+                            label_visibility="hidden", placeholder="lon_secret")
 
     # הכפתור + JS
     st.components.v1.html("""
@@ -107,36 +107,21 @@ def render_gps_button(key: str = "gps") -> tuple:
                 var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
 
                 inputs.forEach(function(inp) {
-                    if (!latSet && inp.value === '' && 
-                        inp.closest('[data-testid]') && 
-                        inp.getAttribute('aria-label') === 'lat') {
+                    if (!latSet && inp.placeholder === 'lat_secret' && inp.value === '') {
                         nativeInputValueSetter.call(inp, String(lat));
                         inp.dispatchEvent(new Event('input', {bubbles:true}));
+                        inp.dispatchEvent(new Event('change', {bubbles:true}));
+                        inp.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true}));
                         latSet = true;
                     }
-                    if (!lonSet && inp.value === '' && 
-                        inp.getAttribute('aria-label') === 'lon') {
+                    if (!lonSet && inp.placeholder === 'lon_secret' && inp.value === '') {
                         nativeInputValueSetter.call(inp, String(lon));
                         inp.dispatchEvent(new Event('input', {bubbles:true}));
+                        inp.dispatchEvent(new Event('change', {bubbles:true}));
+                        inp.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true}));
                         lonSet = true;
                     }
                 });
-
-                // אם לא הצליח למצוא דרך aria-label — מנסה דרך placeholder
-                if (!latSet || !lonSet) {
-                    inputs.forEach(function(inp) {
-                        if (!latSet && inp.placeholder === 'lat') {
-                            nativeInputValueSetter.call(inp, String(lat));
-                            inp.dispatchEvent(new Event('input', {bubbles:true}));
-                            latSet = true;
-                        }
-                        if (!lonSet && inp.placeholder === 'lon') {
-                            nativeInputValueSetter.call(inp, String(lon));
-                            inp.dispatchEvent(new Event('input', {bubbles:true}));
-                            lonSet = true;
-                        }
-                    });
-                }
             },
             function(err) {
                 var errors = {
