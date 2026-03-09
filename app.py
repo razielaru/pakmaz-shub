@@ -7512,7 +7512,6 @@ def render_unit_report():
         # 🆕 Wave 2.5: Continuity & GPS Checkpoint 1
         if base and len(base) > 2:
             continuity_answers = render_continuity_questions(base, unit)
-        render_gps_checkpoint(1, base)
         
         # ⏱️ Tab timer
         if "tab1_start" not in st.session_state:
@@ -7766,8 +7765,6 @@ def render_unit_report():
     # TAB 3: נהלים ורוח (Procedures, Torah, Shichat Chetek)
     # ===========================================
     with tab3:
-        # 🆕 Wave 2.5: GPS Checkpoint 2
-        render_gps_checkpoint(2, base)
         
         # ⏱️ Tab timer
         if "tab3_start" not in st.session_state:
@@ -7981,8 +7978,6 @@ def render_unit_report():
     # TAB 5: חוסרים ושליחה (Deficits + Submit)
     # ===========================================
     with tab5:
-        # 🆕 Wave 2.5: GPS Checkpoint 3
-        render_gps_checkpoint(3, base)
         st.markdown("### ⚠️ חוסרים")
         missing = st.text_area("פירוט חוסרים")
         st.markdown("### 💬 הערות נוספות")
