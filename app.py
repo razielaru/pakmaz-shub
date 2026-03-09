@@ -562,7 +562,7 @@ def render_gps_checkpoint(checkpoint_num: int, base: str):
     st.markdown(f"**{label}** — {instruction}")
     
     # שימוש ברכיב הסטנדרטי והיציב לזיהוי מיקום
-    loc_data = streamlit_geolocation()
+    loc_data = streamlit_geolocation(key=f"gps_cp_{checkpoint_num}_{base}")
     
     # אם התקבלו נתונים מהכפתור (המשתמש לחץ ואישר)
     if loc_data and loc_data.get("latitude"):
@@ -5173,17 +5173,8 @@ def render_command_dashboard():
     raw_data = load_reports_cached(accessible_units)
     df = pd.DataFrame(raw_data)
     
-    # כפתור יציאה בראש הדף
-    col_logout, col_title = st.columns([1, 5])
-    with col_logout:
-        if st.button("🚪 יציאה", key="logout_cmd", use_container_width=True):
-            st.session_state.logged_in = False
-            st.session_state.selected_unit = None
-            st.session_state.login_stage = "gallery"  # חזרה לגלריה הראשית
-            st.rerun()
-    
-    with col_title:
-        st.markdown(f"## 🎯 מרכז בקרה פיקודי - {unit}")
+    # כותרת הדף
+    st.markdown(f"## 🎯 מרכז בקרה פיקודי - {unit}")
     
     # ✅ הכנת הקובץ מראש - לפני הטאבים (דוח ארצי מלא)
     all_data_for_excel = load_reports_cached(None) # None = כל הארץ
@@ -6743,14 +6734,8 @@ def render_unit_report():
     if not st.session_state.commander_authenticated:
         st.markdown("### 📋 דיווח ביקורת חדש")
         
-        # כפתור יציאה בראש הדף
-        col_logout, col_logo, col_title = st.columns([1, 1, 6])
-        with col_logout:
-            if st.button("🚪 יציאה", key="logout_hatmar", use_container_width=True):
-                st.session_state.logged_in = False
-                st.session_state.selected_unit = None
-                st.session_state.login_stage = "gallery"  # חזרה לגלריה הראשית
-                st.rerun()
+        # כותרת הטופס
+        col_logo, col_title = st.columns([1, 7])
         with col_logo:
             st.image(get_logo_url(unit), width=80)
         with col_title:
@@ -6774,7 +6759,7 @@ def render_unit_report():
 
     st.markdown("### 📍 מיקום ותאריך")
     # שימוש ברכיב הסטנדרטי והיציב לזיהוי מיקום
-    loc_data = streamlit_geolocation()
+    loc_data = streamlit_geolocation(key=f"main_gps_{unit}")
 
     if loc_data and loc_data.get('latitude'):
         gps_lat = loc_data['latitude']
