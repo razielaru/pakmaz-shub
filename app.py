@@ -7281,10 +7281,6 @@ def render_unit_report():
     c1, c2, c3 = st.columns(3)
     date = c1.date_input("תאריך", datetime.date.today())
     
-    current_hour = datetime.datetime.now().strftime("%H:%M")
-    c1, c2, c3 = st.columns(3)
-    date = c1.date_input("תאריך", datetime.date.today())
-    
     # 🆕 הצגת שעה שמתעדכנת כראוי - משתמשים ב-time_input כברירת מחדל כדי לאפשר למשתמש לשלוט בזה
     if "report_hour" not in st.session_state:
         st.session_state["report_hour"] = datetime.datetime.now().time()
