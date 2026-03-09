@@ -42,7 +42,7 @@ def render_gps_button(key: str = "gps") -> tuple:
         return lat, lon
     
     # Get geolocation using the new component
-    loc = get_geolocation(key=f"geo_{key}")
+    loc = get_geolocation(component_key=f"geo_{key}")
     
     if loc and isinstance(loc, dict) and loc.get("coords"):
         lat = loc["coords"]["latitude"]
