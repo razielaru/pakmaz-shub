@@ -3073,32 +3073,34 @@ def analyze_unit_trends(df_unit):
 
 # --- פונקציות סטטיסטיקות מבקרים ---
 def generate_inspector_stats(df):
-    """יצירת סטטיסטיקות מבקרים"""
+    """יצירת סטטיסטיקות מבקרים - תומך בדו-מסלולי (חודשי וכל הזמנים)"""
     if df.empty or 'inspector' not in df.columns:
         return None
     
-    # נשתמש בכל הדאטה שסופק (ללא סינון חודשי מחמיר שהעלים נתונים)
-    current_month = df
+    # 1. דאטה לכל הזמנים (All-time)
+    all_time_counts = df['inspector'].value_counts()
     
-    # ספירת דוחות לפי מבקר
-    inspector_counts = current_month['inspector'].value_counts()
+    # 2. דאטה לחודש הנוכחי (Monthly)
+    today = pd.Timestamp.now()
+    monthly_df = df[df['date'].dt.month == today.month]
+    if monthly_df.empty:
+        monthly_counts = all_time_counts # Fallback if no reports this month
+    else:
+        monthly_counts = monthly_df['inspector'].value_counts()
     
-    # מיקומים פופולריים
-    location_counts = current_month['base'].value_counts() if 'base' in current_month.columns else pd.Series()
+    # מיקומים פופולריים (All-time)
+    location_counts = df['base'].value_counts() if 'base' in df.columns else pd.Series()
     
-    # שעות פעילות - בדיקה של עמודת time תחילה, אחר כך date
+    # שעות פעילות (All-time)
+    current_month = df # Logic uses this variable name
     if 'time' in current_month.columns:
-        # אם יש עמודת time, השתמש בה
         def extract_hour_from_time(time_val):
             try:
-                if pd.isna(time_val):
-                    return None
+                if pd.isna(time_val): return None
                 time_str = str(time_val)
-                if ':' in time_str:
-                    return int(time_str.split(':')[0])
+                if ':' in time_str: return int(time_str.split(':')[0])
                 return None
-            except:
-                return None
+            except: return None
         current_month['hour'] = current_month['time'].apply(extract_hour_from_time)
         peak_hours = current_month['hour'].dropna().value_counts().head(3)
     elif pd.api.types.is_datetime64_any_dtype(current_month['date']):
@@ -3108,11 +3110,12 @@ def generate_inspector_stats(df):
         peak_hours = pd.Series()
     
     return {
-        'top_inspectors': inspector_counts.head(10),
+        'top_inspectors_monthly': monthly_counts.head(10),
+        'top_inspectors_all_time': all_time_counts.head(10),
         'top_locations': location_counts.head(5),
         'peak_hours': peak_hours,
-        'total_reports': len(current_month),
-        'unique_inspectors': current_month['inspector'].nunique()
+        'total_reports': len(df),
+        'unique_inspectors': df['inspector'].nunique()
     }
 
 
@@ -4693,7 +4696,18 @@ def render_detailed_unit_analysis(df, selected_unit):
         
         with detail_tabs[3]:  # סיכום
             st.markdown("#### סיכום מצב היחידה")
-            st.info("כאן מופיע סיכום המדדים של היחידה.")
+            
+            # הוספת טבלת מובילים לכל הזמנים (לבקשת המשתמש בדף המפקד)
+            stats_all = generate_inspector_stats(unit_df)
+            if stats_all and not stats_all['top_inspectors_all_time'].empty:
+                st.markdown("🏆 **9 המבקרים המובילים - לכל הזמנים**")
+                leaderboard_all = []
+                number_emojis = {1: "🥇", 2: "🥈", 3: "🥉", 4: "4️⃣", 5: "5️⃣", 6: "6️⃣", 7: "7️⃣", 8: "8️⃣", 9: "9️⃣"}
+                for idx, (inspector, count) in enumerate(stats_all['top_inspectors_all_time'].head(9).items(), 1):
+                    leaderboard_all.append({"מקום": number_emojis.get(idx, f"#{idx}"), "מבקר": inspector, "כמות דוחות": count})
+                st.table(pd.DataFrame(leaderboard_all))
+            else:
+                st.info("אין מספיק נתונים להצגת טבלת מובילים.")
             
         st.markdown("---")
         # טבלה מפורטת
@@ -8341,10 +8355,11 @@ def render_unit_report():
             with col2:
                 st.metric("👥 מבקרים פעילים", stats['unique_inspectors'])
             with col3:
-                if not stats['top_inspectors'].empty:
-                    top_inspector = stats['top_inspectors'].index[0]
-                    top_count = stats['top_inspectors'].iloc[0]
-                    st.metric("🏆 מבקר מוביל", f"{top_inspector} ({top_count})")
+                # מבקר מוביל לכל הזמנים
+                if not stats['top_inspectors_all_time'].empty:
+                    top_inspector = stats['top_inspectors_all_time'].index[0]
+                    top_count = stats['top_inspectors_all_time'].iloc[0]
+                    st.metric("🏆 מבקר מוביל (כל הזמנים)", f"{top_inspector} ({top_count})")
             
             # הוספת בלוק ציון ומדד (חדש!)
             st.markdown("---")
@@ -8361,11 +8376,13 @@ def render_unit_report():
             # טאבים לסטטיסטיקות
             stats_tabs = st.tabs(["🏆 טבלת מובילים", "📍 מיקומים", "⏰ שעות פעילות", "📈 התקדמות"])
             
-            # טאב 1: טבלת מובילים
+            # טאב 1: טבלת מובילים (חודשי)
             with stats_tabs[0]:
-                st.markdown("### 🏆 9 המבקרים המובילים")
+                st.markdown("### 🏆 9 המבקרים המובילים - החודש")
                 
-                if not stats['top_inspectors'].empty:
+                # בטאב המובילים הציבורי - מציגים חודשי כבקשת המשתמש
+                monthly_lead = stats['top_inspectors_monthly']
+                if not monthly_lead.empty:
                     # יצירת טבלה מעוצבת - 9 הראשונים
                     leaderboard_data = []
                     number_emojis = {
@@ -8374,7 +8391,7 @@ def render_unit_report():
                         7: "7️⃣", 8: "8️⃣", 9: "9️⃣"
                     }
                     
-                    for idx, (inspector, count) in enumerate(stats['top_inspectors'].head(9).items(), 1):
+                    for idx, (inspector, count) in enumerate(monthly_lead.head(9).items(), 1):
                         medal = number_emojis.get(idx, f"#{idx}")
                         leaderboard_data.append({
                             "מקום": medal,
