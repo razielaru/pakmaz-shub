@@ -1965,21 +1965,43 @@ def get_accessible_units(unit_name, role):
         except: return [unit_name]
     return [unit_name]
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=120)  # 2 דקות cache
 def load_reports_cached(accessible_units=None):
+    """כל הדוחות — נטען פעם אחת, לא 60 פעמים"""
     try:
-        data = supabase.table("reports").select("*").execute().data
+        if accessible_units is None:
+            data = supabase.table("reports").select("*").execute().data
+        else:
+            data = supabase.table("reports").select("*").in_("unit", accessible_units).execute().data
         if not data: return []
-        
-        # סינון "מחיקה רכה" - דוחות שהמפקח שלהם מתחיל באייקון פח
         filtered_data = [d for d in data if not (str(d.get('inspector', '')).startswith('🗑️'))]
-        
-        if accessible_units:
-            return [d for d in filtered_data if d['unit'] in accessible_units]
         return filtered_data
-    except: return []
+    except Exception:
+        return []
 
-def clear_cache(): load_reports_cached.clear()
+@st.cache_data(ttl=300)  # 5 דקות cache
+def load_bases_barcodes_cached(unit):
+    try:
+        result = supabase.table("base_barcodes").select("*").eq("unit", unit).execute()
+        return {r["base"]: r["barcode"] for r in (result.data or [])}
+    except Exception:
+        return {}
+
+@st.cache_data(ttl=600)  # 10 דקות cache
+def load_whatsapp_numbers_cached(unit):
+    try:
+        result = supabase.table("whatsapp_numbers").select("*").eq("unit", unit).execute()
+        return result.data or []
+    except Exception:
+        return []
+
+def clear_cache(): 
+    st.cache_data.clear()
+
+def render_refresh_button():
+    if st.button("🔄 רענן נתונים", key="global_refresh"):
+        st.cache_data.clear()
+        st.rerun()
 
 def log_api_usage(unit_name: str, api_type: str = "text"):
     """רישום קריאת API ב-Supabase למניעת חריגת תקציב"""
@@ -3089,14 +3111,14 @@ def generate_ai_summary(df):
     if 'k_cert' in df.columns:
         critical_issues += len(df[df['k_cert'] == 'לא'])
     
-    overview = f"""
-    📊 **סיכום מצב פיקודי**
-    
-    - **{total_reports}** דוחות מ-**{active_units}** יחידות פעילות
-    - ציון ממוצע: **{avg_score:.1f}/100**
-    - בעיות קריטיות: **{critical_issues}**
-    - מגמה: {"📈 שיפור" if avg_score > 75 else "📉 דורש תשומת לב"}
-    """
+    trend_text = "📈 שיפור" if avg_score > 75 else "📉 דורש תשומת לב"
+    overview = f"""<div dir="rtl" style="text-align: right; background-color: transparent; padding: 10px; border-radius: 8px;">
+    <b>📊 סיכום מצב פיקודי</b><br><br>
+    • <b>{total_reports}</b> דוחות מ-<b>{active_units}</b> יחידות פעילות<br>
+    • ציון ממוצע: <b>{avg_score:.1f}/100</b><br>
+    • משקל תקלות קריטיות: <b>{critical_issues}</b><br>
+    • מגמה: {trend_text}
+    </div>"""
     
     return {"overview": overview}
 
@@ -5936,7 +5958,7 @@ def render_command_dashboard():
             
             # סיכום AI
             summary = generate_ai_summary(df)
-            st.info(summary["overview"])
+            st.markdown(f"<div style='background-color: #e0f2fe; padding: 15px; border-radius: 8px;'>{summary['overview']}</div>", unsafe_allow_html=True)
             
             st.markdown("---")
             st.markdown("### 🚨 התראות והמלצות")
@@ -5945,7 +5967,9 @@ def render_command_dashboard():
             alerts = generate_commander_alerts(df)
             if alerts:
                 for alert in alerts:
-                    st.warning(f"{alert['icon']} **{alert['title']}**: {alert['message']}")
+                    st.markdown(f"""<div dir="rtl" style="background-color: #fffbeb; padding: 14px; border-radius: 8px; border-right: 4px solid #f59e0b; margin-bottom: 10px; text-align: right;">
+                    <strong>{alert['icon']} {alert['title']}:</strong> {alert['message']}
+                    </div>""", unsafe_allow_html=True)
             else:
                 st.success("✅ אין התראות קריטיות - המצב תקין!")
             
@@ -7501,7 +7525,7 @@ def render_unit_report():
         "🍽️ כשרות",
         "🕍 ביהכ\"נ ועירוב",
         "📜 נהלים ורוח",
-        "📖 שיחת חתך",
+        "📖 שיחת חתך (אינו חובה)",
         "⚠️ חוסרים ושליחה"
     ])
 
@@ -7554,22 +7578,54 @@ def render_unit_report():
 
         # OCR
         with st.expander("📄 סריקת תעודת כשרות (OCR)", expanded=False):
-            cert_photo_ocr = st.file_uploader("העלה תמונה לחילוץ נתונים אוטומטי", type=['jpg', 'png', 'jpeg'], key="cert_ocr")
+            cert_photo_ocr = st.file_uploader(
+                "העלה תמונה של תעודת הכשרות",
+                type=['jpg', 'png', 'jpeg'],
+                key="cert_ocr"
+            )
+            
             if cert_photo_ocr:
-                with st.spinner("מפענח תעודה..."):
+                st.image(cert_photo_ocr, width=300, caption="תעודה שהועלתה")
+                
+                with st.spinner("🔍 מפענח תעודה..."):
                     extracted = extract_kashrut_cert_data(cert_photo_ocr.getvalue())
-                    if extracted and 'error' not in extracted:
-                        st.success("✅ נתונים חולצו בהצלחה!")
-                        col_ocr1, col_ocr2 = st.columns(2)
-                        with col_ocr1:
-                            st.info(f"📌 ספק: {extracted.get('supplier_name')}")
-                            st.info(f"🔢 מספר: {extracted.get('certificate_number')}")
-                        with col_ocr2:
-                            st.info(f"📅 תוקף: {extracted.get('expiry_date')}")
-                            status, status_type = validate_cert_status(extracted.get('expiry_date'))
-                            st.write(f"**סטטוס:** {status}")
-                    elif extracted and 'error' in extracted:
-                        st.warning(f"⚠️ {extracted['error']}")
+                
+                if not extracted:
+                    st.error("❌ לא ניתן היה לפענח את התעודה — נסה תמונה ברורה יותר")
+                
+                elif 'error' in extracted:
+                    st.warning(f"⚠️ {extracted['error']}")
+                    st.caption("💡 טיפ: צלם בתאורה טובה, ללא טשטוש, עם כל הטקסט בפריים")
+                
+                else:
+                    st.success("✅ נתונים חולצו בהצלחה!")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.info(f"📌 ספק: {extracted.get('supplier_name', 'לא זוהה')}")
+                        st.info(f"🔢 מספר: {extracted.get('certificate_number', 'לא זוהה')}")
+                    with col2:
+                        expiry = extracted.get('expiry_date')
+                        st.info(f"📅 תוקף עד: {expiry or 'לא זוהה'}")
+                        
+                        if expiry:
+                            status, status_type = validate_cert_status(expiry)
+                            
+                            color_map = {
+                                "valid": "✅",
+                                "warning": "⚠️", 
+                                "expired": "❌"
+                            }
+                            icon = color_map.get(status_type, "❓")
+                            st.markdown(f"**סטטוס:** {icon} {status}")
+                            
+                            if status_type == "valid":
+                                st.session_state["k_cert_auto"] = "כן"
+                                st.session_state["k_cert_expiry_auto"] = expiry
+                                st.toast("✅ תעודה תקינה — הטופס עודכן אוטומטית", icon="✅")
+                            elif status_type == "expired":
+                                st.session_state["k_cert_auto"] = "לא"
+                                st.error("🚨 התעודה פגת תוקף — יש לטפל מיידית")
 
         st.markdown("#### 📸 תקלות ונאמן כשרות")
         c1, c2 = st.columns(2)
@@ -7825,7 +7881,6 @@ def render_unit_report():
                 with col_phone:
                     soldier_lesson_phone = st.text_input("טלפון מעביר השיעור", key="so_lesson_phone", placeholder="לדוגמה: 050-1234567")
 
-            st.markdown("#### 💬 שיחת חתך חיילים")
             c1, c2 = st.columns(2)
             if _flip == 1:
                 soldier_shabbat_training = radio_with_explanation("האם יש אימונים בשבת? ✅[תשובה שלילית = תקין]", "so3", col=c1)
@@ -7854,17 +7909,17 @@ def render_unit_report():
         st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
             <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[5].click()" 
                 style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
-                ⬅️ עבור לטאב הבא: 📖 שיחת חתך
+                ⬅️ עבור לטאב הבא: 📖 שיחת חתך (אינו חובה)
             </button></div>""", height=70)
 
     # ===========================================
-    # TAB 4: שיחת חתך (35/89/900 only)
+    # TAB 4: שיחת חתך (אינו חובה)
     # ===========================================
     with tab4:
         _show_halacha = unit in NO_LOUNGE_WECOOK_UNITS
         # hq_vars was pre-initialized before tabs - do NOT reset here to preserve Tab 2 entries
         if not _show_halacha:
-            st.info("📌 שיחת חתך   , ,  .")
+            st.info("📌 שיחת חתך ")
         else:
             st.info("📌 פנה לטאב 'נהלים ורוח' לעדכון שיעורי תורה ואיש קשר.")
 
