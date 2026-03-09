@@ -16,91 +16,10 @@ import shutil
 import os
 import random
 import streamlit.components.v1 as components
+from streamlit_geolocation import streamlit_geolocation
 st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")  # title intentionally unchanged
 
-# הצהרה על הרכיב מול Streamlit (מבוצע פעם אחת - יצירה דינמית לסביבת הענן)
-_parent_dir = os.path.dirname(os.path.abspath(__file__))
-COMPONENT_DIR = os.path.join(_parent_dir, "gps_widget")
-os.makedirs(COMPONENT_DIR, exist_ok=True)
-_index_path = os.path.join(COMPONENT_DIR, "index.html")
 
-_gps_widget_html = """<!DOCTYPE html>
-<html>
-<head>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/streamlit-component-lib/1.3.0/streamlit.index.js"></script>
-    <style>
-        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; }
-        .wa-btn {
-            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
-            color: white;
-            border: none;
-            padding: 16px 20px;
-            border-radius: 12px;
-            font-size: 18px;
-            font-weight: bold;
-            width: 100%;
-            cursor: pointer;
-            box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            transition: all 0.2s ease;
-        }
-        .wa-btn:active { transform: scale(0.96); box-shadow: 0 2px 6px rgba(37, 211, 102, 0.2); }
-        #status { text-align: center; margin-top: 8px; font-size: 14px; color: #475569; font-weight: 600; }
-    </style>
-</head>
-<body>
-    <button class="wa-btn" onclick="getLocation()">
-        <span style="font-size: 24px;">📍</span> שמור מיקום מדויק עכשיו
-    </button>
-    <div id="status"></div>
-    
-    <script>
-        function onRender(event) { Streamlit.setFrameHeight(); }
-        Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
-        Streamlit.setComponentReady();
-        Streamlit.setFrameHeight();
-
-        function getLocation() {
-            const status = document.getElementById('status');
-            status.innerText = "⏳ מתחבר ללוויין... (אנא אשר גישה אם קופצת הודעה)";
-            status.style.color = "#f59e0b";
-            
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        status.innerText = "✅ המיקום נקלט בהצלחה!";
-                        status.style.color = "#16a34a";
-                        Streamlit.setComponentValue({
-                            lat: position.coords.latitude,
-                            lon: position.coords.longitude,
-                            acc: position.coords.accuracy
-                        });
-                    },
-                    (error) => {
-                        let msg = "❌ שגיאה: ";
-                        if (error.code === 1) msg += "חסמת את הגישה למיקום בטלפון.";
-                        else if (error.code === 2) msg += "אין קליטת GPS כרגע.";
-                        else if (error.code === 3) msg += "זמן הבקשה פג (נסה שוב).";
-                        status.innerText = msg;
-                        status.style.color = "#dc2626";
-                    },
-                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-                );
-            } else {
-                status.innerText = "❌ הדפדפן שלך לא תומך במיקום.";
-            }
-        }
-    </script>
-</body>
-</html>"""
-
-with open(_index_path, "w", encoding="utf-8") as f:
-    f.write(_gps_widget_html)
-
-custom_location_button = components.declare_component("whatsapp_loc_button", path=COMPONENT_DIR)
 import math
 from typing import Tuple, Optional, List, Dict, Any
 import folium
@@ -642,16 +561,16 @@ def render_gps_checkpoint(checkpoint_num: int, base: str):
     
     st.markdown(f"**{label}** — {instruction}")
     
-    # קריאה לכפתור המיקום החדש והחכם שלנו
-    loc_data = custom_location_button(key=f"wa_loc_btn_{checkpoint_num}")
+    # שימוש ברכיב הסטנדרטי והיציב לזיהוי מיקום
+    loc_data = streamlit_geolocation()
     
     # אם התקבלו נתונים מהכפתור (המשתמש לחץ ואישר)
-    if loc_data and loc_data.get("lat"):
+    if loc_data and loc_data.get("latitude"):
         st.session_state[data_key] = {
-            "latitude": loc_data["lat"],
-            "longitude": loc_data["lon"],
+            "latitude": loc_data["latitude"],
+            "longitude": loc_data["longitude"],
             "timestamp": time.time(),
-            "accuracy": loc_data.get("acc", 0)
+            "accuracy": loc_data.get("accuracy", 0)
         }
         st.session_state[done_key] = True
         st.rerun()
@@ -6854,13 +6773,12 @@ def render_unit_report():
             st.warning("⚠️ לא נמצאה טיוטה שמורה")
 
     st.markdown("### 📍 מיקום ותאריך")
-    # ✅ מפתח ייחודי מבוסס מוצב למניעת תקיעות הווידג'ט
-    current_base_id = st.session_state.get('base_input', 'initial')
-    loc_data = custom_location_button(key=f"main_form_wa_gps_{current_base_id}")
+    # שימוש ברכיב הסטנדרטי והיציב לזיהוי מיקום
+    loc_data = streamlit_geolocation()
 
-    if loc_data and loc_data.get('lat'):
-        gps_lat = loc_data['lat']
-        gps_lon = loc_data['lon']
+    if loc_data and loc_data.get('latitude'):
+        gps_lat = loc_data['latitude']
+        gps_lon = loc_data['longitude']
     else:
         gps_lat = None
         gps_lon = None
