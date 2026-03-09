@@ -21,119 +21,41 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")
 
 def render_gps_button(key: str = "gps") -> tuple:
+    from streamlit_js_eval import get_geolocation
+    
     vault_lat_key = f"VAULT_LAT_{key}"
     vault_lon_key = f"VAULT_LON_{key}"
     
-    # Check if we already have a persistent location
+    # Check persistent storage
     lat = st.session_state.get(vault_lat_key)
     lon = st.session_state.get(vault_lon_key)
     
     if lat and lon:
         col1, col2 = st.columns([4, 1])
         with col1:
-            st.success("✅ מיקום מזוהה ומאובטח במערכת")
+            st.success("✅ מיקום נשמר ומאובטח במערכת")
         with col2:
-            if st.button("🔄 עדכן", key=f"reset_gps_{key}"):
+            if st.button("🔄", key=f"reset_gps_{key}", help="עדכן מיקום"):
                 del st.session_state[vault_lat_key]
                 del st.session_state[vault_lon_key]
                 st.rerun()
         return lat, lon
-
-    # Hidden inputs for JS communication
-    st.markdown("""
-        <style>
-        .gps-hidden-container {
-            height: 0; width: 0; overflow: hidden; opacity: 0; position: absolute;
-        }
-        </style>
-    """, unsafe_allow_html=True)
     
-    with st.container():
-        st.markdown('<div class="gps-hidden-container">', unsafe_allow_html=True)
-        t_lat = st.text_input("lat_input_hidden", key=f"t_lat_{key}")
-        t_lon = st.text_input("lon_input_hidden", key=f"t_lon_{key}")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # Ultra-robust GPS Button with ENTER simulation
-    st.components.v1.html(f"""
-    <div dir="rtl" style="font-family: system-ui, -apple-system, sans-serif;">
-        <button id="gps-trigger" onclick="captureGPS()" style="
-            width: 100%; background: #2563eb; color: white; border: none;
-            padding: 16px; border-radius: 12px; font-size: 16px; font-weight: 700;
-            cursor: pointer; transition: 0.3s;
-        ">
-            📍 לחץ כאן לנעילת מיקום (חובה)
-        </button>
-        <p id="gps-status" style="margin-top: 8px; font-size: 14px; color: #475569; text-align: center; font-weight: 500;"></p>
-    </div>
-
-    <script>
-    function captureGPS() {{
-        const btn = document.getElementById('gps-trigger');
-        const status = document.getElementById('gps-status');
+    # Get geolocation using the new component
+    loc = get_geolocation(key=f"geo_{key}")
+    
+    if loc and isinstance(loc, dict) and loc.get("coords"):
+        lat = loc["coords"]["latitude"]
+        lon = loc["coords"]["longitude"]
         
-        btn.disabled = true;
-        btn.style.background = '#94a3b8';
-        btn.innerText = '🔍 מחפש לוויינים...';
-        status.innerText = 'מזהה מיקום נוכחי...';
-
-        navigator.geolocation.getCurrentPosition(
-            (pos) => {{
-                const lat = pos.coords.latitude;
-                const lon = pos.coords.longitude;
-                
-                status.innerText = '✅ מיקום זוהה! מעביר למערכת...';
-                btn.style.background = '#10b981';
-                btn.innerText = '✅ המיקום ננעל';
-
-                const doc = window.parent.document;
-                const inputs = doc.querySelectorAll('input');
-                let latInput, lonInput;
-
-                inputs.forEach(input => {{
-                    const label = input.getAttribute('aria-label');
-                    if (label === 'lat_input_hidden') latInput = input;
-                    if (label === 'lon_input_hidden') lonInput = input;
-                }});
-
-                if (latInput && lonInput) {{
-                    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                    
-                    setter.call(latInput, String(lat));
-                    latInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                    
-                    setter.call(lonInput, String(lon));
-                    lonInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                    
-                    // Simulate ENTER to trigger Streamlit's "on change" / value capture
-                    const enterEvent = new KeyboardEvent('keydown', {{
-                        key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true
-                    }});
-                    latInput.dispatchEvent(enterEvent);
-                    lonInput.dispatchEvent(enterEvent);
-                }}
-            }},
-            (err) => {{
-                status.innerText = '❌ שגיאה: נא אשר הרשאות מיקום במכשיר';
-                btn.disabled = false;
-                btn.style.background = '#ef4444';
-                btn.innerText = 'נסה שוב';
-            }},
-            {{ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }}
-        );
-    }}
-    </script>
-    """, height=100)
-
-    if t_lat and t_lon:
-        try:
-            st.session_state[vault_lat_key] = float(t_lat)
-            st.session_state[vault_lon_key] = float(t_lon)
-            st.toast("🎯 המיקום הסתנכרן בהצלחה!", icon="✅")
-            st.rerun()
-        except:
-            pass
-
+        # Save to vault (No Israel bounds check as requested)
+        st.session_state[vault_lat_key] = lat
+        st.session_state[vault_lon_key] = lon
+        st.toast("🎯 המיקום הסתנכרן בהצלחה!", icon="✅")
+        st.rerun()
+    else:
+        st.info("📍 לחץ אישור בחלון הדפדפן לשליחת מיקום (חובה)")
+    
     return None, None
 
 
