@@ -39,11 +39,22 @@ def render_gps_button(key: str = "gps") -> tuple:
                 st.rerun()
         return lat, lon
 
-    # Communication area
-    t_lat = st.text_input("lat", key=f"tmp_lat_{key}", label_visibility="collapsed")
-    t_lon = st.text_input("lon", key=f"tmp_lon_{key}", label_visibility="collapsed")
+    # Hidden inputs for JS communication
+    st.markdown("""
+        <style>
+        .gps-hidden-container {
+            height: 0; width: 0; overflow: hidden; opacity: 0; position: absolute;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    with st.container():
+        st.markdown('<div class="gps-hidden-container">', unsafe_allow_html=True)
+        t_lat = st.text_input("lat_input_hidden", key=f"t_lat_{key}")
+        t_lon = st.text_input("lon_input_hidden", key=f"t_lon_{key}")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # Ultra-robust GPS Button
+    # Ultra-robust GPS Button with ENTER simulation
     st.components.v1.html(f"""
     <div dir="rtl" style="font-family: system-ui, -apple-system, sans-serif;">
         <button id="gps-trigger" onclick="captureGPS()" style="
@@ -81,8 +92,8 @@ def render_gps_button(key: str = "gps") -> tuple:
 
                 inputs.forEach(input => {{
                     const label = input.getAttribute('aria-label');
-                    if (label === 'lat') latInput = input;
-                    if (label === 'lon') lonInput = input;
+                    if (label === 'lat_input_hidden') latInput = input;
+                    if (label === 'lon_input_hidden') lonInput = input;
                 }});
 
                 if (latInput && lonInput) {{
@@ -94,9 +105,12 @@ def render_gps_button(key: str = "gps") -> tuple:
                     setter.call(lonInput, String(lon));
                     lonInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
                     
-                    // Trigger mandatory change events
-                    latInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                    lonInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    // Simulate ENTER to trigger Streamlit's "on change" / value capture
+                    const enterEvent = new KeyboardEvent('keydown', {{
+                        key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true
+                    }});
+                    latInput.dispatchEvent(enterEvent);
+                    lonInput.dispatchEvent(enterEvent);
                 }}
             }},
             (err) => {{
@@ -115,6 +129,7 @@ def render_gps_button(key: str = "gps") -> tuple:
         try:
             st.session_state[vault_lat_key] = float(t_lat)
             st.session_state[vault_lon_key] = float(t_lon)
+            st.toast("🎯 המיקום הסתנכרן בהצלחה!", icon="✅")
             st.rerun()
         except:
             pass
@@ -7176,12 +7191,8 @@ def render_unit_report():
     # הפעלת מנגנון המיקום החדש
     gps_lat, gps_lon = render_gps_button(key="main")
 
-    if gps_lat:
-        # ✅ הדפסה ללוג (תוכל לראות בקונסול של Streamlit)
-        print(f"🔍 DEBUG - GPS נקלט: lat={gps_lat}, lon={gps_lon}, base={base if 'base' in locals() else 'לא הוגדר'}")
-        
-        if gps_lat:
-            st.success("✅ המיקום מזוהה ומוכן לשליחה")
+
+
 
     if gps_lat:
         # מרחק מבסיס (לוגיקה פנימית בלבד)
@@ -8173,9 +8184,9 @@ def render_unit_report():
             check_lat = st.session_state.get("VAULT_LAT_main")
             check_lon = st.session_state.get("VAULT_LON_main")
             
-            if not is_combat_brigade and not (check_lat and check_lon):
-                st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח בחטמ\"ר!")
-                st.warning("💡 שים לב: עליך ללחוץ על 'קבל מיקום' ולראות את ההודעה הירוקה המאשרת שהמיקום ננעל בשרת לפני השליחה.")
+            if not (check_lat and check_lon):
+                st.error("❌ שגיאה: לא נקלט מיקום GPS!")
+                st.warning("💡 חובה ללחוץ על הכפתור '📍 לחץ כאן לנעילת מיקום' ולמתין להודעה 'מיקום נעול' לפני השליחה.")
             
             elif not base or not inspector:
                 st.error("❌ חסרים פרטי חובה בסיסיים לשליחת הדוח")
