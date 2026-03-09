@@ -18,9 +18,89 @@ import random
 import streamlit.components.v1 as components
 st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")  # title intentionally unchanged
 
-# הצהרה על הרכיב מול Streamlit (מבוצע פעם אחת)
-COMPONENT_PATH = os.path.join(os.path.dirname(__file__), "gps_widget")
-custom_location_button = components.declare_component("whatsapp_loc_button", path=COMPONENT_PATH)
+# הצהרה על הרכיב מול Streamlit (מבוצע פעם אחת - יצירה דינמית לסביבת הענן)
+_parent_dir = os.path.dirname(os.path.abspath(__file__))
+COMPONENT_DIR = os.path.join(_parent_dir, "gps_widget")
+os.makedirs(COMPONENT_DIR, exist_ok=True)
+_index_path = os.path.join(COMPONENT_DIR, "index.html")
+
+_gps_widget_html = """<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/streamlit-component-lib/1.3.0/streamlit.index.js"></script>
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; }
+        .wa-btn {
+            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
+            color: white;
+            border: none;
+            padding: 16px 20px;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: bold;
+            width: 100%;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            transition: all 0.2s ease;
+        }
+        .wa-btn:active { transform: scale(0.96); box-shadow: 0 2px 6px rgba(37, 211, 102, 0.2); }
+        #status { text-align: center; margin-top: 8px; font-size: 14px; color: #475569; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <button class="wa-btn" onclick="getLocation()">
+        <span style="font-size: 24px;">📍</span> שמור מיקום מדויק עכשיו
+    </button>
+    <div id="status"></div>
+    
+    <script>
+        function onRender(event) { Streamlit.setFrameHeight(); }
+        Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, onRender);
+        Streamlit.setComponentReady();
+        Streamlit.setFrameHeight();
+
+        function getLocation() {
+            const status = document.getElementById('status');
+            status.innerText = "⏳ מתחבר ללוויין... (אנא אשר גישה אם קופצת הודעה)";
+            status.style.color = "#f59e0b";
+            
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        status.innerText = "✅ המיקום נקלט בהצלחה!";
+                        status.style.color = "#16a34a";
+                        Streamlit.setComponentValue({
+                            lat: position.coords.latitude,
+                            lon: position.coords.longitude,
+                            acc: position.coords.accuracy
+                        });
+                    },
+                    (error) => {
+                        let msg = "❌ שגיאה: ";
+                        if (error.code === 1) msg += "חסמת את הגישה למיקום בטלפון.";
+                        else if (error.code === 2) msg += "אין קליטת GPS כרגע.";
+                        else if (error.code === 3) msg += "זמן הבקשה פג (נסה שוב).";
+                        status.innerText = msg;
+                        status.style.color = "#dc2626";
+                    },
+                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+                );
+            } else {
+                status.innerText = "❌ הדפדפן שלך לא תומך במיקום.";
+            }
+        }
+    </script>
+</body>
+</html>"""
+
+with open(_index_path, "w", encoding="utf-8") as f:
+    f.write(_gps_widget_html)
+
+custom_location_button = components.declare_component("whatsapp_loc_button", path=COMPONENT_DIR)
 import math
 from typing import Tuple, Optional, List, Dict, Any
 import folium
