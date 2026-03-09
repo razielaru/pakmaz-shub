@@ -175,94 +175,6 @@ def render_gps_button(key: str = "gps") -> tuple:
     return None, None
 
 
-def extract_gps_from_image(uploaded_file) -> tuple:
-    """
-    שולף GPS מתמונה שהועלתה (EXIF).
-    מחזיר (lat, lon) או (None, None)
-    """
-    from PIL import Image
-    from PIL.ExifTags import TAGS, GPSTAGS
-    import io
-
-    try:
-        img = Image.open(uploaded_file)
-        exif_data = img._getexif()
-        if not exif_data:
-            return None, None
-
-        # מציאת תגית ה-GPS
-        gps_info = {}
-        for tag_id, value in exif_data.items():
-            tag = TAGS.get(tag_id, tag_id)
-            if tag == "GPSInfo":
-                for gps_tag_id, gps_value in value.items():
-                    gps_tag = GPSTAGS.get(gps_tag_id, gps_tag_id)
-                    gps_info[gps_tag] = gps_value
-
-        if not gps_info:
-            return None, None
-
-        # המרה לדצימלי
-        def dms_to_dd(dms, ref):
-            d, m, s = dms
-            dd = float(d) + float(m)/60 + float(s)/3600
-            if ref in ['S', 'W']:
-                dd *= -1
-            return dd
-
-        lat = dms_to_dd(gps_info["GPSLatitude"], gps_info["GPSLatitudeRef"])
-        lon = dms_to_dd(gps_info["GPSLongitude"], gps_info["GPSLongitudeRef"])
-        return lat, lon
-
-    except Exception:
-        return None, None
-
-
-def render_proof_photo(base: str):
-    """
-    מבקש תמונת הוכחה — שולף GPS ומוודא שהחייל במוצב.
-    """
-    st.markdown("#### 📸 תמונת הוכחת נוכחות")
-    st.caption("צלם תמונה כלשהי במוצב ועלה אותה — המיקום יאומת אוטומטית")
-
-    photo = st.file_uploader(
-        "העלה תמונה מהמוצב",
-        type=["jpg", "jpeg"],  # רק JPG — כי PNG לא שומר EXIF
-        key=f"proof_photo_{base}"
-    )
-
-    if not photo:
-        return False
-
-    st.image(photo, width=300)
-
-    # שליפת GPS
-    lat, lon = extract_gps_from_image(photo)
-
-    if lat is None:
-        # אין GPS בתמונה — קרוב לוודאי צולם מחדש מסך
-        st.warning("⚠️ התמונה לא מכילה מידע מיקום. צלם ישירות מהמצלמה (לא מצילום מסך)")
-        st.session_state["photo_gps_ok"] = False
-        return False
-
-    # בדיקת מרחק מהמוצב
-    base_coords = BASE_COORDINATES.get(base)
-    if base_coords:
-        dist = haversine_distance(lat, lon, base_coords[0], base_coords[1])
-        if dist > 2.0:
-            st.error(f"🚨 המיקום בתמונה ({lat:.4f}, {lon:.4f}) — {dist:.1f} ק\"מ מהמוצב!")
-            st.session_state["photo_gps_ok"] = False
-            return False
-        else:
-            st.success(f"✅ מיקום אומת — {dist:.1f} ק\"מ מ{base}")
-            st.session_state["photo_gps_ok"] = True
-            st.session_state["photo_lat"] = lat
-            st.session_state["photo_lon"] = lon
-            return True
-    else:
-        st.info(f"📍 GPS בתמונה: {lat:.5f}, {lon:.5f} — לא הוגדר מיקום ייחוס למוצב זה")
-        st.session_state["photo_gps_ok"] = True
-        return True
 
 
 import math
@@ -2002,6 +1914,20 @@ def render_refresh_button():
     if st.button("🔄 רענן נתונים", key="global_refresh"):
         st.cache_data.clear()
         st.rerun()
+
+def save_base_location_if_new(base_name: str, lat: float, lon: float):
+    if not base_name or not lat or not lon:
+        return
+    try:
+        supabase.table("bases").upsert({
+            "name": base_name,
+            "latitude": lat,
+            "longitude": lon,
+            "unit": st.session_state.selected_unit,
+        }, on_conflict="name").execute()
+        st.cache_data.clear()
+    except Exception:
+        pass
 
 def log_api_usage(unit_name: str, api_type: str = "text"):
     """רישום קריאת API ב-Supabase למניעת חריגת תקציב"""
@@ -7294,6 +7220,9 @@ def render_unit_report():
         # ✅ הצגת המיקום המדויק שנקלט
         st.success(f"✅ מיקום GPS נקלט: {gps_lat:.6f}, {gps_lon:.6f}")
         
+        if base and base != "-- בחר --":
+            save_base_location_if_new(base, gps_lat, gps_lon)
+            
         # ✅ הדפסה ללוג (תוכל לראות בקונסול של Streamlit)
         print(f"🔍 DEBUG - GPS נקלט: lat={gps_lat}, lon={gps_lon}, base={base if 'base' in locals() else 'לא הוגדר'}")
         
@@ -7351,9 +7280,26 @@ def render_unit_report():
     
     # בחירת מוצב (Selectbox + Manual input)
     st.markdown("---")
+    
+    # 2. מחפשים מוצב קרוב
+    default_base = "-- בחר --"
+    distance_found = None
+    
+    if gps_lat and gps_lon:
+        nearest, distance_found = find_nearest_base(gps_lat, gps_lon)
+        if distance_found and distance_found < 5.0:
+            default_base = nearest
+            
+    # 3. בונים את הרשימה עם ברירת מחדל
+    # מוסיפים את כל הבסיסים ל-all_bases
+    all_bases = ["-- בחר --", "📝 מוצב אחר (הזנה ידנית)"] + suggested_bases
+    default_idx = all_bases.index(default_base) if default_base in all_bases else 0
+    
+    # 4. ה-selectbox נפתח כשהמוצב כבר נבחר
     base_selection = st.selectbox(
         "בחר מוצב / מיקום *", 
-        ["-- בחר --", "📝 מוצב אחר (הזנה ידנית)"] + suggested_bases,
+        options=all_bases,
+        index=default_idx,
         key="base_selection_dropdown"
     )
     
@@ -7362,24 +7308,18 @@ def render_unit_report():
         base = st.text_input("הזן שם מוצב / מיקום ידנית *", placeholder="לדוגמה: מוצב מנורה", key="base_input_manual")
     elif base_selection != "-- בחר --":
         base = base_selection
-        # Update session state for consistency with other parts of the app
         st.session_state.base_input = base
     else:
-        # If no selection, check if barcode found something
         base = st.session_state.get('base_input', '')
         if not base:
             st.info("💡 בחר מוצב מהרשימה או בחר 'הזנה ידנית'")
+            
+    # 5. הודעה לחייל
+    if default_base != "-- בחר --" and base == default_base and distance_found:
+        st.success(f"📍 זוהה אוטומטית: {default_base} ({distance_found:.1f} ק\"מ ממך)")
     
     render_base_history_card(base, unit)
 
-    # 📸 תמונת הוכחת נוכחות (רק אם נבחר מוצב)
-    if base and len(base) > 2:
-        photo_ok = render_proof_photo(base)
-        
-        # חסימת שליחה אם אין אימות
-        if not photo_ok and not st.session_state.get("photo_gps_ok"):
-            st.warning("יש לאמת נוכחות לפני שליחת הדוח (צילום תמונה במוצב)")
-            st.stop()
 
     # ===== סריקת ברקוד מוצב =====
     with st.expander("📷 סריקת ברקוד מוצב (רשות)", expanded=True):
@@ -8373,107 +8313,104 @@ def render_unit_report():
                     else:
                         st.warning("⚠️ המיקום לא נשמר כי הוא מחוץ לגבולות ישראל")
 
-                # ===== מוח פיקודי: ניתוח AI לפני השמירה =====
-                ai_insight = {}
                 try:
-                    with st.spinner("🧠 המוח הפיקודי מסווג את הדיווח..."):
-                        ai_insight = analyze_report_with_ai(base, data)
-                    data["ai_risk_level"]     = ai_insight.get("risk_level", "לא סווג")
-                    data["ai_sla"]            = ai_insight.get("sla", "טרם נקבע")
-                    data["ai_action"]         = ai_insight.get("recommended_action", "נדרשת בחינה ידנית")
-                except Exception:
-                    pass  # אף פעם לא חוסם שמירה
-
-                try:
-                    # ניסיון לשמור את הדוח
-                    try:
+                    result = supabase.table("reports").insert(data).execute()
+                except Exception as e:
+                    if "PGRST204" in str(e) or "Could not find" in str(e):
+                        new_fields = [
+                            "k_issues", "k_issues_description", "k_shabbat_supervisor",
+                            "k_shabbat_supervisor_name", "k_shabbat_supervisor_phone",
+                            "k_issues_photo_url", "k_shabbat_photo_url",
+                            "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone",
+                            "report_duration", "barcode_verified", "signature_url",
+                            "ai_risk_level", "ai_sla", "ai_action",
+                            "vision_detailed_finding",
+                            "lesson_date", "lesson_location", "lesson_qty", "lesson_participants",
+                            "lesson_content", "lesson_instructors", "lesson_population",
+                            "honeypot_failed", "quick_fill_flags", "vision_contradictions", "inspector_tip",
+                        ]
+                        for field in new_fields:
+                            data.pop(field, None)
                         result = supabase.table("reports").insert(data).execute()
-                    except Exception as e:
-                        # טיפול בשגיאה אם העמודות החדשות עדיין לא קיימות במסד הנתונים
-                        if "PGRST204" in str(e) or "Could not find" in str(e):
-                            # ניסיון חוזר ללא השדות החדשים (שמירה שקטה של בסיס הדוח)
-                            # רשימת כל השדות החדשים שאולי חסרים
-                            new_fields = [
-                                "k_issues", "k_issues_description", "k_shabbat_supervisor",
-                                "k_shabbat_supervisor_name", "k_shabbat_supervisor_phone",
-                                "k_issues_photo_url", "k_shabbat_photo_url",
-                                "soldier_want_lesson", "soldier_has_lesson", "soldier_lesson_teacher", "soldier_lesson_phone",
-                                "report_duration", "barcode_verified", "signature_url",
-                                "ai_risk_level", "ai_sla", "ai_action",
-                                "vision_detailed_finding",
-                                # שדות שיעורים של חטיבות סדירות
-                                "lesson_date", "lesson_location", "lesson_qty", "lesson_participants",
-                                "lesson_content", "lesson_instructors", "lesson_population",
-                                # 🆕 Wave 2 Anti-Fraud fields
-                                "honeypot_failed", "quick_fill_flags", "vision_contradictions", "inspector_tip",
-                            ]
-                            for field in new_fields:
-                                data.pop(field, None)
-                            result = supabase.table("reports").insert(data).execute()
-                        else:
-                            raise e
+                    else:
+                        raise e
 
-
-                    # מעקב אוטומטי אחר חוסרים
+                try:
                     if result.data and len(result.data) > 0:
                         report_id = result.data[0].get('id')
+                        
                         if report_id:
                             detect_and_track_deficits(data, report_id, unit)
-                            
-                            # 🆕 יצירת כרטיס תקלה אוטומטי (Closed-Loop Ticketing)
                             create_maintenance_ticket(data, report_id)
-                    
-                    # ===== 🎊 Impact Screen — מסך ניצחון אחרי שגר =====
+
                     st.balloons()
-                    # חשב רצף דיווחים
                     try:
-                        streak_res = supabase.table("reports").select("date").eq("unit", unit).eq("inspector", inspector).order("date", desc=True).limit(10).execute()
+                        streak_res = supabase.table("reports") \
+                            .select("date") \
+                            .eq("unit", unit) \
+                            .eq("inspector", inspector) \
+                            .order("date", desc=True) \
+                            .limit(10).execute()
                         streak_count = len(streak_res.data) if streak_res.data else 1
                     except Exception:
                         streak_count = 1
-                    # חישוב אוכלוסייה בעלת השפע
+
                     soldiers_impacted = 150 if not is_combat_brigade else 800
                     reliability_score = min(100, 70 + streak_count * 3)
                     streak_emoji = "🔥" if streak_count >= 4 else "⭐" if streak_count >= 2 else ""
+
                     st.markdown(f"""
-                    <div style='text-align:center; background:linear-gradient(135deg,#f0fdf4,#dcfce7); border:2px solid #10b981;
-                                border-radius:16px; padding:28px 20px; margin:16px 0;'>
+                    <div style='text-align:center; background:linear-gradient(135deg,#f0fdf4,#dcfce7);
+                                border:2px solid #10b981; border-radius:16px; padding:28px 20px; margin:16px 0;'>
                         <div style='font-size:64px; margin-bottom:8px;'>🎯</div>
                         <h2 style='color:#10b981; margin:0 0 8px 0;'>הדוח שוגר לחפ"ק!</h2>
                         <p style='font-size:16px; color:#374151; margin:6px 0;'>
-                            בזכותך, <b>{soldiers_impacted} לוחמים</b> במוצב יאכלו כשר ויוכלו לטלטל בשבת הקרובה.
+                            בזכותך, <b>{soldiers_impacted} לוחמים</b> יאכלו כשר וייטלטלו בשבת.
                         </p>
                         <p style='font-size:15px; color:#374151; margin:4px 0;'>
-                            {streak_emoji} <b>רצף דיווחים:</b> {streak_count} דוחות
+                            {streak_emoji} <b>רצף דיווחים:</b> {streak_count}
                         </p>
                         <p style='font-size:15px; color:#374151; margin:4px 0;'>
-                            📈 <b>ציון אמינות:</b> {reliability_score}/100 ({'!🏆 אלוף' if reliability_score >= 95 else '🔥 מקצוען' if reliability_score >= 85 else 'טוב מאוד'})
+                            📈 <b>ציון אמינות:</b> {reliability_score}/100
                         </p>
                     </div>
                     """, unsafe_allow_html=True)
-                    # 📨 התראות דוא"ל לבעיות קריטיות
-                    send_email_alerts(data, unit)
-                    
-                    # 📊 הצגת מה השתנה מהפעם הקודמת
+
+                    try:
+                        send_email_alerts(data, unit)
+                    except Exception:
+                        pass
+
+                    if report_id:
+                        with st.spinner("🧠 המוח הפיקודי מנתח ברקע..."):
+                            try:
+                                ai_insight = analyze_report_with_ai(base, data)
+                                supabase.table("reports").update({
+                                    "ai_risk_level": ai_insight.get("risk_level", "לא סווג"),
+                                    "ai_sla":        ai_insight.get("sla", "טרם נקבע"),
+                                    "ai_action":     ai_insight.get("recommended_action", "")
+                                }).eq("id", report_id).execute()
+                            except Exception:
+                                pass
+
                     render_report_diff(data, unit, base)
-                    
-                    clear_cache()
-                    st.session_state.voice_note_transcription = None # 🧼 ניקוי תמלול
-                    time.sleep(4)  # תוספת זמן לקריאת ה-Diff
+
+                    st.session_state.voice_note_transcription = None
+                    st.cache_data.clear()
+                    time.sleep(1)
                     st.rerun()
+
                 except Exception as e:
                     error_msg = str(e)
-                    # אם השגיאה היא בגלל עמודות שלא קיימות, נסה בלעדיהן
                     if any(col in error_msg for col in ["latitude", "longitude", "photo_url"]):
                         try:
-                            # הסרת עמודות שלא קיימות
                             data.pop("latitude", None)
                             data.pop("longitude", None)
                             data.pop("photo_url", None)
                             supabase.table("reports").insert(data).execute()
                             st.success("✅ הדוח נשלח בהצלחה!")
-                            clear_cache()
-                            time.sleep(2)
+                            st.cache_data.clear()
+                            time.sleep(1)
                             st.rerun()
                         except Exception as e2:
                             st.error(f"❌ שגיאה בשמירה: {e2}")
