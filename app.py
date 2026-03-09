@@ -24,108 +24,139 @@ def render_gps_button(key: str = "gps") -> tuple:
     vault_lat_key = f"VAULT_LAT_{key}"
     vault_lon_key = f"VAULT_LON_{key}"
     
-    # 1. אם יש מיקום בכספת, נציג אותו מתוך השרת ונחזיר
-    if st.session_state.get(vault_lat_key) and st.session_state.get(vault_lon_key):
-        lat = st.session_state[vault_lat_key]
-        lon = st.session_state[vault_lon_key]
-        col1, col2 = st.columns([4,1])
+    # Check if we already have a persistent location
+    lat = st.session_state.get(vault_lat_key)
+    lon = st.session_state.get(vault_lon_key)
+    
+    if lat and lon:
+        col1, col2 = st.columns([4, 1])
         with col1:
-            st.success(f"✅ מיקום נקלט וננעל בשרת ({lat:.4f}, {lon:.4f})")
+            st.success("✅ המיקום נקלט ומאובטח במערכת")
         with col2:
-            if st.button("🔄 רענן", key=f"reset_gps_{key}"):
+            if st.button("🔄 עדכן", key=f"reset_gps_{key}"):
                 del st.session_state[vault_lat_key]
                 del st.session_state[vault_lon_key]
                 st.rerun()
         return lat, lon
 
-    # 2. שדות נסתרים להעברת הנתונים
+    # Hidden text inputs for communication with JS
     st.markdown("""
         <style>
-        div[data-testid="stTextInput"]:has(input[aria-label="lat"]), 
-        div[data-testid="stTextInput"]:has(input[aria-label="lon"]) {
-            width: 0 !important; height: 0 !important; opacity: 0 !important; margin: 0 !important; padding: 0 !important;
+        .hidden-gps-input {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            visibility: hidden;
         }
         </style>
     """, unsafe_allow_html=True)
     
-    widget_lat_key = f"_temp_lat_{key}"
-    widget_lon_key = f"_temp_lon_{key}"
-    
-    lat_val = st.text_input("lat", value="", key=widget_lat_key, label_visibility="hidden")
-    lon_val = st.text_input("lon", value="", key=widget_lon_key, label_visibility="hidden")
+    # We use stable keys for these temporary inputs to ensure we can find them in the DOM
+    t_lat = st.text_input("lat", key=f"tmp_lat_{key}", label_visibility="collapsed")
+    t_lon = st.text_input("lon", key=f"tmp_lon_{key}", label_visibility="collapsed")
 
-    # 3. הכפתור והזרקת הנתונים (כולל דימוי לחיצת Enter!)
-    st.components.v1.html("""
-    <div dir="rtl" style="font-family:Arial, sans-serif;">
-        <button id="gpsBtn" onclick="getGPS()" style="width:100%; background:#1d4ed8; color:white; border:none; padding:14px; border-radius:10px; font-size:16px; cursor:pointer; font-weight:bold;">
-            📍 לחץ לקבלת מיקום
+    # The GPS Button Component
+    st.components.v1.html(f"""
+    <div dir="rtl" style="font-family: system-ui, -apple-system, sans-serif;">
+        <button id="gps-trigger" onclick="captureGPS()" style="
+            width: 100%;
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 16px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        ">
+            📍 לחץ כאן לקבלת מיקום מדויק
         </button>
-        <div id="msg" style="margin-top:8px; font-size:13px; color:#64748b; text-align:right;"></div>
+        <p id="gps-status" style="margin-top: 8px; font-size: 13px; color: #64748b; text-align: center;"></p>
     </div>
 
     <script>
-    function getGPS() {
-        var btn = document.getElementById('gpsBtn');
-        var msg = document.getElementById('msg');
-        btn.innerText = '🔄 מושך נתונים...';
+    function captureGPS() {{
+        const btn = document.getElementById('gps-trigger');
+        const status = document.getElementById('gps-status');
         
-        if (!navigator.geolocation) {
-            msg.innerText = '❌ GPS לא נתמך בדפדפן'; 
-            btn.innerText = '📍 נסה שוב';
+        btn.disabled = true;
+        btn.style.background = '#94a3b8';
+        btn.innerText = '🔍 מחפש לוויינים...';
+        status.innerText = 'מזהה מיקום נוכחי...';
+
+        if (!navigator.geolocation) {{
+            status.innerText = '❌ הדפדפן שלך אינו תומך ב-GPS';
+            btn.disabled = false;
+            btn.style.background = '#ef4444';
+            btn.innerText = 'נסה שוב';
             return;
-        }
-        
+        }}
+
         navigator.geolocation.getCurrentPosition(
-            function(pos) {
-                var lat = pos.coords.latitude;
-                var lon = pos.coords.longitude;
-                btn.style.background = '#10b981';
-                btn.innerText = '✅ מיקום נתפס (מעביר לשרת...)';
+            (pos) => {{
+                const lat = pos.coords.latitude;
+                const lon = pos.coords.longitude;
                 
-                var doc = window.parent.document;
-                var inputs = doc.querySelectorAll('input[type="text"]');
-                var latSet = false, lonSet = false;
-                var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                status.innerText = '✅ מיקום זוהה! מעביר למערכת...';
+                btn.style.background = '#10b981';
+                btn.innerText = '✅ המיקום נשמר';
 
-                inputs.forEach(function(inp) {
-                    if (!latSet && inp.value === '' && inp.getAttribute('aria-label') === 'lat') {
-                        setter.call(inp, String(lat));
-                        inp.dispatchEvent(new Event('input', {bubbles:true}));
-                        inp.dispatchEvent(new Event('change', {bubbles:true}));
-                        // פקודת האנטר - בלעדיה פייתון פשוט מתעלם מהנתון!
-                        inp.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true}));
-                        latSet = true;
-                    }
-                    if (!lonSet && inp.value === '' && inp.getAttribute('aria-label') === 'lon') {
-                        setter.call(inp, String(lon));
-                        inp.dispatchEvent(new Event('input', {bubbles:true}));
-                        inp.dispatchEvent(new Event('change', {bubbles:true}));
-                        inp.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true}));
-                        lonSet = true;
-                    }
-                });
-            },
-            function(err) {
-                msg.innerText = '❌ שגיאת מיקום: אנא אשר הרשאות';
-                btn.innerText = '📍 נסה שוב';
-            },
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+                // Find the parent document and the specific inputs
+                const doc = window.parent.document;
+                const inputs = doc.querySelectorAll('input');
+                let latInput, lonInput;
+
+                // Robust discovery based on label or key
+                inputs.forEach(input => {{
+                    const label = input.getAttribute('aria-label');
+                    if (label === 'lat') latInput = input;
+                    if (label === 'lon') lonInput = input;
+                }});
+
+                if (latInput && lonInput) {{
+                    // Update values and trigger Streamlit's internal state update
+                    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                    
+                    setter.call(latInput, String(lat));
+                    latInput.value = String(lat); // Direct set as fallback
+                    latInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    
+                    setter.call(lonInput, String(lon));
+                    lonInput.value = String(lon); // Direct set as fallback
+                    lonInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    
+                    // Trigger a change event to be doubly sure
+                    latInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    lonInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+
+                    // We add a small delay to ensure Streamlit registers the changes before any potential rerun
+                    setTimeout(() => {{
+                        // No explicit click needed if we use st.rerun on the Python side when values appear
+                    }}, 100);
+                }}
+            }},
+            (err) => {{
+                status.innerText = '❌ שגיאה: ' + err.message;
+                btn.disabled = false;
+                btn.style.background = '#ef4444';
+                btn.innerText = 'נסה שוב';
+            }},
+            {{ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }}
         );
-    }
+    }}
     </script>
-    """, height=90)
+    """, height=100)
 
-    # 4. חטיפת הנתון בפייתון ושמירתו לנצח בכספת
-    try:
-        if lat_val and lon_val:
-            lat_f = float(lat_val)
-            lon_f = float(lon_val)
-            # שמירה בכספת
-            st.session_state[vault_lat_key] = lat_f
-            st.session_state[vault_lon_key] = lon_f
+    # Capture the values on the Python side
+    if t_lat and t_lon:
+        try:
+            st.session_state[vault_lat_key] = float(t_lat)
+            st.session_state[vault_lon_key] = float(t_lon)
             st.rerun()
-    except Exception as e:
-        pass
+        except ValueError:
+            pass
 
     return None, None
 
@@ -7190,22 +7221,20 @@ def render_unit_report():
         
         # ✅ בדיקה אם המיקום בגבולות ישראל
         if not (29.5 <= gps_lat <= 33.5 and 34.2 <= gps_lon <= 35.9):
-            st.error(f"🚨 **שגיאה:** המיקום ({gps_lat:.4f}, {gps_lon:.4f}) מחוץ לגבולות ישראל!")
-            st.warning("💡 ייתכן שהמכשיר שלך נותן מיקום שגוי. נסה להפעיל מחדש את ה-GPS")
-            st.info("📍 **למידע:** ירושלים היא בערך lat=31.7683, lon=35.2137")
+            st.warning("⚠️ המיקום שזוהה נראה חריג. וודא שה-GPS פועל ושנתת הרשאה.")
         else:
-            st.info(f"✅ המיקום תקין - בגבולות ישראל")
+            st.success("✅ המיקום זוהה ומוכן לשליחה")
 
     if gps_lat:
         # בדיקת מרחק מבסיסים ידועים
         nearest_base, distance = find_nearest_base(gps_lat, gps_lon)
         
         if distance < 2.0:
-            st.info(f"📍 **מיקום מזוהה:** {nearest_base} ({distance:.1f} ק\"מ)")
+            st.info(f"📍 מזוהה בקרבת: **{nearest_base}**")
         elif distance < 5.0:
-            st.warning(f"⚠️ **מרחק בינוני:** {nearest_base} ({distance:.1f} ק\"מ) - וודא שהמיקום נכון")
+            st.info(f"📍 מזוהה בטווח של: **{nearest_base}**")
         else:
-            st.error(f"🚨 **התראה:** {distance:.1f} ק\"מ מ-{nearest_base} - מיקום חריג!")
+            st.warning(f"📍 מיקום חריג יחסית ל{nearest_base}. מומלץ לוודא.")
     elif not gps_lat:
         pass # Waiting for GPS to be captured
     
@@ -7522,14 +7551,14 @@ def render_unit_report():
         if k_issues == "כן":
             k_issues_description = st.text_area("פרט את תקלות הכשרות שנמצאו", key="k_issues_desc")
             k_issues_photo = st.file_uploader(
-                "📷 צלם תמונה של תקלת הכשרות (חובה)", 
+                "📷 צלם תמונה של תקלת הכשרות (אופציונלי)", 
                 type=['jpg', 'png', 'jpeg'], 
                 key="k_issues_photo_upload",
-                help="חובה לצלם את התקלה לפני שליחת הדוח"
+                help="ניתן להוסיף תמונה לתיעוד התקלה"
             )
-            if not k_issues_photo:
-                st.warning("⚠️ נא לצלם תמונה של תקלת הכשרות לפני השליחה")
-                _mandatory_warnings.append("📷 חובה לצלם תמונה של תקלת כשרות לפני שליחה")
+            # if not k_issues_photo:
+            #     st.warning("⚠️ נא לצלם תמונה של תקלת הכשרות לפני השליחה")
+            #     _mandatory_warnings.append("📷 חובה לצלם תמונה של תקלת כשרות לפני שליחה")
         k_shabbat_supervisor_name = ""
         k_shabbat_supervisor_phone = ""
         k_shabbat_photo = None
@@ -7540,7 +7569,7 @@ def render_unit_report():
                 k_shabbat_supervisor_phone = col_sup_phone.text_input("טלפון נאמן", key="k_sup_phone")
                 current_day = datetime.datetime.now().weekday()
                 if current_day in [3, 4]:
-                    k_shabbat_photo = st.file_uploader("📷 תמונת נאמן ⚠️ (חובה בחמישי-שישי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo_tab1")
+                    k_shabbat_photo = st.file_uploader("📷 תמונת נאמן (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo_tab1")
                 else:
                     k_shabbat_photo = st.file_uploader("📷 תמונת נאמן (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo_tab1")
         # (Photos in Tab 1)
@@ -7956,8 +7985,9 @@ def render_unit_report():
             max_chars=200
         )
 
-        st.markdown("### 📸 צילומים וחתימה")
-        photo = st.file_uploader("📸 תמונה כללית (חובה)", type=['jpg', 'png', 'jpeg'], key="main_report_photo")
+        # st.markdown("### 📸 צילומים וחתימה")
+        # photo = st.file_uploader("📸 תמונה כללית", type=['jpg', 'png', 'jpeg'], key="main_report_photo")
+        photo = None # Removed as per user request
 
         # --- בדיקת תנאי חובה לפני שליחה ---
         _mandatory_warnings = []
@@ -7981,8 +8011,7 @@ def render_unit_report():
             _mandatory_warnings.append("⚠️ חובה לבדוק לפחות נוהל אחד (לשונית 📜 נהלים ורוח)")
             
         # ⚠️ טאב חוסרים ושליחה (חובה)
-        if not photo:
-            _mandatory_warnings.append("⚠️ חובה להעלות תמונה כללית של הביקורת")
+        # photo requirement removed
         if not missing:
             _mandatory_warnings.append("⚠️ חובה למלא את שדה הפירוט (במידה ואין חוסרים כתוב 'אין')")
 
@@ -8183,10 +8212,10 @@ def render_unit_report():
                 for f in _quick_fill_flags:
                     st.warning(f"⚠️ {f}")
 
-            # בדיקת חובת תמונת נאמן כשרות בחמישי-שישי
-            elif is_thursday_or_friday and k_shabbat_supervisor == "כן" and not k_shabbat_photo:
-                st.error("⚠️ **חובה להעלות תמונת נאמן כשרות בימי חמישי ושישי!**")
-                st.warning("💡 נא להעלות תמונה של נאמן הכשרות בשדה המתאים למעלה")
+            # בדיקת חובת תמונת נאמן כשרות בחמישי-שישי (בוטלה לבקשת המשתמש)
+            # elif is_thursday_or_friday and k_shabbat_supervisor == "כן" and not k_shabbat_photo:
+            #    st.error("⚠️ **חובה להעלות תמונת נאמן כשרות בימי חמישי ושישי!**")
+            #    st.warning("💡 נא להעלות תמונה של נאמן הכשרות בשדה המתאים למעלה")
             
             # --- משיכת המיקום ישירות מהכספת ---
             check_lat = st.session_state.get("VAULT_LAT_main")
@@ -8196,11 +8225,13 @@ def render_unit_report():
                 st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח בחטמ\"ר!")
                 st.warning("💡 שים לב: עליך ללחוץ על 'קבל מיקום' ולראות את ההודעה הירוקה המאשרת שהמיקום ננעל בשרת לפני השליחה.")
             
-            elif not base or not inspector or not photo:
+            elif not base or not inspector:
                 st.error("❌ חסרים פרטי חובה בסיסיים לשליחת הדוח")
                  
             else:
-                photo_url = upload_report_photo(photo.getvalue(), unit, base)
+                photo_url = None
+                if photo:
+                    photo_url = upload_report_photo(photo.getvalue(), unit, base)
                 
                 # העלאת תמונות נוספות (תקלות כשרות ונאמן כשרות)
                 k_issues_photo_url = None
