@@ -96,8 +96,14 @@ _whatsapp_loc_html = """
 </html>
 """
 
-# שימוש ב-html במקום ב-path מונע את שגיאת התיקייה החסרה
-gps_component = components.declare_component("whatsapp_loc_button", html=_whatsapp_loc_html)
+# שימוש בייצור דינמי של התיקייה כדי למנוע שגיאות נתיב בענן
+_comp_dir = "gps_wa_component"
+os.makedirs(_comp_dir, exist_ok=True)
+_index_path = os.path.join(_comp_dir, "index.html")
+with open(_index_path, "w", encoding="utf-8") as f:
+    f.write(_whatsapp_loc_html)
+
+gps_component = components.declare_component("whatsapp_loc_button", path=_comp_dir)
 
 
 import math
