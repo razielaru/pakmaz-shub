@@ -7219,9 +7219,6 @@ def render_unit_report():
     if gps_lat:
         # ✅ הצגת המיקום המדויק שנקלט
         st.success(f"✅ מיקום GPS נקלט: {gps_lat:.6f}, {gps_lon:.6f}")
-        
-        if base and base != "-- בחר --":
-            save_base_location_if_new(base, gps_lat, gps_lon)
             
         # ✅ הדפסה ללוג (תוכל לראות בקונסול של Streamlit)
         print(f"🔍 DEBUG - GPS נקלט: lat={gps_lat}, lon={gps_lon}, base={base if 'base' in locals() else 'לא הוגדר'}")
@@ -7313,6 +7310,10 @@ def render_unit_report():
         base = st.session_state.get('base_input', '')
         if not base:
             st.info("💡 בחר מוצב מהרשימה או בחר 'הזנה ידנית'")
+            
+    # 🆕 שמירת מיקום במאגר אם זה בסיס חדש עם קואורדינטות GPS
+    if gps_lat and base and base != "-- בחר --":
+        save_base_location_if_new(base, gps_lat, gps_lon)
             
     # 5. הודעה לחייל
     if default_base != "-- בחר --" and base == default_base and distance_found:
@@ -7461,8 +7462,9 @@ def render_unit_report():
     # 🆕 Wave 2.5: Initializations
     continuity_answers = {}
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab_lounge, tab2, tab3, tab4, tab5 = st.tabs([
         "🍽️ כשרות",
+        "☕ טרקלין/ויקוק (אינו חובה)",
         "🕍 ביהכ\"נ ועירוב",
         "📜 נהלים ורוח",
         "📖 שיחת חתך (אינו חובה)",
@@ -7645,6 +7647,16 @@ def render_unit_report():
         k_heater = kashrut_answers.get('k_heater', 'לא יודע')
         k_app = kashrut_answers.get('k_app', 'לא יודע')
 
+        st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
+            <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[3].click()" 
+                style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
+                ⬅️ עבור לטאב הבא: ☕ טרקלין/ויקוק
+            </button></div>""", height=70)
+
+    # ===========================================
+    # TAB LOUNGE: טרקלין/ויקוק
+    # ===========================================
+    with tab_lounge:
         # טרקלין ויקוק
         _show_lounge_wecook = unit not in NO_LOUNGE_WECOOK_UNITS
         if _show_lounge_wecook:
@@ -7670,7 +7682,7 @@ def render_unit_report():
             w_private = w_kitchen_tools = w_procedure = w_guidelines = "לא רלוונטי"
 
         st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
-            <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[3].click()" 
+            <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[4].click()" 
                 style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
                 ⬅️ עבור לטאב הבא: 🕍 בית כנסת ועירוב
             </button></div>""", height=70)
