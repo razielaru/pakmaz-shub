@@ -7279,12 +7279,17 @@ def render_unit_report():
     c1, c2, c3 = st.columns(3)
     date = c1.date_input("תאריך", datetime.date.today())
     
-    # 🆕 שימוש ב- time_input אבל מוגן ע"י session_state כדי שלא יידרס ברענון 
-    if "initial_report_hour" not in st.session_state:
-        st.session_state["initial_report_hour"] = datetime.datetime.now().time()
+    # במובייל, רכיב הזמן של דיפולט Streamlit מציג רשימה נפתחת ריקה! הפתרון הוא לחזור ל-text_input פשוט עם validation בסיסי. 
+    # כדי שלא ידרס, לא ניגש לשעון בכל רענון אלא רק בטעינה הראשונית של המסך.
+    if "final_report_hour" not in st.session_state:
+        st.session_state["final_report_hour"] = datetime.datetime.now().strftime("%H:%M")
         
-    time_v = c2.time_input("שעה", value=st.session_state["initial_report_hour"], key="hour_input_widget")
+    time_v = c2.text_input("שעה (HH:MM)", value=st.session_state["final_report_hour"], key="hour_input_str")
     
+    # נשמור אחורה למשלוח הנתונים
+    if time_v != st.session_state.get("final_report_hour"):
+        st.session_state["final_report_hour"] = time_v
+
     inspector = c3.text_input("מבקר *")
     
     # בחירת מוצב (Text input בלבד)
@@ -8217,23 +8222,26 @@ def render_unit_report():
                 st.warning("💡 נא להעלות תמונה של נאמן הכשרות בשדה המתאים למעלה")
             
             # בדיקת מיקום חובה (פטור לחטיבות סדירות)
+            # יש מספר מפתחות פוטנציאליים ל-GPS. פה נאסוף אותם מחדש לפני השמירה.
             check_lat = (gps_lat or 
                          st.session_state.get("gps_lat_main") or 
                          st.session_state.get("gps_lat_main_form") or
                          st.session_state.get("gps_lat_gps_cp_1") or
+                         st.session_state.get("_gps_lat_main_form") or 
                          next((st.session_state[k] for k in st.session_state 
-                               if k.startswith("gps_lat_") and st.session_state[k]), None))
+                               if (k.startswith("gps_lat_") or k.startswith("_gps_lat")) and st.session_state[k]), None))
                                
             check_lon = (gps_lon or 
                          st.session_state.get("gps_lon_main") or 
                          st.session_state.get("gps_lon_main_form") or
+                         st.session_state.get("_gps_lon_main_form") or 
                          next((st.session_state[k] for k in st.session_state 
-                               if k.startswith("gps_lon_") and st.session_state[k]), None))
+                               if (k.startswith("gps_lon_") or k.startswith("_gps_lon")) and st.session_state[k]), None))
                                
             if not is_combat_brigade and not (check_lat and check_lon):
                 st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח בחטמ\"ר!")
-                st.warning("💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום")
-                
+                st.warning("💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום (הכפתור צריך להיות ירוק)")
+            
             elif not base or not inspector or not photo:
                 st.error("❌ חסרים פרטי חובה בסיסיים לשליחת הדוח")
                  
@@ -8268,7 +8276,7 @@ def render_unit_report():
                     "soldier_shabbat_training": soldier_shabbat_training, "soldier_knows_rabbi": soldier_knows_rabbi,
                     "soldier_prayers": soldier_prayers, "soldier_talk_cmd": soldier_talk_cmd, 
                     "free_text": free_text + (f"\n[תמלול קולי]: {st.session_state.get('voice_note_transcription', '')}" if st.session_state.get('voice_note_transcription') else ""),
-                    "time": str(time_v), "p_pakal": p_pakal, "missing_items": missing,
+                    "time": st.session_state.get("final_report_hour", str(time_v)), "p_pakal": p_pakal, "missing_items": missing,
                     "r_mezuzot_missing": r_mezuzot_missing, "k_cook_type": k_cook_type,
                     "p_marked": p_marked, "p_mix": p_mix, "p_kasher": p_kasher,
                     "r_sg": r_sg, "r_hamal": r_hamal, "r_sign": r_sign, "r_netilot": r_netilot,
