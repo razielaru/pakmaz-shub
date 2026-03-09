@@ -7227,14 +7227,18 @@ def render_unit_report():
             st.warning("⚠️ לא נמצאה טיוטה שמורה")
 
     st.markdown("### 📍 מיקום ותאריך")
-    # כפתור ה-GPS ממוקם בראש הפסקה
-    gps_lat, gps_lon = render_gps_button(key="main")
     
+    # 🆕 הצגת GPS אם נשמר, אחרת מראה כפתור
+    gps_lat_sess = st.session_state.get(f"gps_lat_main")
+    gps_lon_sess = st.session_state.get(f"gps_lon_main")
 
-    if gps_lat:
-        # ✅ הצגת המיקום המדויק שנקלט
-        st.success(f"✅ מיקום GPS נקלט: {gps_lat:.6f}, {gps_lon:.6f}")
-            
+    if gps_lat_sess and gps_lon_sess:
+        gps_lat, gps_lon = gps_lat_sess, gps_lon_sess
+        st.success(f"✅ מיקום נשמר: {gps_lat:.5f}, {gps_lon:.5f}")
+    else:
+        gps_lat, gps_lon = render_gps_button(key="main")
+
+    if not (gps_lat_sess and gps_lon_sess) and gps_lat:
         # ✅ הדפסה ללוג (תוכל לראות בקונסול של Streamlit)
         print(f"🔍 DEBUG - GPS נקלט: lat={gps_lat}, lon={gps_lon}, base={base if 'base' in locals() else 'לא הוגדר'}")
         
@@ -7256,8 +7260,8 @@ def render_unit_report():
             st.warning(f"⚠️ **מרחק בינוני:** {nearest_base} ({distance:.1f} ק\"מ) - וודא שהמיקום נכון")
         else:
             st.error(f"🚨 **התראה:** {distance:.1f} ק\"מ מ-{nearest_base} - מיקום חריג!")
-    else:
-        st.warning("📡 מחפש מיקום GPS... אנא המתן עד להופעת אישור ירוק לפני השליחה")
+    elif not (gps_lat_sess and gps_lon_sess):
+        st.info("📡 מחפש מיקום GPS... אנא המתן עד להופעת אישור ירוק לפני השליחה")
         st.caption("ירושלים: lat ~31.7, lon ~35.2")
     
     # --- ניהול ברקוד למציאת מיקום (סריקה חיה בלבד) ---
@@ -7287,7 +7291,12 @@ def render_unit_report():
     
     c1, c2, c3 = st.columns(3)
     date = c1.date_input("תאריך", datetime.date.today())
-    time_v = c2.time_input("שעה", datetime.datetime.now().time())
+    
+    current_hour = datetime.datetime.now().strftime("%H:%M")
+    if "report_hour" not in st.session_state:
+        st.session_state["report_hour"] = current_hour
+    time_v = c2.text_input("שעה", value=st.session_state["report_hour"], key="hour_input")
+    
     inspector = c3.text_input("מבקר *")
     
     # בחירת מוצב (Text input בלבד)
@@ -8220,9 +8229,12 @@ def render_unit_report():
                 st.warning("💡 נא להעלות תמונה של נאמן הכשרות בשדה המתאים למעלה")
             
             # בדיקת מיקום חובה (פטור לחטיבות סדירות)
-            elif not is_combat_brigade and not (gps_lat and gps_lon):
-                 st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח בחטמ\"ר!")
-                 st.warning("💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום")
+            elif not is_combat_brigade:
+                check_lat = gps_lat or st.session_state.get("gps_lat_main")
+                check_lon = gps_lon or st.session_state.get("gps_lon_main")
+                if not (check_lat and check_lon):
+                    st.error("❌ חובה להפעיל מיקום (GPS) כדי לשלוח את הדוח בחטמ\"ר!")
+                    st.warning("💡 אנא וודא שה-GPS דולק ואישרת לדפדפן לגשת למיקום")
                  
             elif base and inspector and photo:
                 photo_url = upload_report_photo(photo.getvalue(), unit, base)
