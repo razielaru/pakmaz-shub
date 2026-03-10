@@ -7175,12 +7175,14 @@ def render_unit_report():
     suggested_bases = sorted(list(set(known_bases + list(BASE_COORDINATES.keys()))))
     
     c1, c2, c3 = st.columns(3)
-    date = c1.date_input("תאריך", datetime.date.today())
+    # סנכרון לשעון ישראל
+    israel_now = pd.Timestamp.now(tz='Asia/Jerusalem')
+    date = c1.date_input("תאריך", israel_now.date())
     
     # במובייל, רכיב הזמן של דיפולט Streamlit מציג רשימה נפתחת ריקה! הפתרון הוא לחזור ל-text_input פשוט עם validation בסיסי. 
     # כדי שלא ידרס, לא ניגש לשעון בכל רענון אלא רק בטעינה הראשונית של המסך.
     if "final_report_hour" not in st.session_state:
-        st.session_state["final_report_hour"] = datetime.datetime.now().strftime("%H:%M")
+        st.session_state["final_report_hour"] = israel_now.strftime("%H:%M")
         
     time_v = c2.text_input("שעה (HH:MM)", value=st.session_state["final_report_hour"], key="hour_input_str")
     
