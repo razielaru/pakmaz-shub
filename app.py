@@ -3409,9 +3409,10 @@ st.markdown(f"""
     }}
     
     .login-card:hover {{
-        transform: translateY(-8px) scale(1.02); 
-        box-shadow: 0 20px 40px rgba(30, 58, 138, 0.15); 
-        border-color: {COLORS['secondary']}; 
+        transform: translateY(-10px) scale(1.05); 
+        box-shadow: 0 15px 30px rgba(30, 58, 138, 0.2), 0 0 15px rgba(30, 58, 138, 0.1); 
+        border-color: {COLORS['primary']}; 
+        background: white;
     }}
     
     .login-card:hover::before {{
@@ -3497,35 +3498,44 @@ st.markdown(f"""
     
     /* רספונסיביות למובייל */
     @media (max-width: 768px) {{
+        /* Force 2 columns for Streamlit columns on mobile */
+        [data-testid="stHorizontalBlock"] {{
+            display: flex !important;
+            flex-wrap: wrap !important;
+            flex-direction: row !important;
+        }}
+        [data-testid="stHorizontalBlock"] > div {{
+            flex: 0 0 50% !important;
+            min-width: 50% !important;
+            max-width: 50% !important;
+            padding: 5px !important;
+        }}
+
         .login-card {{
-            min-height: 160px;
-            padding: 15px;
-            margin-bottom: 15px;
+            min-height: 140px;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
         }}
         
         .login-card img {{
-            max-height: 70px !important;
+            max-height: 50px !important;
+            margin-bottom: 8px;
         }}
         
         .login-card h3 {{
-            font-size: 0.95rem;
+            font-size: 0.85rem;
+            margin-top: 5px;
         }}
         
         h1 {{
-            font-size: 1.8rem !important;
+            font-size: 1.5rem !important;
         }}
         
         div.stButton > button {{
-            padding: 0.6rem 1rem;
-            font-size: 0.95rem;
-        }}
-        
-        .unit-status-card {{
-            padding: 12px;
-        }}
-        
-        .unit-status-card img {{
-            max-height: 40px;
+            padding: 0.5rem;
+            font-size: 0.85rem;
         }}
     }}
     
