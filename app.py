@@ -7368,7 +7368,7 @@ def render_unit_report():
 
     tab1, tab_lounge, tab2, tab3, tab4, tab5 = st.tabs([
         "🍽️ כשרות",
-        "☕ טרקלין/וויקוק / הגנ״ש פילבוקס",
+        "☕ טרקלין/וויקוק / הגנ״ש /פילבוקס",
         "🕍 ביהכ\"נ ועירוב",
         "📜 נהלים ורוח",
         "📖 שיחת חתך",
@@ -7420,32 +7420,27 @@ def render_unit_report():
         c1, c2 = st.columns(2)
         k_issues = radio_with_explanation("יש תקלות כשרות?", "k_issues", col=c1)
         k_shabbat_supervisor = radio_with_explanation("יש נאמן כשרות בשבת?", "k_shabbat_sup", col=c2)
+        
         k_issues_description = ""
         k_issues_photo = None
         if k_issues == "כן":
+            st.markdown("---")
             k_issues_description = st.text_area("פרט את תקלות הכשרות שנמצאו", key="k_issues_desc")
             k_issues_photo = st.file_uploader(
                 "📷 צלם תמונה של תקלת הכשרות (אופציונלי)", 
                 type=['jpg', 'png', 'jpeg'], 
-                key="k_issues_photo_upload",
-                help="ניתן להוסיף תמונה לתיעוד התקלה"
+                key="k_issues_photo_upload"
             )
-            # if not k_issues_photo:
-            #     st.warning("⚠️ נא לצלם תמונה של תקלת הכשרות לפני השליחה")
-            #     _mandatory_warnings.append("📷 חובה לצלם תמונה של תקלת כשרות לפני שליחה")
+
         k_shabbat_supervisor_name = ""
         k_shabbat_supervisor_phone = ""
         k_shabbat_photo = None
         if k_shabbat_supervisor == "כן":
-            with c2:
-                col_sup_name, col_sup_phone = st.columns(2)
-                k_shabbat_supervisor_name = col_sup_name.text_input("שם נאמן כשרות", key="k_sup_name")
-                k_shabbat_supervisor_phone = col_sup_phone.text_input("טלפון נאמן", key="k_sup_phone")
-                current_day = datetime.datetime.now().weekday()
-                if current_day in [3, 4]:
-                    k_shabbat_photo = st.file_uploader("📷 תמונת נאמן (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo_tab1")
-                else:
-                    k_shabbat_photo = st.file_uploader("📷 תמונת נאמן (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo_tab1")
+            st.markdown("---")
+            col_sup_name, col_sup_phone = st.columns(2)
+            k_shabbat_supervisor_name = col_sup_name.text_input("שם נאמן כשרות", key="k_sup_name")
+            k_shabbat_supervisor_phone = col_sup_phone.text_input("טלפון נאמן", key="k_sup_phone")
+            k_shabbat_photo = st.file_uploader("📷 תמונת נאמן (אופציונלי)", type=['jpg', 'png', 'jpeg'], key="k_shabbat_photo_tab1")
         # (Photos in Tab 1)
 
         # רשימת שאלות כשרות לשאפל — מותאמת לסוג יחידה
@@ -7497,7 +7492,7 @@ def render_unit_report():
         st.components.v1.html("""<div style='text-align:center;margin-top:8px;'>
             <button onclick="window.parent.document.querySelectorAll('[data-baseweb=tab]')[3].click()" 
                 style='background:#1e3a8a;color:white;border:none;border-radius:10px;padding:12px 28px;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2);direction:rtl;'>
-                ⬅️ עבור לטאב הבא: ☕ טרקלין/וויקוק / הגנ״ש פילבוקס
+                ⬅️ עבור לטאב הבא: ☕ טרקלין/וויקוק / הגנ״ש/ פילבוקס
             </button></div>""", height=70)
 
     # ===========================================
