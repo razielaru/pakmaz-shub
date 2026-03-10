@@ -18,7 +18,11 @@ import random
 import streamlit.components.v1 as components
 
 # Move to the absolute top to ensure it's the first streamlit command
-st.set_page_config(page_title="מערכת בקרה רבנות פיקוד מרכז", page_icon="✡️")
+st.set_page_config(
+    page_title="מערכת בקרה רבנות פיקוד מרכז", 
+    page_icon="✡️",
+    layout="wide"
+)
 
 def render_gps_button(key: str = "gps") -> tuple:
     from streamlit_js_eval import get_geolocation
@@ -7364,7 +7368,7 @@ def render_unit_report():
 
     tab1, tab_lounge, tab2, tab3, tab4, tab5 = st.tabs([
         "🍽️ כשרות",
-        "☕ טרקלין/וויקוק תוסיף/ הגנ״ש פילבוקס",
+        "☕ טרקלין/וויקוק / הגנ״ש פילבוקס",
         "🕍 ביהכ\"נ ועירוב",
         "📜 נהלים ורוח",
         "📖 שיחת חתך",
