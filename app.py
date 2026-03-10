@@ -3077,6 +3077,10 @@ def generate_inspector_stats(df):
     if df.empty or 'inspector' not in df.columns:
         return None
     
+    # וודא שהתאריך בפורמט נכון
+    if 'date' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['date']):
+        df['date'] = pd.to_datetime(df['date'], errors='coerce')
+    
     # 📋 סינון דוחות שנמחקו (מתחילים ב-🗑️)
     df = df[~df['inspector'].astype(str).str.startswith('🗑️')].copy()
     if df.empty:
