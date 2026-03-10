@@ -3498,13 +3498,27 @@ st.markdown(f"""
     
     /* רספונסיביות למובייל */
     @media (max-width: 768px) {{
-        /* Force 2 columns for Streamlit columns on mobile */
+        /* Default: Stack columns for fields and stats */
         [data-testid="stHorizontalBlock"] {{
-            display: flex !important;
-            flex-wrap: wrap !important;
-            flex-direction: row !important;
+            flex-direction: column !important;
         }}
         [data-testid="stHorizontalBlock"] > div {{
+            flex: 0 0 100% !important;
+            min-width: 100% !important;
+            max-width: 100% !important;
+            padding: 5px 0 !important;
+        }}
+
+        /* Special Case: Force 2 columns for Unit Selection and Questionnaire */
+        /* Streamlit columns containing login-cards or Radio buttons */
+        [data-testid="stHorizontalBlock"]:has(.login-card),
+        [data-testid="stHorizontalBlock"]:has(.stRadio) {{
+            flex-direction: row !important;
+            flex-wrap: wrap !important;
+            display: flex !important;
+        }}
+        [data-testid="stHorizontalBlock"]:has(.login-card) > div,
+        [data-testid="stHorizontalBlock"]:has(.stRadio) > div {{
             flex: 0 0 50% !important;
             min-width: 50% !important;
             max-width: 50% !important;
@@ -3517,11 +3531,12 @@ st.markdown(f"""
             margin-bottom: 10px;
             border-radius: 12px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            width: 100% !important;
         }}
         
         .login-card img {{
-            max-height: 50px !important;
-            margin-bottom: 8px;
+            max-height: 55px !important;
+            margin-bottom: 5px;
         }}
         
         .login-card h3 {{
@@ -3536,6 +3551,11 @@ st.markdown(f"""
         div.stButton > button {{
             padding: 0.5rem;
             font-size: 0.85rem;
+        }}
+
+        /* Dashboard Briefing Responsive */
+        .briefing-grid {{
+            grid-template-columns: 1fr !important;
         }}
     }}
     
@@ -5143,7 +5163,7 @@ def render_morning_briefing(df: pd.DataFrame, unit: str):
             </div>
         </div>
         
-        <div style='display: grid; grid-template-columns: 1.2fr 1fr 0.8fr; gap: 16px;'>
+        <div class='briefing-grid' style='display: grid; grid-template-columns: 1.2fr 1fr 0.8fr; gap: 16px;'>
 
             <div style='background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1); 
                         border-radius: 14px; padding: 16px; backdrop-filter: blur(4px);'>
