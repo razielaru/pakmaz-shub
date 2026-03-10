@@ -3498,59 +3498,71 @@ st.markdown(f"""
     
     /* רספונסיביות למובייל */
     @media (max-width: 768px) {{
-        /* Default: Stack columns for fields and stats */
-        [data-testid="stHorizontalBlock"] {{
+        /* Default: Stack all columns for form fields and stats */
+        div[data-testid="stHorizontalBlock"] {{
             flex-direction: column !important;
+            display: flex !important;
         }}
-        [data-testid="stHorizontalBlock"] > div {{
-            flex: 0 0 100% !important;
+        div[data-testid="column"] {{
+            width: 100% !important;
+            flex: 1 1 100% !important;
             min-width: 100% !important;
             max-width: 100% !important;
             padding: 5px 0 !important;
         }}
 
-        /* Special Case: Force 2 columns for Unit Selection and Questionnaire */
-        /* Streamlit columns containing login-cards or Radio buttons */
-        [data-testid="stHorizontalBlock"]:has(.login-card),
-        [data-testid="stHorizontalBlock"]:has(.stRadio) {{
+        /* Exceptions: Force 2 columns for Unit Selection and Questionnaire */
+        /* Targets containers having login-cards or Radio widgets */
+        div[data-testid="stHorizontalBlock"]:has(.login-card),
+        div[data-testid="stHorizontalBlock"]:has([data-testid="stRadio"]),
+        div[data-testid="stHorizontalBlock"]:has([data-testid="stSelectbox"]) {{
             flex-direction: row !important;
             flex-wrap: wrap !important;
             display: flex !important;
+            gap: 0px !important;
         }}
-        [data-testid="stHorizontalBlock"]:has(.login-card) > div,
-        [data-testid="stHorizontalBlock"]:has(.stRadio) > div {{
+        
+        div[data-testid="stHorizontalBlock"]:has(.login-card) > div[data-testid="column"],
+        div[data-testid="stHorizontalBlock"]:has([data-testid="stRadio"]) > div[data-testid="column"],
+        div[data-testid="stHorizontalBlock"]:has([data-testid="stSelectbox"]) > div[data-testid="column"] {{
+            width: 50% !important;
             flex: 0 0 50% !important;
             min-width: 50% !important;
             max-width: 50% !important;
-            padding: 5px !important;
+            padding: 4px !important;
         }}
 
         .login-card {{
-            min-height: 140px;
-            padding: 10px;
-            margin-bottom: 10px;
+            min-height: 130px;
+            padding: 8px;
+            margin-bottom: 5px;
             border-radius: 12px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.05);
             width: 100% !important;
+            box-sizing: border-box;
         }}
         
         .login-card img {{
-            max-height: 55px !important;
-            margin-bottom: 5px;
+            max-height: 50px !important;
+            margin-bottom: 4px;
         }}
         
         .login-card h3 {{
-            font-size: 0.85rem;
-            margin-top: 5px;
+            font-size: 0.8rem;
+            margin-top: 3px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }}
         
         h1 {{
-            font-size: 1.5rem !important;
+            font-size: 1.4rem !important;
         }}
         
         div.stButton > button {{
-            padding: 0.5rem;
-            font-size: 0.85rem;
+            padding: 4px !important;
+            font-size: 0.8rem !important;
+            min-height: unset !important;
         }}
 
         /* Dashboard Briefing Responsive */
