@@ -2,15 +2,16 @@
 import React, { useState, useMemo } from 'react';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ComposedChart
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
+import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import { useReports } from '../../hooks/useReports';
-import { useDeficits, useDeficitStats } from '../../hooks/useDeficits';
+import { useDeficitStats } from '../../hooks/useDeficits';
 import Spinner from '../ui/Spinner';
 import TabsBar from '../ui/TabsBar';
 import Badge from '../ui/Badge';
-import { ALL_UNITS, UNIT_COLORS } from '../../utils/constants'; // ודא שיש לך UNIT_COLORS בקבועים
+import { BASE_COORDINATES } from '../../utils/constants';
 
 // פונקציות עזר לחישובים (תחליף ללוגיקת Pandas)
 function calculateUnitScore(unitReports) {
@@ -82,7 +83,6 @@ function OverviewTab({ reports, accessibleUnits, role }) {
       if (eruvCounts[r.e_status] !== undefined) eruvCounts[r.e_status]++;
     });
 
-    // 7 days trend
     const today = new Date();
     const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
     const fourteenDaysAgo = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000);
@@ -317,7 +317,6 @@ function UnitAnalysisTab({ reports, accessibleUnits }) {
                         </div>
                     </div>
 
-                    {/* סיכום תקלות בסיסי במקום טאבים מסובכים */}
                     <div className="card mt-6">
                         <h4 className="font-bold text-gray-800 mb-4">📋 סיכום תקלות אחרונות ביחידה</h4>
                         <div className="overflow-x-auto">
@@ -369,6 +368,232 @@ function UnitAnalysisTab({ reports, accessibleUnits }) {
     );
 }
 
+function RiskCenterTab({ reports, accessibleUnits }) {
+  const riskData = useMemo(() => {
+    const today = new Date();
+    const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const criticalIssues = [];
+    const complianceData = [];
+    const trend30Days = {};
+
+    accessibleUnits.forEach(u => {
+      const uReports = reports.filter(r => r.unit === u);
+      if (uReports.length === 0) return;
+
+      const kashrutOk = uReports.filter(r => r.k_cert === 'כן').length;
+      const eruvOk = uReports.filter(r => r.e_status === 'תקין').length;
+      const cleanOk = uReports.filter(r => r.s_clean === 'מצוין' || r.s_clean === 'טוב').length;
+      
+      complianceData.push({
+        unit: u,
+        'כשרות': Math.round((kashrutOk / uReports.length) * 100),
+        'עירוב': Math.round((eruvOk / uReports.length) * 100),
+        'ניקיון': Math.round((cleanOk / uReports.length) * 100),
+        score: calculateUnitScore(uReports)
+      });
+
+      const latestPerBase = {};
+      uReports.sort((a,b) => new Date(b.date) - new Date(a.date)).forEach(r => {
+        if (!latestPerBase[r.base]) latestPerBase[r.base] = r;
+      });
+
+      Object.values(latestPerBase).forEach(r => {
+        if (r.e_status === 'פסול') criticalIssues.push({ type: 'עירוב פסול', base: r.base, unit: r.unit, color: 'border-red-500 bg-red-50 text-red-700', icon: '🚧' });
+        if (r.k_cert === 'לא') criticalIssues.push({ type: 'ללא כשרות', base: r.base, unit: r.unit, color: 'border-orange-500 bg-orange-50 text-orange-700', icon: '🍽️' });
+        
+        const d = new Date(r.date);
+        const daysSilent = Math.floor((today - d) / (1000 * 60 * 60 * 24));
+        if (daysSilent > 14) criticalIssues.push({ type: `לא בוקר ${daysSilent} ימים`, base: r.base, unit: r.unit, color: 'border-yellow-500 bg-yellow-50 text-yellow-700', icon: '⏰' });
+      });
+
+      uReports.forEach(r => {
+        const d = new Date(r.date);
+        if (d >= thirtyDaysAgo) {
+          const dStr = r.date.split('T')[0];
+          if (!trend30Days[dStr]) trend30Days[dStr] = { date: dStr, total: 0, issues: 0 };
+          trend30Days[dStr].total++;
+          if (r.e_status === 'פסול' || r.k_cert === 'לא' || parseInt(r.r_mezuzot_missing||0) > 0) {
+            trend30Days[dStr].issues++;
+          }
+        }
+      });
+    });
+
+    return {
+      criticalIssues: criticalIssues.sort((a,b) => a.type === 'עירוב פסול' ? -1 : 1).slice(0, 10),
+      complianceData: complianceData.sort((a,b) => b.score - a.score),
+      trendData: Object.values(trend30Days).sort((a, b) => a.date.localeCompare(b.date))
+    };
+  }, [reports, accessibleUnits]);
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-1 space-y-3">
+          <h3 className="font-bold text-gray-800 text-lg border-r-4 border-red-500 pr-2">🚨 Red Alert - טיפול מיידי</h3>
+          {riskData.criticalIssues.length > 0 ? riskData.criticalIssues.map((issue, idx) => (
+             <div key={idx} className={`p-3 rounded-lg border-r-4 shadow-sm ${issue.color}`}>
+                <div className="font-bold flex items-center gap-2">
+                  <span>{issue.icon}</span> {issue.type}
+                </div>
+                <div className="text-sm opacity-80 mt-1">{issue.base} | {issue.unit}</div>
+             </div>
+          )) : (
+             <div className="bg-green-50 border border-green-200 text-green-700 p-4 rounded-xl text-center font-bold">
+               ✅ אין אזהרות קריטיות כרגע
+             </div>
+          )}
+        </div>
+
+        <div className="lg:col-span-2 card">
+          <h3 className="font-bold text-gray-800 mb-4">🌡️ Compliance Matrix (אחוזי ציות לפקודות)</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={riskData.complianceData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="unit" tick={{fontSize: 10}} interval={0} angle={-15} textAnchor="end" height={60} />
+              <YAxis domain={[0, 100]} />
+              <Tooltip />
+              <Bar dataKey="כשרות" stackId="a" fill="#10b981" />
+              <Bar dataKey="עירוב" stackId="b" fill="#3b82f6" />
+              <Bar dataKey="ניקיון" stackId="c" fill="#f59e0b" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="card">
+         <h3 className="font-bold text-gray-800 mb-4">📈 מגמות חוסרים - 30 ימים אחרונים</h3>
+         <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={riskData.trendData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="date" tick={{fontSize: 10}} />
+              <YAxis />
+              <Tooltip />
+              <Line type="monotone" dataKey="total" stroke="#3b82f6" strokeWidth={2} name="סה״כ דוחות" />
+              <Line type="monotone" dataKey="issues" stroke="#ef4444" strokeWidth={3} name="דוחות עם ליקויים" />
+            </LineChart>
+          </ResponsiveContainer>
+      </div>
+    </div>
+  )
+}
+
+function MapTab({ reports }) {
+  const baseMap = {};
+  [...reports].sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(r => {
+    baseMap[r.base] = r;
+  });
+
+  return (
+    <div className="space-y-4 animate-fade-in">
+      <h3 className="text-xl font-bold text-gray-800 border-r-4 border-idf-blue pr-3">🗺️ תמונת מצב ארצית/גזרתית</h3>
+      <div className="bg-blue-50 text-blue-800 p-3 rounded-xl text-sm border border-blue-200">
+        🔐 <strong>ביטחון מידע:</strong> המיקומים מוצגים במפה זו בקירוב (offset) לצורכי אבטחת מידע.
+      </div>
+      <div className="rounded-xl overflow-hidden border border-idf-border shadow-sm z-0 relative" style={{ height: 600 }}>
+        <MapContainer center={[31.9, 35.2]} zoom={8} style={{ height: '100%', width: '100%', zIndex: 0 }}>
+          <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+          {Object.entries(BASE_COORDINATES).map(([name, [lat, lon]]) => {
+            const report = baseMap[name];
+            if (!report) return null;
+            
+            const hasCritical = report.e_status === 'פסול' || report.k_cert === 'לא';
+            
+            return (
+              <CircleMarker
+                key={name}
+                center={[lat, lon]}
+                radius={hasCritical ? 12 : 8}
+                pathOptions={{
+                  color: hasCritical ? '#dc2626' : '#10b981',
+                  fillColor: hasCritical ? '#ef4444' : '#34d399',
+                  fillOpacity: 0.8,
+                  weight: 2,
+                }}
+              >
+                <Popup>
+                  <div className="font-hebrew" dir="rtl">
+                    <h3 className="font-bold text-lg mb-1">{name}</h3>
+                    <p className="text-xs text-gray-500 mb-2">{report.unit} | {report.inspector}</p>
+                    <p>עירוב: <strong>{report.e_status}</strong></p>
+                    <p>כשרות: <strong>{report.k_cert === 'כן' ? 'תקין' : 'לא תקין'}</strong></p>
+                    <p className="text-xs mt-2 text-gray-400">{new Date(report.date).toLocaleDateString('he-IL')}</p>
+                  </div>
+                </Popup>
+              </CircleMarker>
+            );
+          })}
+        </MapContainer>
+      </div>
+    </div>
+  )
+}
+
+function InspectorCredibilityTab({ reports }) {
+  const inspectorStats = useMemo(() => {
+    const stats = {};
+    reports.forEach(r => {
+      if (!r.inspector) return;
+      if (!stats[r.inspector]) {
+        stats[r.inspector] = { name: r.inspector, unit: r.unit, count: 0, issuesFound: 0, totalRelScore: 0 };
+      }
+      stats[r.inspector].count++;
+      if (r.e_status === 'פסול' || r.k_cert === 'לא' || parseInt(r.r_mezuzot_missing||0) > 0) {
+         stats[r.inspector].issuesFound++;
+      }
+      stats[r.inspector].totalRelScore += (r.reliability_score || 80);
+    });
+
+    return Object.values(stats).map(i => {
+      const defectRate = (i.issuesFound / i.count) * 100;
+      const avgScore = i.totalRelScore / i.count;
+      
+      let credibility = "אמינות טובה";
+      let color = "text-blue-600 bg-blue-50";
+      
+      if (avgScore >= 85 && defectRate > 0) { credibility = "מבקר אמין ויסודי"; color = "text-green-700 bg-green-50"; }
+      else if (avgScore < 60 || (i.count >= 5 && defectRate === 0)) { credibility = "חשד למילוי שטחי / טייס אוטומטי"; color = "text-red-600 bg-red-50"; }
+      else if (avgScore < 75) { credibility = "אמינות בינונית"; color = "text-orange-600 bg-orange-50"; }
+
+      return { ...i, defectRate, avgScore, credibility, color };
+    }).sort((a,b) => b.count - a.count);
+  }, [reports]);
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <h3 className="text-xl font-bold text-gray-800 border-r-4 border-idf-blue pr-3">🔍 ניתוח אמינות מבקרים</h3>
+      <p className="text-gray-500 text-sm">האלגוריתם בודק מהירות מילוי, סתירות פנימיות, ומזהה דפוסים של "טייס אוטומטי" (מבקרים שמדווחים רק "תקין" באופן חשוד).</p>
+      
+      <div className="grid gap-3">
+        {inspectorStats.map(insp => (
+          <div key={insp.name} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-wrap items-center justify-between gap-4">
+            <div className="flex-1 min-w-[200px]">
+              <h4 className="font-bold text-lg text-gray-800">{insp.name}</h4>
+              <p className="text-sm text-gray-500">{insp.unit} | {insp.count} דוחות במערכת</p>
+            </div>
+            
+            <div className="flex gap-6 text-center">
+              <div>
+                <p className="text-xs text-gray-500 mb-1">ציון אמינות ממוצע</p>
+                <p className={`font-extrabold text-xl ${insp.avgScore >= 80 ? 'text-green-600' : 'text-red-600'}`}>
+                  {insp.avgScore.toFixed(0)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1">% מציאת ליקויים</p>
+                <p className="font-bold text-lg text-gray-700">{insp.defectRate.toFixed(0)}%</p>
+              </div>
+            </div>
+
+            <div className={`px-4 py-2 rounded-lg font-bold text-sm w-full md:w-auto text-center ${insp.color}`}>
+              {insp.credibility}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 // ---------------------------------------------------------
 // הקומפוננטה הראשית שמנהלת את הטאבים
@@ -378,21 +603,25 @@ export default function CommandDashboard({ unit, accessibleUnits, role }) {
   const { data: reports = [], isLoading } = useReports();
   const [activeTab, setActiveTab] = useState(0);
 
-  // הגדרת הטאבים הזמינים לפי תפקיד (כמו בפייתון)
   const tabConfig = useMemo(() => {
       let tabs = [];
       if (role === 'pikud') {
           tabs = [
               { label: "📊 סקירה כללית", id: "overview" },
+              { label: "🎯 Risk Center", id: "risk" },
+              { label: "🗺️ מפה ארצית", id: "map" },
               { label: "🏆 ליגת יחידות", id: "league" },
               { label: "📈 ניתוח יחידה", id: "unit_analysis" },
-              // שאר הטאבים (כמו AI ו-Risk) ישולבו בהמשך
+              { label: "🔍 אמינות מבקרים", id: "credibility" }
           ];
       } else if (role === 'ugda') {
           tabs = [
               { label: "📊 סקירה כללית", id: "overview" },
+              { label: "🎯 חוסרים וסיכונים", id: "risk" },
+              { label: "🗺️ מפה גזרתית", id: "map" },
               { label: "🏆 ליגת יחידות", id: "league" },
-              { label: "📈 ניתוח יחידה", id: "unit_analysis" },
+              { label: "📈 ניתוח חטיבות", id: "unit_analysis" },
+              { label: "🔍 אמינות מבקרים", id: "credibility" }
           ];
       } else {
           tabs = [
@@ -410,36 +639,45 @@ export default function CommandDashboard({ unit, accessibleUnits, role }) {
 
   return (
     <div className="space-y-4">
-      {/* Header Premium */}
       <div className="bg-gradient-to-l from-idf-blueDark to-idf-blue text-white p-8 rounded-2xl shadow-lg relative overflow-hidden">
          <div className="relative z-10">
             <h1 className="text-3xl md:text-4xl font-extrabold mb-2 tracking-tight">
                 {role === 'pikud' ? '🎖️ Executive Summary – Pikud' : '🎯 Ogda Dashboard – Summary'}
             </h1>
             <p className="text-blue-100 font-semibold text-lg max-w-2xl mb-1">
-                לוח מעקב פיקודי - תמונת מצב לאיתור מוקדי סיכון ניהוליים והלכתיים בחטיבות.
+                לוח מעקב פיקודי - תמונת מצב לאיתור מוקדי סיכון ניהוליים והלכתיים.
             </p>
             <p className="text-blue-300 text-sm">
                 יחידה נוכחית: {unit} | {new Date().toLocaleString('he-IL')}
             </p>
          </div>
-         {/* אלמנט קישוטי ברקע */}
          <div className="absolute left-0 top-0 opacity-10 text-[150px] -translate-y-10 -translate-x-10 pointer-events-none">
              {role === 'pikud' ? '🎖️' : '🎯'}
          </div>
       </div>
 
-      {/* Tabs Menu */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <TabsBar 
-             tabs={tabConfig.map(t => ({label: t.label, icon: ''}))} 
-             activeTab={activeTab} 
-             onChange={setActiveTab} 
-          />
+          <div className="overflow-x-auto no-scrollbar border-b border-gray-200">
+             <div className="flex min-w-max p-1">
+                 {tabConfig.map((t, i) => (
+                    <button
+                      key={t.id}
+                      onClick={() => setActiveTab(i)}
+                      className={`px-4 py-3 text-sm font-bold transition-all rounded-lg ${activeTab === i ? 'bg-idf-blue text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'}`}
+                    >
+                      {t.label}
+                    </button>
+                 ))}
+             </div>
+          </div>
+          
           <div className="p-6 bg-gray-50/50 min-h-[500px]">
               {currentTabId === 'overview' && <OverviewTab reports={reports} accessibleUnits={accessibleUnits} role={role} />}
+              {currentTabId === 'risk' && <RiskCenterTab reports={reports} accessibleUnits={accessibleUnits} />}
+              {currentTabId === 'map' && <MapTab reports={reports} />}
               {currentTabId === 'league' && <LeagueTab reports={reports} accessibleUnits={accessibleUnits} />}
               {currentTabId === 'unit_analysis' && <UnitAnalysisTab reports={reports} accessibleUnits={accessibleUnits} />}
+              {currentTabId === 'credibility' && <InspectorCredibilityTab reports={reports} />}
           </div>
       </div>
     </div>
