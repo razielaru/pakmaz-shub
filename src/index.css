@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    font-family: 'Heebo', sans-serif;
+    direction: rtl;
+  }
+
+  html, body {
+    @apply bg-idf-bg text-gray-800;
+    min-height: 100vh;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-gray-100; }
+  ::-webkit-scrollbar-thumb { @apply bg-idf-blue rounded-full; }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-idf-blue hover:bg-idf-blueDark text-white font-semibold py-2 px-5 rounded-lg transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-success {
+    @apply bg-idf-green hover:bg-green-700 text-white font-semibold py-2 px-5 rounded-lg transition-all duration-200 active:scale-95;
+  }
+  .btn-danger {
+    @apply bg-idf-red hover:bg-red-800 text-white font-semibold py-2 px-5 rounded-lg transition-all duration-200 active:scale-95;
+  }
+  .btn-outline {
+    @apply border-2 border-idf-blue text-idf-blue hover:bg-idf-blue hover:text-white font-semibold py-2 px-5 rounded-lg transition-all duration-200 active:scale-95;
+  }
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-idf-border p-4;
+  }
+  .input-field {
+    @apply w-full border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-idf-blue focus:border-transparent transition-all;
+  }
+  .select-field {
+    @apply w-full border border-gray-300 rounded-lg px-3 py-2 text-base focus:outline-none focus:ring-2 focus:ring-idf-blue bg-white;
+  }
+  .label {
+    @apply block text-sm font-semibold text-gray-700 mb-1;
+  }
+  .tab-btn {
+    @apply px-4 py-2 text-sm font-semibold rounded-t-lg border-b-2 transition-all duration-200 whitespace-nowrap;
+  }
+  .tab-btn-active {
+    @apply tab-btn border-idf-blue text-idf-blue bg-blue-50;
+  }
+  .tab-btn-inactive {
+    @apply tab-btn border-transparent text-gray-500 hover:text-idf-blue hover:border-blue-200;
+  }
+  .status-ok {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-800 text-xs font-semibold rounded-full;
+  }
+  .status-fail {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-800 text-xs font-semibold rounded-full;
+  }
+  .status-warn {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-100 text-yellow-800 text-xs font-semibold rounded-full;
+  }
+  .section-title {
+    @apply text-lg font-bold text-idf-blue border-r-4 border-idf-blue pr-3 mb-4;
+  }
+  .divider {
+    @apply border-t border-gray-200 my-4;
+  }
+}
+
+/* Leaflet map RTL fix */
+.leaflet-container {
+  direction: ltr;
+}
+
+/* Tab scroll on mobile */
+.tabs-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.tabs-scroll::-webkit-scrollbar { display: none; }
+
+/* Dark mode */
+.dark body {
+  @apply bg-gray-900 text-gray-100;
+}
+.dark .card {
+  @apply bg-gray-800 border-gray-700;
+}
