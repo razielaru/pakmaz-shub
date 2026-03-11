@@ -6,17 +6,42 @@ import {
 } from 'recharts';
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
+import toast from 'react-hot-toast';
+
 import { useReports } from '../../hooks/useReports';
-import { useDeficitStats } from '../../hooks/useDeficits';
+import { useDeficits, useDeficitStats, useCloseDeficit } from '../../hooks/useDeficits';
+import { supabase } from '../../supabaseClient';
 import Spinner from '../ui/Spinner';
 import TabsBar from '../ui/TabsBar';
 import Badge from '../ui/Badge';
 import { BASE_COORDINATES } from '../../utils/constants';
 
-// פונקציות עזר לחישובים (תחליף ללוגיקת Pandas)
+// ייבוא קומפוננטת הברקודים (ודא שהקובץ קיים אצלך בנתיב הזה, אחרת תוכל להסיר את הטאב)
+import BarcodeManager from '../admin/BarcodeManager';
+
+// ---------------------------------------------------------
+// קבועים (Constants) לשימוש פנימי בדשבורד
+// ---------------------------------------------------------
+const REGIONAL_UNITS = ["חטמ״ר בנימין", "חטמ״ר שומרון", "חטמ״ר יהודה", "חטמ״ר עציון", "חטמ״ר אפרים", "חטמ״ר מנשה", "חטמ״ר הבקעה"];
+const REGULAR_UNITS = ["חטיבה 35", "חטיבה 89", "חטיבה 900"];
+const COMMAND_UNITS = ["אוגדת 877", "אוגדת 96", "אוגדת 98", "פיקוד מרכז"];
+const HATMAR_UNITS = [...REGIONAL_UNITS, ...REGULAR_UNITS];
+const ALL_UNITS_LIST = [...HATMAR_UNITS, ...COMMAND_UNITS];
+
+const UNIT_ID_MAP = {
+  "חטמ״ר בנימין": "binyamin", "חטמ״ר שומרון": "shomron", "חטמ״ר יהודה": "yehuda",
+  "חטמ״ר עציון": "etzion", "חטמ״ר אפרים": "efraim", "חטמ״ר מנשה": "menashe",
+  "חטמ״ר הבקעה": "habikaa",
+  "חטיבה 35": "hativa_35", "חטיבה 89": "hativa_89", "חטיבה 900": "hativa_900",
+  "אוגדת 877": "ugdat_877", "אוגדת 96": "ugda_96", "אוגדת 98": "ugda_98",
+  "פיקוד מרכז": "pikud"
+};
+
+// ---------------------------------------------------------
+// פונקציות עזר לחישובים
+// ---------------------------------------------------------
 function calculateUnitScore(unitReports) {
   if (!unitReports || unitReports.length === 0) return 0;
-  
   let totalScore = 0;
   unitReports.forEach(r => {
     let score = 100;
@@ -25,17 +50,13 @@ function calculateUnitScore(unitReports) {
     if (r.e_status === 'פסול') score -= 25;
     else if (r.e_status === 'בטיפול') score -= 10;
     if (r.r_sg === 'לא') score -= 10;
-    if (r.r_hamal === 'לא') score -= 5;
-    if (r.r_netilot === 'לא') score -= 5;
     if (r.s_clean === 'לא') score -= 10;
-    if (r.s_board === 'לא') score -= 5;
     
     const mezuzot = parseInt(r.r_mezuzot_missing || 0, 10);
     if (mezuzot > 0) score -= Math.min(10, mezuzot * 2);
     
     totalScore += Math.max(0, score);
   });
-  
   return totalScore / unitReports.length;
 }
 
@@ -48,128 +69,39 @@ function getUnitBadge(score) {
 }
 
 // ---------------------------------------------------------
-// קומפוננטות משנה לכל טאב
+// 1. סקירה כללית
 // ---------------------------------------------------------
-
-function OverviewTab({ reports, accessibleUnits, role }) {
-  const { data: deficitsStats } = useDeficitStats(accessibleUnits);
-  
+function OverviewTab({ reports }) {
   const stats = useMemo(() => {
     let totalMezuzot = 0;
     let eruvInvalid = 0;
-    let kosherOk = 0;
-    let eruvOk = 0;
-    let totalCleanScore = 0;
-    let cleanCount = 0;
-    
     const unitCounts = {};
     const eruvCounts = { 'תקין': 0, 'בטיפול': 0, 'פסול': 0 };
 
     reports.forEach(r => {
       totalMezuzot += parseInt(r.r_mezuzot_missing || 0, 10);
       if (r.e_status === 'פסול') eruvInvalid++;
-      if (r.k_cert === 'כן') kosherOk++;
-      if (r.e_status === 'תקין') eruvOk++;
-      
-      if (r.s_clean) {
-        const score = r.s_clean === 'מצוין' ? 5 : r.s_clean === 'טוב' ? 4 : r.s_clean === 'בינוני' ? 3 : 2;
-        totalCleanScore += score;
-        cleanCount++;
-      }
-
       if (!unitCounts[r.unit]) unitCounts[r.unit] = 0;
       unitCounts[r.unit]++;
-      
       if (eruvCounts[r.e_status] !== undefined) eruvCounts[r.e_status]++;
     });
 
-    const today = new Date();
-    const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const fourteenDaysAgo = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000);
-    
-    let recentReports = 0;
-    let prevReports = 0;
-    
-    reports.forEach(r => {
-      const d = new Date(r.date);
-      if (d >= sevenDaysAgo) recentReports++;
-      else if (d >= fourteenDaysAgo) prevReports++;
-    });
+    const unitChartData = Object.entries(unitCounts).map(([unit, count]) => ({ unit, count })).sort((a,b) => b.count - a.count);
+    const eruvPieData = Object.entries(eruvCounts).filter(([_, v]) => v > 0).map(([name, value]) => ({ name, value }));
 
-    const unitChartData = Object.entries(unitCounts)
-        .map(([unit, count]) => ({ unit, count }))
-        .sort((a,b) => b.count - a.count);
-
-    const eruvPieData = Object.entries(eruvCounts)
-        .filter(([_, v]) => v > 0)
-        .map(([name, value]) => ({ name, value }));
-
-    return {
-      activeUnits: Object.keys(unitCounts).length,
-      totalMezuzot,
-      eruvInvalid,
-      kosherPct: reports.length ? (kosherOk / reports.length) * 100 : 0,
-      eruvPct: reports.length ? (eruvOk / reports.length) * 100 : 0,
-      cleanAvg: cleanCount ? (totalCleanScore / cleanCount) : 0,
-      recentReports,
-      trend: recentReports - prevReports,
-      unitChartData,
-      eruvPieData
-    };
+    return { activeUnits: Object.keys(unitCounts).length, totalMezuzot, eruvInvalid, unitChartData, eruvPieData };
   }, [reports]);
 
   const COLORS = { 'תקין': '#10b981', 'בטיפול': '#f59e0b', 'פסול': '#ef4444' };
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <h3 className="text-xl font-bold text-gray-800 border-r-4 border-idf-blue pr-3">📊 מדדים מרכזיים</h3>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="card text-center">
-            <p className="text-gray-500 text-sm">📋 סה״כ דוחות</p>
-            <p className="text-3xl font-extrabold text-idf-blue">{reports.length}</p>
-        </div>
-        <div className="card text-center">
-            <p className="text-gray-500 text-sm">🏢 יחידות פעילות</p>
-            <p className="text-3xl font-extrabold text-idf-blue">{stats.activeUnits}</p>
-        </div>
-        <div className="card text-center">
-            <p className="text-gray-500 text-sm">📜 מזוזות חסרות</p>
-            <p className="text-3xl font-extrabold text-idf-blue">{stats.totalMezuzot}</p>
-        </div>
-        <div className="card text-center bg-red-50 border-red-200">
-            <p className="text-red-700 text-sm">🚧 עירובין פסולים</p>
-            <p className="text-3xl font-extrabold text-red-700">{stats.eruvInvalid}</p>
-        </div>
+        <div className="card text-center"><p className="text-gray-500 text-sm">סה״כ דוחות</p><p className="text-3xl font-extrabold">{reports.length}</p></div>
+        <div className="card text-center"><p className="text-gray-500 text-sm">יחידות פעילות</p><p className="text-3xl font-extrabold">{stats.activeUnits}</p></div>
+        <div className="card text-center"><p className="text-gray-500 text-sm">מזוזות חסרות</p><p className="text-3xl font-extrabold text-blue-600">{stats.totalMezuzot}</p></div>
+        <div className="card text-center bg-red-50 border-red-200"><p className="text-red-700 text-sm">עירובין פסולים</p><p className="text-3xl font-extrabold text-red-700">{stats.eruvInvalid}</p></div>
       </div>
-
-      <h3 className="text-xl font-bold text-gray-800 border-r-4 border-idf-blue pr-3 mt-8">📋 מדדי בקרה מרכזיים</h3>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="card text-center">
-              <p className="text-gray-500 text-sm">✅ כשרות תקינה</p>
-              <p className={`text-2xl font-bold ${stats.kosherPct >= 85 ? 'text-green-600' : 'text-red-600'}`}>
-                  {stats.kosherPct.toFixed(0)}%
-              </p>
-          </div>
-          <div className="card text-center">
-              <p className="text-gray-500 text-sm">🔵 עירובין תקינים</p>
-              <p className={`text-2xl font-bold ${stats.eruvPct >= 90 ? 'text-green-600' : 'text-red-600'}`}>
-                  {stats.eruvPct.toFixed(0)}%
-              </p>
-          </div>
-          <div className="card text-center">
-              <p className="text-gray-500 text-sm">🧹 ממוצע ניקיון</p>
-              <p className={`text-2xl font-bold ${stats.cleanAvg >= 4 ? 'text-green-600' : 'text-red-600'}`}>
-                  {stats.cleanAvg.toFixed(1)}/5
-              </p>
-          </div>
-          <div className="card text-center">
-              <p className="text-gray-500 text-sm">📈 דיווחים (7 ימים)</p>
-              <p className="text-2xl font-bold text-gray-800">
-                  {stats.recentReports} <span className="text-xs text-gray-400">({stats.trend >= 0 ? '+' : ''}{stats.trend})</span>
-              </p>
-          </div>
-      </div>
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
           <div className="card">
               <h4 className="font-bold text-gray-700 mb-4">📊 דוחות לפי יחידה</h4>
@@ -187,16 +119,8 @@ function OverviewTab({ reports, accessibleUnits, role }) {
               <h4 className="font-bold text-gray-700 mb-4">🚧 סטטוס עירובין</h4>
               <ResponsiveContainer width="100%" height={250}>
                   <PieChart>
-                      <Pie 
-                        data={stats.eruvPieData} 
-                        cx="50%" cy="50%" 
-                        innerRadius={60} outerRadius={80} 
-                        dataKey="value" 
-                        label={({name, value}) => `${name} (${value})`}
-                      >
-                          {stats.eruvPieData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[entry.name] || '#64748b'} />
-                          ))}
+                      <Pie data={stats.eruvPieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} dataKey="value" label={({name, value}) => `${name} (${value})`}>
+                          {stats.eruvPieData.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[entry.name] || '#64748b'} />))}
                       </Pie>
                       <Tooltip />
                   </PieChart>
@@ -207,6 +131,9 @@ function OverviewTab({ reports, accessibleUnits, role }) {
   );
 }
 
+// ---------------------------------------------------------
+// 2. ליגת יחידות
+// ---------------------------------------------------------
 function LeagueTab({ reports, accessibleUnits }) {
   const leagueData = useMemo(() => {
      const data = [];
@@ -215,13 +142,7 @@ function LeagueTab({ reports, accessibleUnits }) {
          if (unitReports.length > 0) {
              const score = calculateUnitScore(unitReports);
              const badgeInfo = getUnitBadge(score);
-             data.push({
-                 unit: u,
-                 score: score,
-                 reportsCount: unitReports.length,
-                 badge: badgeInfo.badge,
-                 color: badgeInfo.color
-             });
+             data.push({ unit: u, score: score, reportsCount: unitReports.length, badge: badgeInfo.badge, color: badgeInfo.color });
          }
      });
      return data.sort((a,b) => b.score - a.score);
@@ -229,8 +150,6 @@ function LeagueTab({ reports, accessibleUnits }) {
 
   return (
       <div className="space-y-6 animate-fade-in">
-          <h3 className="text-xl font-bold text-gray-800 border-r-4 border-idf-blue pr-3">🏆 ליגת יחידות - דירוג ביצועים</h3>
-          
           <div className="space-y-3">
               {leagueData.map((row, idx) => {
                   const rank = idx + 1;
@@ -242,43 +161,20 @@ function LeagueTab({ reports, accessibleUnits }) {
                               <span className="font-bold text-lg text-gray-800">{row.unit}</span>
                           </div>
                           <div className="flex gap-6 items-center text-center">
-                              <div>
-                                  <p className="text-xs text-gray-500">ציון</p>
-                                  <p className="font-extrabold text-xl" style={{color: row.color}}>{row.score.toFixed(0)}</p>
-                              </div>
-                              <div>
-                                  <p className="text-xs text-gray-500">דוחות</p>
-                                  <p className="font-bold text-lg text-gray-700">{row.reportsCount}</p>
-                              </div>
-                              <div className="hidden sm:block px-4 py-1.5 rounded-lg text-white font-semibold text-sm w-32" style={{backgroundColor: row.color}}>
-                                  {row.badge}
-                              </div>
+                              <div><p className="text-xs text-gray-500">ציון</p><p className="font-extrabold text-xl" style={{color: row.color}}>{row.score.toFixed(0)}</p></div>
+                              <div><p className="text-xs text-gray-500">דוחות</p><p className="font-bold text-lg text-gray-700">{row.reportsCount}</p></div>
                           </div>
                       </div>
                   )
               })}
           </div>
-
-          <div className="card mt-8">
-              <h4 className="font-bold text-gray-700 mb-4">📊 השוואת ציונים</h4>
-              <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={leagueData}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="unit" tick={{fontSize: 10}} interval={0} angle={-45} textAnchor="end" height={60} />
-                      <YAxis domain={[0, 100]} />
-                      <Tooltip />
-                      <Bar dataKey="score" name="ציון">
-                          {leagueData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                      </Bar>
-                  </BarChart>
-              </ResponsiveContainer>
-          </div>
       </div>
   );
 }
 
+// ---------------------------------------------------------
+// 3. ניתוח יחידה (עם פונקציית ייצוא ל-Excel/CSV מתוקנת)
+// ---------------------------------------------------------
 function UnitAnalysisTab({ reports, accessibleUnits }) {
     const [selectedUnit, setSelectedUnit] = useState(accessibleUnits[0] || '');
     
@@ -290,84 +186,124 @@ function UnitAnalysisTab({ reports, accessibleUnits }) {
         return {score, ...getUnitBadge(score)};
     }, [unitReports]);
 
+    // פונקציית ייצוא ל-CSV (תחליף ל-Excel של פייתון) שפועלת ישר בדפדפן!
+    const handleExportExcel = () => {
+        if (unitReports.length === 0) {
+            toast.error("אין נתונים לייצוא");
+            return;
+        }
+
+        // המרת הנתונים לפורמט קריא בעברית
+        const exportData = unitReports.map(r => ({
+            'תאריך': r.date ? new Date(r.date).toLocaleDateString('he-IL') : '',
+            'מוצב': r.base || '',
+            'מבקר': r.inspector || '',
+            'סטטוס עירוב': r.e_status || '',
+            'תעודת כשרות': r.k_cert || '',
+            'תקלות כשרות': r.k_issues || '',
+            'פירוט תקלות': r.k_issues_description || '',
+            'מזוזות חסרות': r.r_mezuzot_missing || '0',
+            'הערות חופשיות': r.free_text || ''
+        }));
+
+        // יצירת תוכן ה-CSV
+        const headers = Object.keys(exportData[0]).join(',');
+        const rows = exportData.map(obj => 
+            Object.values(obj).map(v => `"${(v || '').toString().replace(/"/g, '""')}"`).join(',')
+        ).join('\n');
+        
+        // הוספת BOM כדי שהאקסל יזהה עברית (UTF-8)
+        const csvContent = '\uFEFF' + headers + '\n' + rows;
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        
+        // יצירת לינק להורדה והפעלתו
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `reports_${selectedUnit}.csv`;
+        link.click();
+        
+        toast.success("קובץ הנתונים הורד בהצלחה!");
+    };
+
     return (
         <div className="space-y-6 animate-fade-in">
-            <h3 className="text-xl font-bold text-gray-800 border-r-4 border-idf-blue pr-3">📈 ניתוח מעמיק ליחידה</h3>
-            
             <div className="card">
                 <label className="label">בחר יחידה לניתוח:</label>
                 <select className="select-field max-w-md font-bold" value={selectedUnit} onChange={e => setSelectedUnit(e.target.value)}>
                     {accessibleUnits.map(u => <option key={u} value={u}>{u}</option>)}
                 </select>
             </div>
-
-            {unitReports.length > 0 ? (
+            
+            {unitReports.length > 0 && (
                 <>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="card text-center">
-                            <p className="text-sm text-gray-500">ציון כללי</p>
-                            <p className="text-4xl font-extrabold" style={{color: scoreInfo.color}}>{scoreInfo.score.toFixed(1)}/100</p>
-                        </div>
-                        <div className="card text-center">
-                            <p className="text-sm text-gray-500">סה״כ דוחות</p>
-                            <p className="text-4xl font-extrabold text-gray-800">{unitReports.length}</p>
-                        </div>
-                        <div className={`card text-center flex flex-col justify-center items-center ${scoreInfo.bg} text-white`}>
-                            <p className="text-2xl font-bold">{scoreInfo.badge}</p>
-                        </div>
+                        <div className="card text-center"><p className="text-sm text-gray-500">ציון כללי</p><p className="text-4xl font-extrabold" style={{color: scoreInfo.color}}>{scoreInfo.score.toFixed(1)}/100</p></div>
+                        <div className="card text-center"><p className="text-sm text-gray-500">סה״כ דוחות</p><p className="text-4xl font-extrabold text-gray-800">{unitReports.length}</p></div>
+                        <div className={`card text-center flex flex-col justify-center items-center ${scoreInfo.bg} text-white`}><p className="text-2xl font-bold">{scoreInfo.badge}</p></div>
                     </div>
 
-                    <div className="card mt-6">
-                        <h4 className="font-bold text-gray-800 mb-4">📋 סיכום תקלות אחרונות ביחידה</h4>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-right">
-                                <thead className="bg-gray-50 text-gray-600">
-                                    <tr>
-                                        <th className="p-3">תאריך</th>
-                                        <th className="p-3">מוצב</th>
-                                        <th className="p-3">מבקר</th>
-                                        <th className="p-3">סטטוס עירוב</th>
-                                        <th className="p-3">תעודת כשרות</th>
-                                        <th className="p-3">מזוזות חסרות</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {unitReports.slice(0, 10).map(r => (
-                                        <tr key={r.id} className="border-b border-gray-100 hover:bg-blue-50">
-                                            <td className="p-3">{new Date(r.date).toLocaleDateString('he-IL')}</td>
-                                            <td className="p-3 font-semibold">{r.base}</td>
-                                            <td className="p-3 text-gray-500">{r.inspector}</td>
-                                            <td className="p-3">
-                                                <Badge type={r.e_status === 'תקין' ? 'success' : r.e_status === 'פסול' ? 'error' : 'warning'}>
-                                                    {r.e_status || '—'}
-                                                </Badge>
-                                            </td>
-                                            <td className="p-3">
-                                                <Badge type={r.k_cert === 'כן' ? 'success' : 'error'}>
-                                                    {r.k_cert || '—'}
-                                                </Badge>
-                                            </td>
-                                            <td className="p-3">
-                                                {parseInt(r.r_mezuzot_missing || 0) > 0 ? (
-                                                    <span className="text-red-600 font-bold">{r.r_mezuzot_missing} חסרות</span>
-                                                ) : <span className="text-green-600">תקין</span>}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                    <div className="card flex justify-between items-center bg-blue-50 border-blue-200">
+                        <div>
+                            <h4 className="font-bold text-idf-blue">📥 הורדת נתונים מפורטים</h4>
+                            <p className="text-sm text-gray-600">הורד את כל הדיווחים של היחידה לקובץ אקסל (CSV)</p>
                         </div>
+                        <button onClick={handleExportExcel} className="btn-primary">הורד נתונים</button>
                     </div>
                 </>
-            ) : (
-                <div className="card text-center py-10 text-gray-500">
-                    📭 אין דוחות ליחידה זו עדיין.
-                </div>
             )}
         </div>
     );
 }
 
+// ---------------------------------------------------------
+// 4. מעקב חוסרים 
+// ---------------------------------------------------------
+function DeficitsTab({ accessibleUnits }) {
+    const { data: deficits = [] } = useDeficits(accessibleUnits);
+    const closeDeficit = useCloseDeficit();
+
+    const handleClose = async (id) => {
+        await closeDeficit.mutateAsync({ id, notes: "נסגר על ידי דרג פיקודי" });
+        toast.success("חוסר סומן כסגור");
+    };
+
+    const openDeficits = deficits.filter(d => d.status === 'open');
+
+    return (
+        <div className="space-y-4 animate-fade-in">
+            <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="card text-center border-t-4 border-red-500"><p className="text-sm text-gray-500">סה"כ פתוחים</p><p className="text-3xl font-bold text-red-600">{openDeficits.length}</p></div>
+                <div className="card text-center border-t-4 border-green-500"><p className="text-sm text-gray-500">סה"כ נסגרו</p><p className="text-3xl font-bold text-green-600">{deficits.filter(d=>d.status==='closed').length}</p></div>
+            </div>
+            
+            {openDeficits.length === 0 ? (
+                <div className="bg-green-50 text-green-700 p-4 rounded-xl text-center font-bold">✅ הכל תקין, אין חוסרים פתוחים</div>
+            ) : (
+                <div className="space-y-3">
+                    {openDeficits.map(d => {
+                        const daysOpen = Math.floor((new Date() - new Date(d.created_at)) / (1000 * 60 * 60 * 24));
+                        return (
+                            <div key={d.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex justify-between items-center">
+                                <div>
+                                    <h4 className="font-bold text-gray-800">{d.base} | {d.unit}</h4>
+                                    <p className="text-sm text-gray-600">סוג חוסר: {d.type}</p>
+                                    <p className={`text-xs mt-1 font-semibold ${daysOpen > 7 ? 'text-red-500' : 'text-gray-400'}`}>
+                                        פתוח {daysOpen} ימים
+                                    </p>
+                                </div>
+                                <button onClick={() => handleClose(d.id)} className="btn-success text-sm py-1 px-3">סגור ממצא ✅</button>
+                            </div>
+                        )
+                    })}
+                </div>
+            )}
+        </div>
+    )
+}
+
+// ---------------------------------------------------------
+// 5. Risk Center 
+// ---------------------------------------------------------
 function RiskCenterTab({ reports, accessibleUnits }) {
   const riskData = useMemo(() => {
     const today = new Date();
@@ -400,10 +336,6 @@ function RiskCenterTab({ reports, accessibleUnits }) {
       Object.values(latestPerBase).forEach(r => {
         if (r.e_status === 'פסול') criticalIssues.push({ type: 'עירוב פסול', base: r.base, unit: r.unit, color: 'border-red-500 bg-red-50 text-red-700', icon: '🚧' });
         if (r.k_cert === 'לא') criticalIssues.push({ type: 'ללא כשרות', base: r.base, unit: r.unit, color: 'border-orange-500 bg-orange-50 text-orange-700', icon: '🍽️' });
-        
-        const d = new Date(r.date);
-        const daysSilent = Math.floor((today - d) / (1000 * 60 * 60 * 24));
-        if (daysSilent > 14) criticalIssues.push({ type: `לא בוקר ${daysSilent} ימים`, base: r.base, unit: r.unit, color: 'border-yellow-500 bg-yellow-50 text-yellow-700', icon: '⏰' });
       });
 
       uReports.forEach(r => {
@@ -412,15 +344,13 @@ function RiskCenterTab({ reports, accessibleUnits }) {
           const dStr = r.date.split('T')[0];
           if (!trend30Days[dStr]) trend30Days[dStr] = { date: dStr, total: 0, issues: 0 };
           trend30Days[dStr].total++;
-          if (r.e_status === 'פסול' || r.k_cert === 'לא' || parseInt(r.r_mezuzot_missing||0) > 0) {
-            trend30Days[dStr].issues++;
-          }
+          if (r.e_status === 'פסול' || r.k_cert === 'לא') trend30Days[dStr].issues++;
         }
       });
     });
 
     return {
-      criticalIssues: criticalIssues.sort((a,b) => a.type === 'עירוב פסול' ? -1 : 1).slice(0, 10),
+      criticalIssues: criticalIssues.slice(0, 10),
       complianceData: complianceData.sort((a,b) => b.score - a.score),
       trendData: Object.values(trend30Days).sort((a, b) => a.date.localeCompare(b.date))
     };
@@ -430,23 +360,18 @@ function RiskCenterTab({ reports, accessibleUnits }) {
     <div className="space-y-6 animate-fade-in">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-3">
-          <h3 className="font-bold text-gray-800 text-lg border-r-4 border-red-500 pr-2">🚨 Red Alert - טיפול מיידי</h3>
+          <h3 className="font-bold text-gray-800 text-lg border-r-4 border-red-500 pr-2">🚨 Red Alert</h3>
           {riskData.criticalIssues.length > 0 ? riskData.criticalIssues.map((issue, idx) => (
              <div key={idx} className={`p-3 rounded-lg border-r-4 shadow-sm ${issue.color}`}>
-                <div className="font-bold flex items-center gap-2">
-                  <span>{issue.icon}</span> {issue.type}
-                </div>
+                <div className="font-bold flex items-center gap-2"><span>{issue.icon}</span> {issue.type}</div>
                 <div className="text-sm opacity-80 mt-1">{issue.base} | {issue.unit}</div>
              </div>
           )) : (
-             <div className="bg-green-50 border border-green-200 text-green-700 p-4 rounded-xl text-center font-bold">
-               ✅ אין אזהרות קריטיות כרגע
-             </div>
+             <div className="bg-green-50 border border-green-200 text-green-700 p-4 rounded-xl text-center font-bold">✅ נקי מחריגות</div>
           )}
         </div>
-
         <div className="lg:col-span-2 card">
-          <h3 className="font-bold text-gray-800 mb-4">🌡️ Compliance Matrix (אחוזי ציות לפקודות)</h3>
+          <h3 className="font-bold text-gray-800 mb-4">🌡️ Compliance Matrix</h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={riskData.complianceData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -455,22 +380,20 @@ function RiskCenterTab({ reports, accessibleUnits }) {
               <Tooltip />
               <Bar dataKey="כשרות" stackId="a" fill="#10b981" />
               <Bar dataKey="עירוב" stackId="b" fill="#3b82f6" />
-              <Bar dataKey="ניקיון" stackId="c" fill="#f59e0b" />
             </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
-
       <div className="card">
-         <h3 className="font-bold text-gray-800 mb-4">📈 מגמות חוסרים - 30 ימים אחרונים</h3>
+         <h3 className="font-bold text-gray-800 mb-4">📈 מגמות 30 ימים אחרונים</h3>
          <ResponsiveContainer width="100%" height={300}>
             <LineChart data={riskData.trendData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="date" tick={{fontSize: 10}} />
               <YAxis />
               <Tooltip />
-              <Line type="monotone" dataKey="total" stroke="#3b82f6" strokeWidth={2} name="סה״כ דוחות" />
-              <Line type="monotone" dataKey="issues" stroke="#ef4444" strokeWidth={3} name="דוחות עם ליקויים" />
+              <Line type="monotone" dataKey="total" stroke="#3b82f6" strokeWidth={2} name="דוחות" />
+              <Line type="monotone" dataKey="issues" stroke="#ef4444" strokeWidth={3} name="ליקויים" />
             </LineChart>
           </ResponsiveContainer>
       </div>
@@ -478,6 +401,9 @@ function RiskCenterTab({ reports, accessibleUnits }) {
   )
 }
 
+// ---------------------------------------------------------
+// 6. טאב מפה
+// ---------------------------------------------------------
 function MapTab({ reports }) {
   const baseMap = {};
   [...reports].sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(r => {
@@ -529,6 +455,9 @@ function MapTab({ reports }) {
   )
 }
 
+// ---------------------------------------------------------
+// 7. אמינות מבקרים
+// ---------------------------------------------------------
 function InspectorCredibilityTab({ reports }) {
   const inspectorStats = useMemo(() => {
     const stats = {};
@@ -547,47 +476,27 @@ function InspectorCredibilityTab({ reports }) {
     return Object.values(stats).map(i => {
       const defectRate = (i.issuesFound / i.count) * 100;
       const avgScore = i.totalRelScore / i.count;
-      
       let credibility = "אמינות טובה";
       let color = "text-blue-600 bg-blue-50";
       
-      if (avgScore >= 85 && defectRate > 0) { credibility = "מבקר אמין ויסודי"; color = "text-green-700 bg-green-50"; }
-      else if (avgScore < 60 || (i.count >= 5 && defectRate === 0)) { credibility = "חשד למילוי שטחי / טייס אוטומטי"; color = "text-red-600 bg-red-50"; }
-      else if (avgScore < 75) { credibility = "אמינות בינונית"; color = "text-orange-600 bg-orange-50"; }
-
+      if (avgScore >= 85 && defectRate > 0) { credibility = "אמין ויסודי"; color = "text-green-700 bg-green-50"; }
+      else if (avgScore < 60 || (i.count >= 5 && defectRate === 0)) { credibility = "חשד לטייס אוטומטי"; color = "text-red-600 bg-red-50"; }
+      
       return { ...i, defectRate, avgScore, credibility, color };
     }).sort((a,b) => b.count - a.count);
   }, [reports]);
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <h3 className="text-xl font-bold text-gray-800 border-r-4 border-idf-blue pr-3">🔍 ניתוח אמינות מבקרים</h3>
-      <p className="text-gray-500 text-sm">האלגוריתם בודק מהירות מילוי, סתירות פנימיות, ומזהה דפוסים של "טייס אוטומטי" (מבקרים שמדווחים רק "תקין" באופן חשוד).</p>
-      
+    <div className="space-y-4 animate-fade-in">
       <div className="grid gap-3">
         {inspectorStats.map(insp => (
           <div key={insp.name} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-wrap items-center justify-between gap-4">
-            <div className="flex-1 min-w-[200px]">
-              <h4 className="font-bold text-lg text-gray-800">{insp.name}</h4>
-              <p className="text-sm text-gray-500">{insp.unit} | {insp.count} דוחות במערכת</p>
-            </div>
-            
+            <div className="flex-1 min-w-[200px]"><h4 className="font-bold text-lg text-gray-800">{insp.name}</h4><p className="text-sm text-gray-500">{insp.unit} | {insp.count} דוחות</p></div>
             <div className="flex gap-6 text-center">
-              <div>
-                <p className="text-xs text-gray-500 mb-1">ציון אמינות ממוצע</p>
-                <p className={`font-extrabold text-xl ${insp.avgScore >= 80 ? 'text-green-600' : 'text-red-600'}`}>
-                  {insp.avgScore.toFixed(0)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 mb-1">% מציאת ליקויים</p>
-                <p className="font-bold text-lg text-gray-700">{insp.defectRate.toFixed(0)}%</p>
-              </div>
+              <div><p className="text-xs text-gray-500 mb-1">ציון ממוצע</p><p className={`font-extrabold text-xl ${insp.avgScore >= 80 ? 'text-green-600' : 'text-red-600'}`}>{insp.avgScore.toFixed(0)}</p></div>
+              <div><p className="text-xs text-gray-500 mb-1">% ליקויים</p><p className="font-bold text-lg text-gray-700">{insp.defectRate.toFixed(0)}%</p></div>
             </div>
-
-            <div className={`px-4 py-2 rounded-lg font-bold text-sm w-full md:w-auto text-center ${insp.color}`}>
-              {insp.credibility}
-            </div>
+            <div className={`px-4 py-2 rounded-lg font-bold text-sm w-full md:w-auto text-center ${insp.color}`}>{insp.credibility}</div>
           </div>
         ))}
       </div>
@@ -596,9 +505,207 @@ function InspectorCredibilityTab({ reports }) {
 }
 
 // ---------------------------------------------------------
+// 8. ניהול מתקדם (Admin Tab המלא שהיה חסר)
+// ---------------------------------------------------------
+function AdminTab() {
+  const [adminSubTab, setAdminSubTab] = useState(0);
+
+  const [unitPwd, setUnitPwd] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  
+  const [cmdUnit, setCmdUnit] = useState('');
+  const [cmdCode, setCmdCode] = useState('');
+
+  const [emailUnit, setEmailUnit] = useState('');
+  const [unitEmail, setUnitEmail] = useState('');
+
+  const [logoUnit, setLogoUnit] = useState('');
+  const [logoFile, setLogoFile] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const [parentUnit, setParentUnit] = useState('');
+  const [childUnit, setChildUnit] = useState('');
+
+  const handleSavePwd = async () => {
+    if (!unitPwd || newPwd.length < 4) { toast.error("הזן יחידה וסיסמה של לפחות 4 תווים"); return; }
+    try {
+      const { error } = await supabase.from('unit_passwords').upsert({ unit_name: unitPwd, password: newPwd }, { onConflict: 'unit_name' });
+      if (error) throw error;
+      toast.success(`✅ הסיסמה עודכנה בהצלחה ליחידה ${unitPwd}`);
+      setNewPwd('');
+    } catch (e) { toast.error(`שגיאה: ${e.message}`); }
+  };
+
+  const handleSaveCmdCode = async () => {
+    if (!cmdUnit || cmdCode.length < 4) { toast.error("הזן יחידה וקוד של לפחות 4 תווים"); return; }
+    try {
+      const { error } = await supabase.from('commander_settings').upsert({ unit: cmdUnit, access_code: cmdCode, updated_at: new Date().toISOString() }, { onConflict: 'unit' });
+      if (error) throw error;
+      toast.success(`✅ קוד מפקד עודכן עבור ${cmdUnit}`);
+      setCmdCode('');
+    } catch (e) { toast.error(`שגיאה: ${e.message}`); }
+  };
+
+  const handleSaveEmail = async () => {
+    if (!emailUnit || !unitEmail.includes('@')) { toast.error("הזן יחידה וכתובת אימייל תקינה"); return; }
+    try {
+      const { error } = await supabase.from('unit_emails').upsert({ unit: emailUnit, email: unitEmail }, { onConflict: 'unit' });
+      if (error) throw error;
+      toast.success(`✅ אימייל להתראות עודכן עבור ${emailUnit}`);
+      setUnitEmail('');
+    } catch (e) { toast.error(`שגיאה: ${e.message}`); }
+  };
+
+  const handleUploadLogo = async () => {
+    if (!logoUnit || !logoFile) { toast.error("בחר יחידה וקובץ תמונה"); return; }
+    setIsUploading(true);
+    try {
+      const englishName = UNIT_ID_MAP[logoUnit] || "default";
+      const filePath = `${englishName}.png`;
+
+      const { error } = await supabase.storage.from('logos').upload(filePath, logoFile, {
+        cacheControl: '3600',
+        upsert: true,
+        contentType: 'image/png'
+      });
+
+      if (error) throw error;
+      toast.success(`✅ הלוגו עודכן בהצלחה עבור ${logoUnit}`);
+      setLogoFile(null);
+    } catch (e) {
+      toast.error(`שגיאה בהעלאת הלוגו: ${e.message}`);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleSaveHierarchy = async () => {
+    if (!parentUnit || !childUnit) { toast.error("בחר אוגדה וחטמ\"ר"); return; }
+    try {
+      await supabase.from('hierarchy').delete().eq('child_unit', childUnit);
+      const { error } = await supabase.from('hierarchy').insert({ parent_unit: parentUnit, child_unit: childUnit });
+      if (error) throw error;
+      toast.success(`✅ ${childUnit} שויך בהצלחה תחת ${parentUnit}`);
+    } catch (e) { toast.error(`שגיאה: ${e.message}`); }
+  };
+
+  return (
+    <div className="space-y-6 animate-fade-in bg-white p-6 rounded-xl border shadow-sm">
+      <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-3">
+        {['🔑 סיסמאות', '🖼️ לוגואים', '📧 מייל התראות', '🔗 היררכיה'].map((label, idx) => (
+          <button 
+            key={idx} onClick={() => setAdminSubTab(idx)}
+            className={`px-4 py-2 text-sm font-bold rounded-lg transition-colors ${adminSubTab === idx ? 'bg-idf-blue text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+          >{label}</button>
+        ))}
+      </div>
+
+      <div className="max-w-2xl mt-4">
+        {adminSubTab === 0 && (
+          <div className="space-y-8">
+            <div className="bg-gray-50 p-5 rounded-xl border border-gray-200">
+              <h3 className="text-lg font-bold text-gray-800 mb-4">🔑 עדכון סיסמת כניסה ליחידה</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <select className="select-field" value={unitPwd} onChange={e=>setUnitPwd(e.target.value)}>
+                    <option value="">-- בחר יחידה --</option>
+                    {ALL_UNITS_LIST.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+                <input type="text" className="input-field" placeholder="סיסמה חדשה..." value={newPwd} onChange={e=>setNewPwd(e.target.value)} />
+              </div>
+              <button className="btn-primary w-full" onClick={handleSavePwd}>עדכן סיסמה</button>
+            </div>
+
+            <div className="bg-gray-50 p-5 rounded-xl border border-gray-200">
+              <h3 className="text-lg font-bold text-gray-800 mb-1">🔐 קוד גישה למפקד (אור אישי)</h3>
+              <p className="text-sm text-gray-500 mb-4">הקוד המשמש את המפקד לכניסה לניתוח יחידתי.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <select className="select-field" value={cmdUnit} onChange={e=>setCmdUnit(e.target.value)}>
+                    <option value="">-- בחר יחידה --</option>
+                    {ALL_UNITS_LIST.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+                <input type="text" className="input-field" placeholder="קוד מפקד חדש..." value={cmdCode} onChange={e=>setCmdCode(e.target.value)} />
+              </div>
+              <button className="btn-primary w-full bg-indigo-600 hover:bg-indigo-700 border-none" onClick={handleSaveCmdCode}>עדכן קוד מפקד</button>
+            </div>
+          </div>
+        )}
+
+        {adminSubTab === 1 && (
+          <div className="bg-gray-50 p-5 rounded-xl border border-gray-200">
+            <h3 className="text-lg font-bold text-gray-800 mb-1">🖼️ העלאת לוגואים ליחידות</h3>
+            <div className="space-y-4 mt-4">
+              <select className="select-field w-full" value={logoUnit} onChange={e=>setLogoUnit(e.target.value)}>
+                  <option value="">-- בחר יחידה --</option>
+                  {ALL_UNITS_LIST.map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+              <input type="file" accept="image/png, image/jpeg" className="input-field bg-white py-2" onChange={e=>setLogoFile(e.target.files[0])} />
+              <button className="btn-success w-full" onClick={handleUploadLogo} disabled={isUploading}>
+                {isUploading ? 'מעלה...' : '📤 העלה לוגו ושמור'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {adminSubTab === 2 && (
+          <div className="bg-gray-50 p-5 rounded-xl border border-gray-200">
+            <h3 className="text-lg font-bold text-gray-800 mb-1">📧 הגדרות אימייל להתראות</h3>
+            <div className="space-y-4 mt-4">
+              <select className="select-field w-full" value={emailUnit} onChange={e=>setEmailUnit(e.target.value)}>
+                  <option value="">-- בחר יחידה --</option>
+                  {ALL_UNITS_LIST.map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+              <input type="email" className="input-field text-left" dir="ltr" placeholder="example@idf.il" value={unitEmail} onChange={e=>setUnitEmail(e.target.value)} />
+              <button className="btn-primary w-full" onClick={handleSaveEmail}>שמור אימייל להתראות</button>
+            </div>
+          </div>
+        )}
+
+        {adminSubTab === 3 && (
+          <div className="bg-gray-50 p-5 rounded-xl border border-gray-200">
+            <h3 className="text-lg font-bold text-gray-800 mb-1">🔗 שיוך היררכי (אוגדה - חטמ"ר)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 mt-4">
+              <div>
+                <label className="label">אוגדה (דרג ממונה)</label>
+                <select className="select-field" value={parentUnit} onChange={e=>setParentUnit(e.target.value)}>
+                    <option value="">-- בחר אוגדה --</option>
+                    {COMMAND_UNITS.filter(u => u !== "פיקוד מרכז").map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">חטמ"ר (דרג כפוף)</label>
+                <select className="select-field" value={childUnit} onChange={e=>setChildUnit(e.target.value)}>
+                    <option value="">-- בחר חטמ"ר --</option>
+                    {HATMAR_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+            </div>
+            <button className="btn-primary w-full bg-teal-600 hover:bg-teal-700 border-none" onClick={handleSaveHierarchy}>שייך יחידה לאוגדה</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------
+// 9. שומר מקום לטאבי ה-AI
+// ---------------------------------------------------------
+function AIPlaceholder({ title }) {
+    return (
+        <div className="card text-center py-24 px-4 bg-gradient-to-b from-blue-50 to-white animate-fade-in border-2 border-dashed border-blue-200">
+            <span className="text-6xl mb-4 block">🧠</span>
+            <h2 className="text-2xl font-bold text-idf-blue mb-2">{title}</h2>
+            <p className="text-gray-500">
+                מודול זה דורש חיבור צד-שרת למנוע <strong>Google Gemini</strong>.<br />
+                בשלב הבא ניצור את תיקיית ה-API ב-Vercel כדי להפעיל את הפיצ'ר הזה בבטחה.
+            </p>
+        </div>
+    )
+}
+
+// ---------------------------------------------------------
 // הקומפוננטה הראשית שמנהלת את הטאבים
 // ---------------------------------------------------------
-
 export default function CommandDashboard({ unit, accessibleUnits, role }) {
   const { data: reports = [], isLoading } = useReports();
   const [activeTab, setActiveTab] = useState(0);
@@ -608,32 +715,46 @@ export default function CommandDashboard({ unit, accessibleUnits, role }) {
       if (role === 'pikud') {
           tabs = [
               { label: "📊 סקירה כללית", id: "overview" },
-              { label: "🎯 Risk Center", id: "risk" },
-              { label: "🗺️ מפה ארצית", id: "map" },
               { label: "🏆 ליגת יחידות", id: "league" },
+              { label: "🤖 תובנות AI", id: "ai_insights" },
               { label: "📈 ניתוח יחידה", id: "unit_analysis" },
-              { label: "🔍 אמינות מבקרים", id: "credibility" }
+              { label: "📋 מעקב חוסרים", id: "deficits" },
+              { label: "🎯 Risk Center", id: "risk" },
+              { label: "🔍 אמינות מבקרים", id: "credibility" },
+              { label: "🧠 מוח פיקודי", id: "ai_brain" },
+              { label: "💬 עוזר AI", id: "ai_chat" },
+              { label: "🏷️ ניהול ברקודים", id: "barcodes" },
+              { label: "⚙️ ניהול", id: "admin" }
           ];
       } else if (role === 'ugda') {
           tabs = [
               { label: "📊 סקירה כללית", id: "overview" },
-              { label: "🎯 חוסרים וסיכונים", id: "risk" },
-              { label: "🗺️ מפה גזרתית", id: "map" },
               { label: "🏆 ליגת יחידות", id: "league" },
+              { label: "🤖 תובנות AI", id: "ai_insights" },
               { label: "📈 ניתוח חטיבות", id: "unit_analysis" },
-              { label: "🔍 אמינות מבקרים", id: "credibility" }
+              { label: "📋 מעקב חוסרים", id: "deficits" },
+              { label: "🗺️ מפה", id: "map" },
+              { label: "🔍 אמינות מבקרים", id: "credibility" },
+              { label: "🧠 מוח פיקודי", id: "ai_brain" },
+              { label: "💬 עוזר AI", id: "ai_chat" },
+              { label: "🏷️ ניהול ברקודים", id: "barcodes" }
           ];
       } else {
           tabs = [
               { label: "📊 סקירה כללית", id: "overview" },
               { label: "🏆 ליגת יחידות", id: "league" },
+              { label: "🤖 תובנות AI", id: "ai_insights" },
+              { label: "📋 מעקב חוסרים", id: "deficits" },
+              { label: "🔍 אמינות מבקרים", id: "credibility" },
+              { label: "🧠 מוח פיקודי", id: "ai_brain" },
+              { label: "💬 עוזר AI", id: "ai_chat" },
+              { label: "🏷️ ניהול ברקודים", id: "barcodes" }
           ];
       }
       return tabs;
   }, [role]);
 
   if (isLoading) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>;
-  if (!reports || reports.length === 0) return <div className="card text-center py-20 text-gray-500">אין נתונים זמינים במערכת כרגע.</div>;
 
   const currentTabId = tabConfig[activeTab]?.id;
 
@@ -658,12 +779,12 @@ export default function CommandDashboard({ unit, accessibleUnits, role }) {
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto no-scrollbar border-b border-gray-200">
-             <div className="flex min-w-max p-1">
+             <div className="flex min-w-max p-2 gap-1 bg-gray-50">
                  {tabConfig.map((t, i) => (
                     <button
                       key={t.id}
                       onClick={() => setActiveTab(i)}
-                      className={`px-4 py-3 text-sm font-bold transition-all rounded-lg ${activeTab === i ? 'bg-idf-blue text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'}`}
+                      className={`px-4 py-2.5 text-sm font-bold transition-all rounded-lg ${activeTab === i ? 'bg-idf-blue text-white shadow-md' : 'text-gray-600 hover:bg-gray-200'}`}
                     >
                       {t.label}
                     </button>
@@ -671,13 +792,19 @@ export default function CommandDashboard({ unit, accessibleUnits, role }) {
              </div>
           </div>
           
-          <div className="p-6 bg-gray-50/50 min-h-[500px]">
+          <div className="p-4 sm:p-6 bg-gray-50/50 min-h-[600px]">
               {currentTabId === 'overview' && <OverviewTab reports={reports} accessibleUnits={accessibleUnits} role={role} />}
+              {currentTabId === 'league' && <LeagueTab reports={reports} accessibleUnits={accessibleUnits} />}
+              {currentTabId === 'ai_insights' && <AIPlaceholder title="🤖 תובנות AI (Weekly Insights)" />}
+              {currentTabId === 'unit_analysis' && <UnitAnalysisTab reports={reports} accessibleUnits={accessibleUnits} />}
+              {currentTabId === 'deficits' && <DeficitsTab accessibleUnits={accessibleUnits} />}
               {currentTabId === 'risk' && <RiskCenterTab reports={reports} accessibleUnits={accessibleUnits} />}
               {currentTabId === 'map' && <MapTab reports={reports} />}
-              {currentTabId === 'league' && <LeagueTab reports={reports} accessibleUnits={accessibleUnits} />}
-              {currentTabId === 'unit_analysis' && <UnitAnalysisTab reports={reports} accessibleUnits={accessibleUnits} />}
               {currentTabId === 'credibility' && <InspectorCredibilityTab reports={reports} />}
+              {currentTabId === 'ai_brain' && <AIPlaceholder title="🧠 מוח פיקודי (AI Decision Brief)" />}
+              {currentTabId === 'ai_chat' && <AIPlaceholder title="💬 עוזר AI (Gemini Chatbot)" />}
+              {currentTabId === 'barcodes' && <BarcodeManager unit={unit} />}
+              {currentTabId === 'admin' && <AdminTab />}
           </div>
       </div>
     </div>
