@@ -3409,10 +3409,9 @@ st.markdown(f"""
     }}
     
     .login-card:hover {{
-        transform: translateY(-10px) scale(1.05); 
-        box-shadow: 0 15px 30px rgba(30, 58, 138, 0.2), 0 0 15px rgba(30, 58, 138, 0.1); 
-        border-color: {COLORS['primary']}; 
-        background: white;
+        transform: translateY(-8px) scale(1.02); 
+        box-shadow: 0 20px 40px rgba(30, 58, 138, 0.15); 
+        border-color: {COLORS['secondary']}; 
     }}
     
     .login-card:hover::before {{
@@ -3498,76 +3497,35 @@ st.markdown(f"""
     
     /* רספונסיביות למובייל */
     @media (max-width: 768px) {{
-        /* Default: Stack all columns for form fields and stats */
-        div[data-testid="stHorizontalBlock"] {{
-            flex-direction: column !important;
-            display: flex !important;
-        }}
-        div[data-testid="column"] {{
-            width: 100% !important;
-            flex: 1 1 100% !important;
-            min-width: 100% !important;
-            max-width: 100% !important;
-            padding: 5px 0 !important;
-        }}
-
-        /* Exceptions: Force 2 columns for Unit Selection and Questionnaire */
-        /* Targets containers having login-cards or Radio widgets */
-        div[data-testid="stHorizontalBlock"]:has(.login-card),
-        div[data-testid="stHorizontalBlock"]:has([data-testid="stRadio"]),
-        div[data-testid="stHorizontalBlock"]:has([data-testid="stSelectbox"]) {{
-            flex-direction: row !important;
-            flex-wrap: wrap !important;
-            display: flex !important;
-            gap: 0px !important;
-        }}
-        
-        div[data-testid="stHorizontalBlock"]:has(.login-card) > div[data-testid="column"],
-        div[data-testid="stHorizontalBlock"]:has([data-testid="stRadio"]) > div[data-testid="column"],
-        div[data-testid="stHorizontalBlock"]:has([data-testid="stSelectbox"]) > div[data-testid="column"] {{
-            width: 50% !important;
-            flex: 0 0 50% !important;
-            min-width: 50% !important;
-            max-width: 50% !important;
-            padding: 4px !important;
-        }}
-
         .login-card {{
-            min-height: 130px;
-            padding: 8px;
-            margin-bottom: 5px;
-            border-radius: 12px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
-            width: 100% !important;
-            box-sizing: border-box;
+            min-height: 160px;
+            padding: 15px;
+            margin-bottom: 15px;
         }}
         
         .login-card img {{
-            max-height: 50px !important;
-            margin-bottom: 4px;
+            max-height: 70px !important;
         }}
         
         .login-card h3 {{
-            font-size: 0.8rem;
-            margin-top: 3px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            font-size: 0.95rem;
         }}
         
         h1 {{
-            font-size: 1.4rem !important;
+            font-size: 1.8rem !important;
         }}
         
         div.stButton > button {{
-            padding: 4px !important;
-            font-size: 0.8rem !important;
-            min-height: unset !important;
+            padding: 0.6rem 1rem;
+            font-size: 0.95rem;
         }}
-
-        /* Dashboard Briefing Responsive */
-        .briefing-grid {{
-            grid-template-columns: 1fr !important;
+        
+        .unit-status-card {{
+            padding: 12px;
+        }}
+        
+        .unit-status-card img {{
+            max-height: 40px;
         }}
     }}
     
@@ -5175,7 +5133,7 @@ def render_morning_briefing(df: pd.DataFrame, unit: str):
             </div>
         </div>
         
-        <div class='briefing-grid' style='display: grid; grid-template-columns: 1.2fr 1fr 0.8fr; gap: 16px;'>
+        <div style='display: grid; grid-template-columns: 1.2fr 1fr 0.8fr; gap: 16px;'>
 
             <div style='background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.1); 
                         border-radius: 14px; padding: 16px; backdrop-filter: blur(4px);'>
