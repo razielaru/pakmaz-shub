@@ -1,161 +1,96 @@
-import { useState } from 'react'
-import GPSCheckpoint from './GPSCheckpoint'
+// src/components/report/Tab1_Kashrut.jsx
+import { useMemo } from 'react';
+import { useAuth } from '../../context/AuthContext';
+import RadioWithExplanation from './RadioWithExplanation';
 
-function YesNo({ label, field, value, onChange, required }) {
-  return (
-    <div className="space-y-1.5">
-      <label className="label flex items-center gap-1">
-        {required && <span className="text-red-500">*</span>}
-        {label}
-      </label>
-      <div className="flex gap-3">
-        {['כן', 'לא'].map(opt => (
-          <button
-            key={opt}
-            type="button"
-            onClick={() => onChange(field, opt)}
-            className={`flex-1 py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${
-              value === opt
-                ? opt === 'כן' ? 'bg-green-500 border-green-500 text-white shadow-md'
-                  : 'bg-red-500 border-red-500 text-white shadow-md'
-                : 'border-gray-200 text-gray-500 hover:border-gray-400 bg-white'
-            }`}
-          >
-            {opt === 'כן' ? '✅ כן' : '❌ לא'}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
+export default function Tab1_Kashrut({ data, onChange }) {
+  const { user } = useAuth();
+  function set(field, value) { onChange(prev => ({ ...prev, [field]: value })); }
 
-function SelectField({ label, field, value, onChange, options, required }) {
-  return (
-    <div className="space-y-1.5">
-      <label className="label">
-        {required && <span className="text-red-500 ml-1">*</span>}
-        {label}
-      </label>
-      <select
-        value={value || ''}
-        onChange={e => onChange(field, e.target.value)}
-        className="select-field"
-      >
-        <option value="">— בחר —</option>
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
-    </div>
-  )
-}
+  const isCombatBrigade = ["חטיבה 35", "חטיבה 89", "חטיבה 900"].includes(user?.unit);
 
-export default function Tab1_Kashrut({ data, onChange, unit }) {
-  function set(field, value) {
-    onChange({ ...data, [field]: value })
-  }
+  // יצירת מערך שאלות מעורבב (Shuffled) פעם אחת בטעינה
+  const kashrutQuestions = useMemo(() => {
+    let questions = isCombatBrigade ? [
+      { label: "האם יש דף תאריכים לתבלינים?", key: "k_dates" },
+      { label: "האם יש הפרדה בכיורים ומשטחים?", key: "k_separation" },
+      { label: "האם יש חימום נפרד בין בשר ודגים?", key: "k_heater" },
+      { label: "האם יש שטיפת ירק?", key: "k_leafs" },
+      { label: "בוצע חירור גסטרונומים?", key: "k_holes" },
+      { label: "האם רכש חוץ מתנהל לפי פקודה?", key: "k_products" },
+      { label: "האם מבוצעת בדיקת ביצים?", key: "k_eggs" },
+      { label: "האם מולאה אפליקציה?", key: "k_app" },
+      { label: "האם בוצע תדריך טבחים?", key: "k_briefing" },
+    ] : [
+      { label: "האם יש הפרדה?", key: "k_separation" },
+      { label: "האם בוצע תדריך טבחים?", key: "k_briefing" },
+      { label: "האם רכש חוץ מתנהל לפי פקודה?", key: "k_products" },
+      { label: "האם יש דף תאריכים לתבלינים?", key: "k_dates" },
+      { label: "האם יש שטיפת ירק?", key: "k_leafs" },
+      { label: "בוצע חירור גסטרונומים?", key: "k_holes" },
+      { label: "האם מבוצעת בדיקת ביצים?", key: "k_eggs" },
+      { label: "האם יש חדר מכ״ש במפג״ד?", key: "k_machshir" },
+      { label: "האם יש חימום נפרד בין בשר ודגים?", key: "k_heater" },
+      { label: "האם מולאה אפליקציה?", key: "k_app" },
+    ];
+    return questions.sort(() => Math.random() - 0.5);
+  }, [isCombatBrigade]);
 
   return (
-    <div className="space-y-6 py-4">
-      <div className="section-title">🥩 כשרות — בדיקה ראשית</div>
+    <div className="space-y-6 py-4 animate-fade-in">
+      <div className="section-title">🍽️ כשרות המטבח</div>
 
-      {/* GPS */}
-      <GPSCheckpoint checkpointNum={1} base={data.base || 'unknown'} onCapture={pos => {
-        set('gps_lat', pos.lat)
-        set('gps_lon', pos.lon)
-      }} />
-
-      {/* תעודת כשרות */}
       <div className="card space-y-4">
-        <h3 className="font-bold text-gray-700">📋 תעודת כשרות</h3>
-        <YesNo label="תעודת כשרות בתוקף" field="k_cert" value={data.k_cert} onChange={set} required />
-        {data.k_cert === 'כן' && (
-          <div>
-            <label className="label">תאריך תפוגה</label>
-            <input type="date" value={data.k_cert_expiry || ''} onChange={e => set('k_cert_expiry', e.target.value)} className="input-field" />
-          </div>
-        )}
-        {data.k_cert === 'לא' && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
-            🚨 חסר תעודה — תישלח התראה אוטומטית לרב החטמ"ר
-          </div>
-        )}
-      </div>
-
-      {/* עירוב */}
-      <div className="card space-y-4">
-        <h3 className="font-bold text-gray-700">🔵 עירוב</h3>
-        <SelectField
-          label="סטטוס עירוב במטבח"
-          field="e_status"
-          value={data.e_status}
-          onChange={set}
-          options={['תקין', 'פסול', 'לא רלוונטי']}
-          required
-        />
-        {data.e_status === 'פסול' && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
-            🚨 עירוב פסול — נדרש טיפול דחוף!
-          </div>
-        )}
-      </div>
-
-      {/* תקלות כשרות */}
-      <div className="card space-y-4">
-        <h3 className="font-bold text-gray-700">⚠️ תקלות ועירובי כלים</h3>
-        <YesNo label="תקלות כשרות" field="k_issues" value={data.k_issues} onChange={set} />
-        {data.k_issues === 'כן' && (
-          <div>
-            <label className="label">פירוט התקלה</label>
-            <textarea
-              value={data.k_issues_description || ''}
-              onChange={e => set('k_issues_description', e.target.value)}
-              className="input-field min-h-[80px] resize-none"
-              placeholder="תאר את התקלה בפירוט..."
-            />
-          </div>
-        )}
-        <YesNo label="הפרדה בין חלבי/בשרי" field="k_separation" value={data.k_separation} onChange={set} />
-        <YesNo label="ערבוב כלים" field="p_mix" value={data.p_mix} onChange={set} />
-        {data.p_mix === 'כן' && (
-          <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-sm text-orange-700">
-            ⚠️ ערבוב כלים — יש לתת הנחיות מיידיות
-          </div>
-        )}
-      </div>
-
-      {/* מוצרים ובישול */}
-      <div className="card space-y-4">
-        <h3 className="font-bold text-gray-700">🍳 מוצרים ובישול</h3>
-        <YesNo label="מוצרים בעייתיים" field="k_products" value={data.k_products} onChange={set} />
-        <YesNo label="בישול ישראל" field="k_bishul" value={data.k_bishul} onChange={set} />
-        <YesNo label="חלב ישראל" field="k_chalav" value={data.k_chalav} onChange={set} />
-        <YesNo label="לחם בכשרות מתאימה" field="k_bread" value={data.k_bread} onChange={set} />
-      </div>
-
-      {/* שבת */}
-      <div className="card space-y-4">
-        <h3 className="font-bold text-gray-700">🕯️ שבת</h3>
-        <YesNo label="שמירת חום לשבת מוסדרת" field="k_shabbat_hot" value={data.k_shabbat_hot} onChange={set} />
+        <h3 className="font-bold text-gray-800 border-b pb-2">כללי</h3>
         <div>
-          <label className="label">תמונת נאמן כשרות (אופציונלי)</label>
-          <input
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={e => set('k_shabbat_photo', e.target.files[0])}
-            className="input-field text-sm"
-          />
+          <label className="label">סוג מטבח</label>
+          <select value={data.k_cook_type || ''} onChange={e => set('k_cook_type', e.target.value)} className="select-field">
+            <option value="">— בחר —</option>
+            <option>מבשל</option>
+            <option>מחמם</option>
+          </select>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <RadioWithExplanation label="תעודת כשרות מתוקפת?" field="k_cert" value={data.k_cert} onChange={set} />
+          <RadioWithExplanation label="האם יש בישול ישראל?" field="k_bishul" value={data.k_bishul} onChange={set} />
         </div>
       </div>
 
-      {/* Inspector tip */}
-      <div className="card">
-        <label className="label">💡 טיפ / הערת מבקר (יועבר לבדיקה הבאה)</label>
-        <textarea
-          value={data.inspector_tip || ''}
-          onChange={e => set('inspector_tip', e.target.value)}
-          className="input-field min-h-[70px] resize-none"
-          placeholder="הערה שתעזור למבקר הבא..."
-        />
+      <div className="card space-y-4 border-2 border-red-100 bg-red-50/30">
+        <h3 className="font-bold text-red-800 border-b border-red-200 pb-2">📸 תקלות ונאמן כשרות</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <RadioWithExplanation label="יש תקלות כשרות?" field="k_issues" value={data.k_issues} onChange={set} />
+          <RadioWithExplanation label="יש נאמן כשרות בשבת?" field="k_shabbat_supervisor" value={data.k_shabbat_supervisor} onChange={set} />
+        </div>
+
+        {data.k_issues === 'כן' && (
+          <div className="space-y-3 bg-white p-4 rounded-xl border border-red-200 mt-2">
+            <label className="label text-red-700">פרט את תקלות הכשרות שנמצאו</label>
+            <textarea className="input-field min-h-[80px]" value={data.k_issues_description || ''} onChange={e => set('k_issues_description', e.target.value)} />
+            <label className="label">📷 תמונת תקלה (אופציונלי)</label>
+            <input type="file" accept="image/*" onChange={e => set('k_issues_photo', e.target.files[0])} className="input-field py-2" />
+          </div>
+        )}
+
+        {data.k_shabbat_supervisor === 'כן' && (
+          <div className="space-y-3 bg-white p-4 rounded-xl border border-blue-200 mt-2">
+            <div className="grid grid-cols-2 gap-3">
+               <div><label className="label">שם נאמן כשרות</label><input type="text" className="input-field" value={data.k_shabbat_supervisor_name || ''} onChange={e => set('k_shabbat_supervisor_name', e.target.value)} /></div>
+               <div><label className="label">טלפון נאמן</label><input type="tel" className="input-field" dir="ltr" value={data.k_shabbat_supervisor_phone || ''} onChange={e => set('k_shabbat_supervisor_phone', e.target.value)} /></div>
+            </div>
+            <label className="label">📷 תמונת נאמן (אופציונלי)</label>
+            <input type="file" accept="image/*" onChange={e => set('k_shabbat_photo', e.target.files[0])} className="input-field py-2" />
+          </div>
+        )}
+      </div>
+
+      <div className="card space-y-4">
+        <h3 className="font-bold text-gray-800 border-b pb-2">📋 שאלון כשרות דינמי</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {kashrutQuestions.map((q) => (
+            <RadioWithExplanation key={q.key} label={q.label} field={q.key} value={data[q.key]} onChange={set} />
+          ))}
+        </div>
       </div>
     </div>
   )
