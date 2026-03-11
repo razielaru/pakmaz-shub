@@ -14,20 +14,14 @@ import { supabase } from '../../supabaseClient';
 import Spinner from '../ui/Spinner';
 import TabsBar from '../ui/TabsBar';
 import Badge from '../ui/Badge';
-import { BASE_COORDINATES } from '../../utils/constants';
+import { BASE_COORDINATES, ALL_UNITS } from '../../utils/constants';
 
-// ייבוא קומפוננטת הברקודים (ודא שהקובץ קיים אצלך בנתיב הזה, אחרת תוכל להסיר את הטאב)
+// ייבוא קומפוננטת הברקודים (ודא שהקובץ קיים בנתיב זה, אחרת מחק את הטאב)
 import BarcodeManager from '../admin/BarcodeManager';
 
 // ---------------------------------------------------------
-// קבועים (Constants) לשימוש פנימי בדשבורד
+// קבועים ופונקציות עזר לחישובים (התחליף ל-Pandas מפייתון)
 // ---------------------------------------------------------
-const REGIONAL_UNITS = ["חטמ״ר בנימין", "חטמ״ר שומרון", "חטמ״ר יהודה", "חטמ״ר עציון", "חטמ״ר אפרים", "חטמ״ר מנשה", "חטמ״ר הבקעה"];
-const REGULAR_UNITS = ["חטיבה 35", "חטיבה 89", "חטיבה 900"];
-const COMMAND_UNITS = ["אוגדת 877", "אוגדת 96", "אוגדת 98", "פיקוד מרכז"];
-const HATMAR_UNITS = [...REGIONAL_UNITS, ...REGULAR_UNITS];
-const ALL_UNITS_LIST = [...HATMAR_UNITS, ...COMMAND_UNITS];
-
 const UNIT_ID_MAP = {
   "חטמ״ר בנימין": "binyamin", "חטמ״ר שומרון": "shomron", "חטמ״ר יהודה": "yehuda",
   "חטמ״ר עציון": "etzion", "חטמ״ר אפרים": "efraim", "חטמ״ר מנשה": "menashe",
@@ -37,9 +31,6 @@ const UNIT_ID_MAP = {
   "פיקוד מרכז": "pikud"
 };
 
-// ---------------------------------------------------------
-// פונקציות עזר לחישובים
-// ---------------------------------------------------------
 function calculateUnitScore(unitReports) {
   if (!unitReports || unitReports.length === 0) return 0;
   let totalScore = 0;
@@ -173,7 +164,7 @@ function LeagueTab({ reports, accessibleUnits }) {
 }
 
 // ---------------------------------------------------------
-// 3. ניתוח יחידה (עם פונקציית ייצוא ל-Excel/CSV מתוקנת)
+// 3. ניתוח יחידה (כולל ייצוא CSV ישירות מהדפדפן)
 // ---------------------------------------------------------
 function UnitAnalysisTab({ reports, accessibleUnits }) {
     const [selectedUnit, setSelectedUnit] = useState(accessibleUnits[0] || '');
@@ -186,14 +177,12 @@ function UnitAnalysisTab({ reports, accessibleUnits }) {
         return {score, ...getUnitBadge(score)};
     }, [unitReports]);
 
-    // פונקציית ייצוא ל-CSV (תחליף ל-Excel של פייתון) שפועלת ישר בדפדפן!
     const handleExportExcel = () => {
         if (unitReports.length === 0) {
             toast.error("אין נתונים לייצוא");
             return;
         }
 
-        // המרת הנתונים לפורמט קריא בעברית
         const exportData = unitReports.map(r => ({
             'תאריך': r.date ? new Date(r.date).toLocaleDateString('he-IL') : '',
             'מוצב': r.base || '',
@@ -206,17 +195,15 @@ function UnitAnalysisTab({ reports, accessibleUnits }) {
             'הערות חופשיות': r.free_text || ''
         }));
 
-        // יצירת תוכן ה-CSV
         const headers = Object.keys(exportData[0]).join(',');
         const rows = exportData.map(obj => 
             Object.values(obj).map(v => `"${(v || '').toString().replace(/"/g, '""')}"`).join(',')
         ).join('\n');
         
-        // הוספת BOM כדי שהאקסל יזהה עברית (UTF-8)
+        // צירוף BOM כדי שאקסל יזהה עברית
         const csvContent = '\uFEFF' + headers + '\n' + rows;
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         
-        // יצירת לינק להורדה והפעלתו
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
         link.download = `reports_${selectedUnit}.csv`;
@@ -505,7 +492,7 @@ function InspectorCredibilityTab({ reports }) {
 }
 
 // ---------------------------------------------------------
-// 8. ניהול מתקדם (Admin Tab המלא שהיה חסר)
+// 8. ניהול מתקדם (Admin Tab)
 // ---------------------------------------------------------
 function AdminTab() {
   const [adminSubTab, setAdminSubTab] = useState(0);
@@ -720,6 +707,7 @@ export default function CommandDashboard({ unit, accessibleUnits, role }) {
               { label: "📈 ניתוח יחידה", id: "unit_analysis" },
               { label: "📋 מעקב חוסרים", id: "deficits" },
               { label: "🎯 Risk Center", id: "risk" },
+              { label: "🗺️ מפה ארצית", id: "map" },
               { label: "🔍 אמינות מבקרים", id: "credibility" },
               { label: "🧠 מוח פיקודי", id: "ai_brain" },
               { label: "💬 עוזר AI", id: "ai_chat" },
@@ -733,7 +721,8 @@ export default function CommandDashboard({ unit, accessibleUnits, role }) {
               { label: "🤖 תובנות AI", id: "ai_insights" },
               { label: "📈 ניתוח חטיבות", id: "unit_analysis" },
               { label: "📋 מעקב חוסרים", id: "deficits" },
-              { label: "🗺️ מפה", id: "map" },
+              { label: "🎯 Risk Center", id: "risk" },
+              { label: "🗺️ מפה גזרתית", id: "map" },
               { label: "🔍 אמינות מבקרים", id: "credibility" },
               { label: "🧠 מוח פיקודי", id: "ai_brain" },
               { label: "💬 עוזר AI", id: "ai_chat" },
@@ -760,6 +749,7 @@ export default function CommandDashboard({ unit, accessibleUnits, role }) {
 
   return (
     <div className="space-y-4">
+      {/* Header Premium */}
       <div className="bg-gradient-to-l from-idf-blueDark to-idf-blue text-white p-8 rounded-2xl shadow-lg relative overflow-hidden">
          <div className="relative z-10">
             <h1 className="text-3xl md:text-4xl font-extrabold mb-2 tracking-tight">
@@ -777,6 +767,7 @@ export default function CommandDashboard({ unit, accessibleUnits, role }) {
          </div>
       </div>
 
+      {/* Tabs Menu Scrollable */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto no-scrollbar border-b border-gray-200">
              <div className="flex min-w-max p-2 gap-1 bg-gray-50">
