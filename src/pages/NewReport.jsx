@@ -276,6 +276,17 @@ export default function NewReport() {
         finalData.gps_suspicious = true
       }
 
+      if (
+        finalData.gps_lat != null &&
+        finalData.gps_lon != null &&
+        finalData.gps_status !== 'matched'
+      ) {
+        const gpsManagerAlert = `התראת GPS למנהל: הדוח נשלח עם חריגת מיקום. מרחק מהמוצב: ${finalData.gps_distance_km ?? 'לא זמין'} ק"מ | מיקום מדויק: ${Number(finalData.gps_lat).toFixed(6)}, ${Number(finalData.gps_lon).toFixed(6)}`
+        finalData.free_text = finalData.free_text?.trim()
+          ? `${gpsManagerAlert}\n\n${finalData.free_text.trim()}`
+          : gpsManagerAlert
+      }
+
       finalData.review_status = finalData.gps_status === 'matched' && score >= 60 ? 'ok' : 'suspicious'
       delete finalData._gps_distance_km
       delete finalData._gps_suspicious
@@ -419,7 +430,6 @@ export default function NewReport() {
 
                   <div className="bg-white p-5 rounded-xl border shadow-sm mt-4 text-center">
                     <h3 className="font-bold text-gray-800 mb-2">🚀 מוכן לשליחה?</h3>
-                    <p className="text-sm text-gray-500 mb-4">וודא שסיימת לסקור את כל הטאבים ושהמיקום נראה סביר.</p>
                     <button
                       onClick={handleSubmit}
                       disabled={insertReport.isPending}

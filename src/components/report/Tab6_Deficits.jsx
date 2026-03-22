@@ -2,7 +2,7 @@ import Badge from '../ui/Badge'
 import { buildAlertsList } from '../../utils/alerts'
 import { calculateReliabilityScore } from '../../utils/reliabilityScore'
 
-export default function Tab6_Deficits({ data, onChange, onSubmit, isSubmitting }) {
+export default function Tab6_Deficits({ data, onChange }) {
   const alerts = buildAlertsList(data)
   const { score, flags } = calculateReliabilityScore({ ...data })
 
@@ -110,22 +110,6 @@ export default function Tab6_Deficits({ data, onChange, onSubmit, isSubmitting }
             className="input-field text-sm" />
         </div>
       </div>
-
-      {/* Submit */}
-      <button
-        onClick={onSubmit}
-        disabled={isSubmitting || !data.base || !data.inspector}
-        className="btn-success w-full py-4 text-lg font-bold flex items-center justify-center gap-2 rounded-2xl shadow-lg"
-      >
-        {isSubmitting ? (
-          <><span className="animate-spin">⏳</span> שולח דוח...</>
-        ) : (
-          <><span>✅</span> שלח דוח לשרת</>
-        )}
-      </button>
-      {(!data.base || !data.inspector) && (
-        <p className="text-center text-xs text-red-500">⚠️ יש למלא שם מוצב ושם מבקר לפני שליחה</p>
-      )}
     </div>
   )
 }

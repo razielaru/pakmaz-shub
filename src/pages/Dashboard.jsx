@@ -184,6 +184,7 @@ export default function Dashboard() {
             canManageTasks={false}
             title="🎯 משימות היחידה"
             subtitle="כאן החיילים רואים את המשימות שהוקצו ליחידה ולמוצבים"
+            showGroupingTabs
           />
 
           <Link to="/report/new" className="btn-primary w-full py-6 text-xl font-bold flex items-center justify-center gap-2 rounded-2xl shadow-lg border-b-4 border-idf-blueDark">
@@ -365,14 +366,31 @@ function ActivityHoursTab({ reports }) {
 
 function ProgressChartTab({ reports }) {
   const data = useMemo(() => {
-    const days = {}
-    reports.forEach(r => { if (r.date) days[r.date] = (days[r.date] || 0) + 1 })
-    return Object.entries(days).sort((a, b) => a[0].localeCompare(b[0])).map(([date, count]) => ({ date: date.slice(5), count }))
+    const weeks = {}
+    reports.forEach((report) => {
+      if (!report.date) return
+      const reportDate = new Date(report.date)
+      if (Number.isNaN(reportDate.getTime())) return
+
+      const day = reportDate.getDay()
+      const diffToSunday = day
+      const weekStart = new Date(reportDate)
+      weekStart.setDate(reportDate.getDate() - diffToSunday)
+      const key = weekStart.toISOString().slice(0, 10)
+      weeks[key] = (weeks[key] || 0) + 1
+    })
+
+    return Object.entries(weeks)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([weekStart, count]) => ({
+        date: `שבוע ${weekStart.slice(5)}`,
+        count,
+      }))
   }, [reports])
 
   return (
     <div className="h-72">
-      <h3 className="font-bold text-gray-700 mb-4">קצב דיווחים יומי</h3>
+      <h3 className="font-bold text-gray-700 mb-4">קצב דיווחים שבועי</h3>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} />

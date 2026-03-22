@@ -66,10 +66,12 @@ export default function TaskBoard({
   title = '🎯 משימות לחיילים',
   subtitle = 'ניהול משימות לביצוע במוצבים ובשטח',
   presetTasks = null,
+  showGroupingTabs = false,
 }) {
   const { user } = useAuth()
   const [form, setForm] = useState(EMPTY_FORM)
   const [showCreate, setShowCreate] = useState(false)
+  const [groupingTab, setGroupingTab] = useState(0)
   const { data: queryTasks = [], isLoading, error, refetch } = useTasks({ unit, enabled: presetTasks == null })
   const createTask = useCreateTask()
   const updateTaskStatus = useUpdateTaskStatus()
@@ -87,6 +89,30 @@ export default function TaskBoard({
     inProgress: tasks.filter((task) => task.status === 'in_progress').length,
     done: tasks.filter((task) => task.status === 'done').length,
   }), [tasks])
+
+  const priorityGroups = useMemo(() => ({
+    high: sortTasks(tasks.filter((task) => task.priority === 'high')),
+    medium: sortTasks(tasks.filter((task) => task.priority === 'medium')),
+    low: sortTasks(tasks.filter((task) => task.priority === 'low')),
+  }), [tasks])
+
+  const locationGroups = useMemo(() => {
+    const grouped = tasks.reduce((acc, task) => {
+      const key = task.base?.trim() || 'ללא מיקום מוגדר'
+      if (!acc[key]) acc[key] = []
+      acc[key].push(task)
+      return acc
+    }, {})
+
+    return Object.entries(grouped)
+      .map(([base, items]) => ({
+        base,
+        items: sortTasks(items),
+        openCount: items.filter((task) => task.status !== 'done').length,
+        doneCount: items.filter((task) => task.status === 'done').length,
+      }))
+      .sort((left, right) => right.items.length - left.items.length)
+  }, [tasks])
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }))
@@ -272,25 +298,123 @@ export default function TaskBoard({
         </div>
       ) : (
         <div className="space-y-5">
-          <TaskSection
-            title="משימות פתוחות"
-            emptyText="אין כרגע משימות פתוחות ביחידה"
-            tasks={taskGroups.open}
-            canManageTasks={canManageTasks}
-            onStatusChange={handleStatusChange}
-            isUpdating={updateTaskStatus.isPending}
-          />
+          {showGroupingTabs && (
+            <div className="flex flex-wrap gap-2 p-1 bg-slate-100 dark:bg-dark-surface2 rounded-2xl">
+              {[
+                { label: 'חלוקה לפי דחיפות', icon: '⚡' },
+                { label: 'חלוקה לפי מיקום', icon: '📍' },
+              ].map((tab, index) => (
+                <button
+                  key={tab.label}
+                  type="button"
+                  onClick={() => setGroupingTab(index)}
+                  className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                    groupingTab === index
+                      ? 'bg-white dark:bg-dark-surface text-idf-blue dark:text-dark-blue shadow-sm'
+                      : 'text-gray-500 dark:text-dark-muted'
+                  }`}
+                >
+                  <span>{tab.icon}</span>
+                  <span className="mr-2">{tab.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
-          <TaskSection
-            title="משימות שהושלמו"
-            emptyText="עדיין אין משימות שהושלמו"
-            tasks={taskGroups.done.slice(0, 8)}
-            canManageTasks={canManageTasks}
-            onStatusChange={handleStatusChange}
-            isUpdating={updateTaskStatus.isPending}
-          />
+          {(!showGroupingTabs || groupingTab === 0) && (
+            <div className="space-y-5">
+              {showGroupingTabs && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <PrioritySummaryCard title="דחיפות גבוהה" count={priorityGroups.high.length} tone="high" />
+                  <PrioritySummaryCard title="דחיפות בינונית" count={priorityGroups.medium.length} tone="medium" />
+                  <PrioritySummaryCard title="דחיפות נמוכה" count={priorityGroups.low.length} tone="low" />
+                </div>
+              )}
+
+              <TaskSection
+                title="משימות פתוחות"
+                emptyText="אין כרגע משימות פתוחות ביחידה"
+                tasks={taskGroups.open}
+                canManageTasks={canManageTasks}
+                onStatusChange={handleStatusChange}
+                isUpdating={updateTaskStatus.isPending}
+              />
+
+              <TaskSection
+                title="משימות שהושלמו"
+                emptyText="עדיין אין משימות שהושלמו"
+                tasks={taskGroups.done.slice(0, 8)}
+                canManageTasks={canManageTasks}
+                onStatusChange={handleStatusChange}
+                isUpdating={updateTaskStatus.isPending}
+              />
+            </div>
+          )}
+
+          {showGroupingTabs && groupingTab === 1 && (
+            <TaskLocationGroups
+              groups={locationGroups}
+              canManageTasks={canManageTasks}
+              onStatusChange={handleStatusChange}
+              isUpdating={updateTaskStatus.isPending}
+            />
+          )}
         </div>
       )}
+    </div>
+  )
+}
+
+function PrioritySummaryCard({ title, count, tone }) {
+  const tones = {
+    high: 'border-red-200 bg-red-50 text-red-700',
+    medium: 'border-amber-200 bg-amber-50 text-amber-700',
+    low: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  }
+
+  return (
+    <div className={`rounded-2xl border px-4 py-3 ${tones[tone] || tones.low}`}>
+      <div className="text-sm font-bold">{title}</div>
+      <div className="text-3xl font-extrabold mt-2">{count}</div>
+    </div>
+  )
+}
+
+function TaskLocationGroups({ groups, canManageTasks, onStatusChange, isUpdating }) {
+  if (groups.length === 0) {
+    return <div className="card text-center py-8 text-gray-400 font-semibold">אין כרגע משימות פתוחות ביחידה</div>
+  }
+
+  return (
+    <div className="space-y-4">
+      {groups.map((group) => (
+        <div key={group.base} className="card space-y-4">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h3 className="font-bold text-gray-800 text-lg">{group.base}</h3>
+              <p className="text-xs text-gray-500 mt-1">
+                {group.items.length} משימות · {group.openCount} פתוחות · {group.doneCount} הושלמו
+              </p>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <span className="status-ok">{group.doneCount} הושלמו</span>
+              <span className="status-warn">{group.openCount} פתוחות</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            {group.items.map((task) => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                canManageTasks={canManageTasks}
+                onStatusChange={onStatusChange}
+                isUpdating={isUpdating}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -307,58 +431,68 @@ function TaskSection({ title, tasks, emptyText, canManageTasks, onStatusChange, 
         <div className="card text-center py-8 text-gray-400 font-semibold">{emptyText}</div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          {tasks.map((task) => {
-            const statusMeta = STATUS_META[task.status] || STATUS_META.open
-            const priorityMeta = PRIORITY_META[task.priority] || PRIORITY_META.medium
-            const isOverdue = task.status !== 'done' && task.due_date && new Date(task.due_date) < new Date()
+          {tasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              canManageTasks={canManageTasks}
+              onStatusChange={onStatusChange}
+              isUpdating={isUpdating}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
-            return (
-              <div key={task.id} className={`card space-y-3 ${isOverdue ? 'border-2 border-red-200 bg-red-50/40' : ''}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-bold text-gray-800 text-lg">{task.title}</p>
-                    <p className="text-sm text-gray-500 mt-1">
-                      👤 {task.assignee_name || 'ללא שיוך'}{task.base ? ` · 📍 ${task.base}` : ''}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <span className={statusMeta.className}>{statusMeta.label}</span>
-                    <span className={`text-xs font-bold rounded-full px-2.5 py-1 ${priorityMeta.className}`}>
-                      {priorityMeta.label}
-                    </span>
-                    {isOverdue && <span className="text-xs font-bold text-red-700">באיחור</span>}
-                  </div>
-                </div>
+function TaskCard({ task, canManageTasks, onStatusChange, isUpdating }) {
+  const statusMeta = STATUS_META[task.status] || STATUS_META.open
+  const priorityMeta = PRIORITY_META[task.priority] || PRIORITY_META.medium
+  const isOverdue = task.status !== 'done' && task.due_date && new Date(task.due_date) < new Date()
 
-                {task.description && (
-                  <p className="text-sm text-gray-700 leading-6 whitespace-pre-wrap">{task.description}</p>
-                )}
+  return (
+    <div className={`card space-y-3 ${isOverdue ? 'border-2 border-red-200 bg-red-50/40' : ''}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-bold text-gray-800 text-lg">{task.title}</p>
+          <p className="text-sm text-gray-500 mt-1">
+            👤 {task.assignee_name || 'ללא שיוך'}{task.base ? ` · 📍 ${task.base}` : ''}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          <span className={statusMeta.className}>{statusMeta.label}</span>
+          <span className={`text-xs font-bold rounded-full px-2.5 py-1 ${priorityMeta.className}`}>
+            {priorityMeta.label}
+          </span>
+          {isOverdue && <span className="text-xs font-bold text-red-700">באיחור</span>}
+        </div>
+      </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-500">
-                  <p>🗓️ יעד: {formatTaskDate(task.due_date)}</p>
-                  <p>✍️ נוצרה על ידי: {task.created_by_name || task.created_by_unit || 'מערכת'}</p>
-                  <p>🕒 נוצרה: {formatTaskDate(task.created_at)}</p>
-                  {task.completed_by && <p>✅ הושלמה על ידי: {task.completed_by}</p>}
-                </div>
+      {task.description && (
+        <p className="text-sm text-gray-700 leading-6 whitespace-pre-wrap">{task.description}</p>
+      )}
 
-                {canManageTasks && (
-                  <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-100">
-                    <span className="text-xs font-semibold text-gray-500">עדכון סטטוס</span>
-                    <select
-                      value={task.status || 'open'}
-                      disabled={isUpdating}
-                      onChange={(event) => onStatusChange(task, event.target.value)}
-                      className="select-field max-w-[180px]"
-                    >
-                      <option value="open">פתוחה</option>
-                      <option value="in_progress">בטיפול</option>
-                      <option value="done">הושלמה</option>
-                    </select>
-                  </div>
-                )}
-              </div>
-            )
-          })}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-gray-500">
+        <p>🗓️ יעד: {formatTaskDate(task.due_date)}</p>
+        <p>✍️ נוצרה על ידי: {task.created_by_name || task.created_by_unit || 'מערכת'}</p>
+        <p>🕒 נוצרה: {formatTaskDate(task.created_at)}</p>
+        {task.completed_by && <p>✅ הושלמה על ידי: {task.completed_by}</p>}
+      </div>
+
+      {canManageTasks && (
+        <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-100">
+          <span className="text-xs font-semibold text-gray-500">עדכון סטטוס</span>
+          <select
+            value={task.status || 'open'}
+            disabled={isUpdating}
+            onChange={(event) => onStatusChange(task, event.target.value)}
+            className="select-field max-w-[180px]"
+          >
+            <option value="open">פתוחה</option>
+            <option value="in_progress">בטיפול</option>
+            <option value="done">הושלמה</option>
+          </select>
         </div>
       )}
     </div>

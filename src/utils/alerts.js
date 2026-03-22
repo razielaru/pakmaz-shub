@@ -57,5 +57,8 @@ export function buildAlertsList(report) {
     list.push({ type: 'warn', msg: `${report.r_mezuzot_missing} מזוזות חסרות` })
   if (report.p_mix === 'כן') list.push({ type: 'warn', msg: 'ערבוב כלים' })
   if (report.k_issues === 'כן') list.push({ type: 'warn', msg: 'תקלות כשרות' })
+  if (report.gps_status === 'חשוד' || report.gps_status === 'דורש בדיקה') {
+    list.push({ type: 'warn', msg: 'חריגת GPS תסומן אוטומטית לרב החטמ״ר' })
+  }
   return list
 }
