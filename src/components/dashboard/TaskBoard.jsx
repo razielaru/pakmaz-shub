@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useAuth } from '../../context/AuthContext'
-import { useCreateTask, useTasks, useUpdateTaskStatus } from '../../hooks/useTasks'
+import { useCreateTask, useTasks, useUpdateTask, useUpdateTaskStatus } from '../../hooks/useTasks'
 import Spinner from '../ui/Spinner'
 
 const EMPTY_FORM = {
@@ -73,11 +73,13 @@ export default function TaskBoard({
   const { user } = useAuth()
   const [form, setForm] = useState(EMPTY_FORM)
   const [showCreate, setShowCreate] = useState(false)
+  const [editingTaskId, setEditingTaskId] = useState(null)
   const [groupingTab, setGroupingTab] = useState(0)
   const [assigneeFilter, setAssigneeFilter] = useState('')
   const [baseFilter, setBaseFilter] = useState('')
   const { data: queryTasks = [], isLoading, error, refetch } = useTasks({ unit, enabled: presetTasks == null })
   const createTask = useCreateTask()
+  const updateTask = useUpdateTask()
   const updateTaskStatus = useUpdateTaskStatus()
   const tasks = presetTasks ?? queryTasks
   const normalizedAssigneeFilter = assigneeFilter.trim().toLowerCase()
@@ -135,6 +137,28 @@ export default function TaskBoard({
     setForm((current) => ({ ...current, [field]: value }))
   }
 
+  function resetFormState() {
+    setForm(EMPTY_FORM)
+    setShowCreate(false)
+    setEditingTaskId(null)
+  }
+
+  function handleStartEdit(task) {
+    if (!canManageTasks) return
+
+    setForm({
+      assignee_name: task.assignee_name || '',
+      title: task.title || '',
+      base: task.base || '',
+      priority: task.priority || 'medium',
+      due_date: task.due_date || '',
+      description: task.description || '',
+    })
+    setEditingTaskId(task.id)
+    setShowCreate(true)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   async function handleCreateTask(event) {
     event.preventDefault()
 
@@ -149,25 +173,40 @@ export default function TaskBoard({
     }
 
     try {
-      await createTask.mutateAsync({
-        unit,
-        assignee_name: form.assignee_name.trim(),
-        title: form.title.trim(),
-        description: form.description.trim() || null,
-        base: form.base.trim() || null,
-        priority: form.priority,
-        due_date: form.due_date || null,
-        status: 'open',
-        created_by_name: user?.displayName || user?.unit || 'מערכת',
-        created_by_unit: user?.unit || unit,
-        created_by_role: user?.role || null,
-      })
+      if (editingTaskId) {
+        await updateTask.mutateAsync({
+          id: editingTaskId,
+          assignee_name: form.assignee_name.trim(),
+          title: form.title.trim(),
+          description: form.description.trim() || null,
+          base: form.base.trim() || null,
+          priority: form.priority,
+          due_date: form.due_date || null,
+          actorName: user?.displayName || user?.unit || 'מערכת',
+          actorUnit: user?.unit || unit,
+        })
+        toast.success('המשימה עודכנה בהצלחה')
+      } else {
+        await createTask.mutateAsync({
+          unit,
+          assignee_name: form.assignee_name.trim(),
+          title: form.title.trim(),
+          description: form.description.trim() || null,
+          base: form.base.trim() || null,
+          priority: form.priority,
+          due_date: form.due_date || null,
+          status: 'open',
+          created_by_name: user?.displayName || user?.unit || 'מערכת',
+          created_by_unit: user?.unit || unit,
+          created_by_role: user?.role || null,
+        })
 
-      toast.success('המשימה נוספה בהצלחה')
-      setForm(EMPTY_FORM)
-      setShowCreate(false)
+        toast.success('המשימה נוספה בהצלחה')
+      }
+
+      resetFormState()
     } catch (error) {
-      toast.error(error.message || 'שגיאה בהוספת משימה')
+      toast.error(error.message || 'שגיאה בשמירת משימה')
     }
   }
 
@@ -199,7 +238,13 @@ export default function TaskBoard({
           )}
           {canManageTasks && (
             <button
-              onClick={() => setShowCreate((current) => !current)}
+              onClick={() => {
+                if (showCreate) {
+                  resetFormState()
+                } else {
+                  setShowCreate(true)
+                }
+              }}
               className="btn-primary"
               type="button"
             >
@@ -247,6 +292,17 @@ export default function TaskBoard({
 
       {showCreate && canManageTasks && (
         <form onSubmit={handleCreateTask} className="card space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h3 className="font-bold text-gray-800">
+              {editingTaskId ? 'עריכת משימה' : 'יצירת משימה חדשה'}
+            </h3>
+            {editingTaskId && (
+              <button type="button" onClick={resetFormState} className="btn-outline">
+                בטל עריכה
+              </button>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
             <div>
               <label className="label">שם החייל</label>
@@ -313,10 +369,14 @@ export default function TaskBoard({
           <div className="flex justify-end">
             <button
               type="submit"
-              disabled={createTask.isPending}
+              disabled={createTask.isPending || updateTask.isPending}
               className="btn-primary"
             >
-              {createTask.isPending ? 'שומר...' : 'שמור משימה'}
+              {createTask.isPending || updateTask.isPending
+                ? 'שומר...'
+                : editingTaskId
+                ? 'עדכן משימה'
+                : 'שמור משימה'}
             </button>
           </div>
         </form>
@@ -365,6 +425,7 @@ export default function TaskBoard({
                 tasks={taskGroups.open}
                 canManageTasks={canManageTasks}
                 onStatusChange={handleStatusChange}
+                onEditTask={handleStartEdit}
                 isUpdating={updateTaskStatus.isPending}
               />
 
@@ -374,6 +435,7 @@ export default function TaskBoard({
                 tasks={taskGroups.done.slice(0, 8)}
                 canManageTasks={canManageTasks}
                 onStatusChange={handleStatusChange}
+                onEditTask={handleStartEdit}
                 isUpdating={updateTaskStatus.isPending}
               />
             </div>
@@ -384,6 +446,7 @@ export default function TaskBoard({
               groups={locationGroups}
               canManageTasks={canManageTasks}
               onStatusChange={handleStatusChange}
+              onEditTask={handleStartEdit}
               isUpdating={updateTaskStatus.isPending}
             />
           )}
@@ -393,7 +456,7 @@ export default function TaskBoard({
   )
 }
 
-function TaskLocationGroups({ groups, canManageTasks, onStatusChange, isUpdating }) {
+function TaskLocationGroups({ groups, canManageTasks, onStatusChange, onEditTask, isUpdating }) {
   if (groups.length === 0) {
     return <div className="card text-center py-8 text-gray-400 font-semibold">אין כרגע משימות פתוחות ביחידה</div>
   }
@@ -422,6 +485,7 @@ function TaskLocationGroups({ groups, canManageTasks, onStatusChange, isUpdating
                 task={task}
                 canManageTasks={canManageTasks}
                 onStatusChange={onStatusChange}
+                onEditTask={onEditTask}
                 isUpdating={isUpdating}
               />
             ))}
@@ -432,7 +496,7 @@ function TaskLocationGroups({ groups, canManageTasks, onStatusChange, isUpdating
   )
 }
 
-function TaskSection({ title, tasks, emptyText, canManageTasks, onStatusChange, isUpdating }) {
+function TaskSection({ title, tasks, emptyText, canManageTasks, onStatusChange, onEditTask, isUpdating }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -450,6 +514,7 @@ function TaskSection({ title, tasks, emptyText, canManageTasks, onStatusChange, 
               task={task}
               canManageTasks={canManageTasks}
               onStatusChange={onStatusChange}
+              onEditTask={onEditTask}
               isUpdating={isUpdating}
             />
           ))}
@@ -459,7 +524,7 @@ function TaskSection({ title, tasks, emptyText, canManageTasks, onStatusChange, 
   )
 }
 
-function TaskCard({ task, canManageTasks, onStatusChange, isUpdating }) {
+function TaskCard({ task, canManageTasks, onStatusChange, onEditTask, isUpdating }) {
   const statusMeta = STATUS_META[task.status] || STATUS_META.open
   const priorityMeta = PRIORITY_META[task.priority] || PRIORITY_META.medium
   const isOverdue = task.status !== 'done' && task.due_date && new Date(task.due_date) < new Date()
@@ -494,18 +559,23 @@ function TaskCard({ task, canManageTasks, onStatusChange, isUpdating }) {
       </div>
 
       {canManageTasks && (
-        <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-100">
-          <span className="text-xs font-semibold text-gray-500">עדכון סטטוס</span>
-          <select
-            value={task.status || 'open'}
-            disabled={isUpdating}
-            onChange={(event) => onStatusChange(task, event.target.value)}
-            className="select-field max-w-[180px]"
-          >
-            <option value="open">פתוחה</option>
-            <option value="in_progress">בטיפול</option>
-            <option value="done">הושלמה</option>
-          </select>
+        <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-100 flex-wrap">
+          <button type="button" onClick={() => onEditTask(task)} className="btn-outline">
+            ערוך משימה
+          </button>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-semibold text-gray-500">עדכון סטטוס</span>
+            <select
+              value={task.status || 'open'}
+              disabled={isUpdating}
+              onChange={(event) => onStatusChange(task, event.target.value)}
+              className="select-field max-w-[180px]"
+            >
+              <option value="open">פתוחה</option>
+              <option value="in_progress">בטיפול</option>
+              <option value="done">הושלמה</option>
+            </select>
+          </div>
         </div>
       )}
     </div>

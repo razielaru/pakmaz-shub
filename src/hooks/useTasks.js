@@ -152,3 +152,51 @@ export function useUpdateTaskStatus() {
     },
   })
 }
+
+export function useUpdateTask() {
+  const qc = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ id, actorName, actorUnit, ...payload }) => {
+      const { data, error } = await supabase
+        .from('unit_tasks')
+        .update({
+          ...payload,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .select()
+        .single()
+
+      if (error) {
+        if (isMissingTasksTable(error)) {
+          throw new Error('טבלת המשימות עדיין לא קיימת. יש להריץ את עדכון ה-SQL החדש ב-Supabase.')
+        }
+        if (isTaskPermissionError(error)) {
+          throw new Error('לחשבון הזה עדיין אין הרשאת שרת לעריכת משימות. יש להפעיל can_manage_tasks ב-Supabase עבור היחידה.')
+        }
+        throw error
+      }
+
+      await logTaskAudit({
+        taskId: data.id,
+        unit: data.unit,
+        action: 'task_updated',
+        actorName,
+        actorUnit: actorUnit || data.unit,
+        details: JSON.stringify({
+          assignee_name: data.assignee_name,
+          title: data.title,
+          priority: data.priority,
+          due_date: data.due_date,
+          status: data.status,
+        }),
+      })
+
+      return data
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['unit-tasks'] })
+    },
+  })
+}

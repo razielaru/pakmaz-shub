@@ -80,6 +80,7 @@ export function useInsertReport() {
           'evidence_photo_url',
           'latitude',
           'longitude',
+          '_elapsed_seconds',
         ])
 
         const legacyPayload = Object.fromEntries(

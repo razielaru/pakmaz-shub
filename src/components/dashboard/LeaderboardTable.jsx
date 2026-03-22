@@ -1,15 +1,42 @@
 import { useMemo } from 'react'
 import Badge from '../ui/Badge'
 
+const BASE_ALIAS_MAP = {
+  'עופרה': 'עפרה',
+  'מוצב עטרת': 'עטרת',
+  'מוצב 408': '408',
+  'מפגד 636': '636',
+  'מוצב 636': '636',
+  'מגב איוש': 'מג"ב איוש',
+  'בית-אל': 'בית אל',
+}
+
+function normalizeBaseName(base) {
+  const cleaned = (base || '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  return BASE_ALIAS_MAP[cleaned] || cleaned
+}
+
 export default function LeaderboardTable({ reports }) {
   const leaders = useMemo(() => {
     const byBase = {}
     reports.forEach(r => {
-      if (!r.base) return
-      if (!byBase[r.base]) byBase[r.base] = { base: r.base, count: 0, ok: 0, lastDate: r.date }
-      byBase[r.base].count++
-      if (r.e_status === 'תקין' && r.k_cert === 'כן') byBase[r.base].ok++
-      if (r.date > byBase[r.base].lastDate) byBase[r.base].lastDate = r.date
+      const normalizedBase = normalizeBaseName(r.base)
+      if (!normalizedBase) return
+      if (!byBase[normalizedBase]) {
+        byBase[normalizedBase] = {
+          base: normalizedBase,
+          count: 0,
+          ok: 0,
+          lastDate: r.date,
+        }
+      }
+      byBase[normalizedBase].count++
+      if (r.e_status === 'תקין' && r.k_cert === 'כן') byBase[normalizedBase].ok++
+      if (r.date > byBase[normalizedBase].lastDate) byBase[normalizedBase].lastDate = r.date
     })
     return Object.values(byBase)
       .map(b => ({ ...b, score: Math.round((b.ok / b.count) * 100) }))
