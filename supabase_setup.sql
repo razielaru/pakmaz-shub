@@ -768,4 +768,28 @@ using (
   and private.current_role() = 'pikud'
 );
 
+-- ================================================
+-- Performance indexes
+-- ================================================
+create index if not exists reports_unit_date_idx
+  on public.reports (unit, date desc);
+
+create index if not exists reports_unit_base_idx
+  on public.reports (unit, base);
+
+create index if not exists reports_inspector_idx
+  on public.reports (inspector);
+
+create index if not exists unit_tasks_unit_status_created_idx
+  on public.unit_tasks (unit, status, created_at desc);
+
+create index if not exists unit_tasks_unit_assignee_idx
+  on public.unit_tasks (unit, assignee_name);
+
+create index if not exists unit_tasks_unit_base_idx
+  on public.unit_tasks (unit, base);
+
+create index if not exists deficit_tracking_unit_status_created_idx
+  on public.deficit_tracking (unit, status, created_at desc);
+
 commit;
