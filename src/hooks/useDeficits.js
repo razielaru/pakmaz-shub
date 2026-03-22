@@ -5,13 +5,14 @@ import { useAuth } from '../context/AuthContext'
 export function useDeficits(units = []) {
   const { user } = useAuth()
   const targetUnits = units.length > 0 ? units : [user?.unit]
+  const selectFields = 'id, unit, base, type, severity, description, status, notes, created_at, closed_at'
 
   return useQuery({
     queryKey: ['deficits', targetUnits],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('deficit_tracking')
-        .select('*')
+        .select(selectFields)
         .in('unit', targetUnits)
         .eq('status', 'open')
         .order('created_at', { ascending: false })
@@ -44,12 +45,12 @@ export function useDeficitStats(units = []) {
     queryKey: ['deficit-stats', targetUnits],
     queryFn: async () => {
       const [openRes, closedRes] = await Promise.all([
-        supabase.from('deficit_tracking').select('id').in('unit', targetUnits).eq('status', 'open'),
-        supabase.from('deficit_tracking').select('id').in('unit', targetUnits).eq('status', 'closed'),
+        supabase.from('deficit_tracking').select('id', { count: 'exact', head: true }).in('unit', targetUnits).eq('status', 'open'),
+        supabase.from('deficit_tracking').select('id', { count: 'exact', head: true }).in('unit', targetUnits).eq('status', 'closed'),
       ])
       return {
-        open: openRes.data?.length || 0,
-        closed: closedRes.data?.length || 0,
+        open: openRes.count || 0,
+        closed: closedRes.count || 0,
       }
     },
     enabled: !!user,

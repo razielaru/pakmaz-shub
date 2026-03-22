@@ -17,6 +17,8 @@ const HEBREW_COLS = {
   reliability_score: 'ציון אמינות', free_text: 'הערות',
 }
 
+const EXPORT_REPORT_FIELDS = Object.keys(HEBREW_COLS).join(', ')
+
 function escapeCSV(v) {
   if (v == null) return ''
   const s = String(v)
@@ -38,7 +40,7 @@ function exportCSV(reports, cols) {
 }
 
 export default function ExcelExport() {
-  const { data: reports = [], isLoading } = useReports()
+  const { data: reports = [], isLoading } = useReports({ select: EXPORT_REPORT_FIELDS })
   const { user } = useAuth()
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')

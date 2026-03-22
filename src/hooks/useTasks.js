@@ -14,13 +14,31 @@ function isTaskPermissionError(error) {
 export function useTasks(filters = {}) {
   const { user } = useAuth()
   const enabled = filters.enabled ?? true
+  const selectFields = [
+    'id',
+    'unit',
+    'assignee_name',
+    'title',
+    'description',
+    'base',
+    'priority',
+    'status',
+    'due_date',
+    'created_by_name',
+    'created_by_unit',
+    'created_by_role',
+    'completed_by',
+    'completed_at',
+    'created_at',
+    'updated_at',
+  ].join(', ')
 
   return useQuery({
     queryKey: ['unit-tasks', user?.unit, user?.role, filters],
     queryFn: async () => {
       let query = supabase
         .from('unit_tasks')
-        .select('*')
+        .select(selectFields)
         .order('created_at', { ascending: false })
 
       if (filters.unit) query = query.eq('unit', filters.unit)

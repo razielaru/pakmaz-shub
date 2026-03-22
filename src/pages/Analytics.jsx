@@ -16,8 +16,25 @@ const TABS = [
   { icon: '⚡', label: 'חריגויות' },
 ]
 
+const ANALYTICS_REPORT_FIELDS = [
+  'id',
+  'date',
+  'unit',
+  'base',
+  'inspector',
+  'e_status',
+  'k_cert',
+  'k_issues',
+  'p_mix',
+  'r_mezuzot_missing',
+  'r_torah_missing',
+  'reliability_score',
+  'gps_lat',
+  '_elapsed_seconds',
+].join(', ')
+
 export default function Analytics() {
-  const { data: reports = [], isLoading } = useReports()
+  const { data: reports = [], isLoading } = useReports({ select: ANALYTICS_REPORT_FIELDS })
   const [activeTab, setActiveTab] = useState(0)
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')

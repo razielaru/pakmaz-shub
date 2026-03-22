@@ -1,5 +1,5 @@
 // src/pages/Dashboard.jsx
-import { useState, useMemo } from 'react'
+import { useState, useMemo, lazy, Suspense } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useReports } from '../hooks/useReports'
@@ -9,20 +9,42 @@ import PageLayout from '../components/layout/PageLayout'
 import TabsBar from '../components/ui/TabsBar'
 import Spinner from '../components/ui/Spinner'
 import MorningBriefing from '../components/dashboard/MorningBriefing'
-import BaseStatusBoard from '../components/dashboard/BaseStatusBoard'
-import MapView from '../components/dashboard/MapView'
-import StatsCharts from '../components/dashboard/StatsCharts'
-import LeaderboardTable from '../components/dashboard/LeaderboardTable'
-import CommandDashboard from '../components/dashboard/CommandDashboard'
-import SLADashboard from '../components/dashboard/SLADashboard'
-import DeficitHeatMap from '../components/dashboard/DeficitHeatMap'
 import TaskBoard from '../components/dashboard/TaskBoard'
-import ShabbatPrep from './ShabbatPrep'
-import RoutePlanner from './RoutePlanner'
-import QnAPage from './QnAPage'
 import toast from 'react-hot-toast'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts'
 import { ALL_UNITS } from '../utils/constants'
+
+const BaseStatusBoard = lazy(() => import('../components/dashboard/BaseStatusBoard'))
+const MapView = lazy(() => import('../components/dashboard/MapView'))
+const StatsCharts = lazy(() => import('../components/dashboard/StatsCharts'))
+const LeaderboardTable = lazy(() => import('../components/dashboard/LeaderboardTable'))
+const CommandDashboard = lazy(() => import('../components/dashboard/CommandDashboard'))
+const SLADashboard = lazy(() => import('../components/dashboard/SLADashboard'))
+const DeficitHeatMap = lazy(() => import('../components/dashboard/DeficitHeatMap'))
+const ShabbatPrep = lazy(() => import('./ShabbatPrep'))
+const RoutePlanner = lazy(() => import('./RoutePlanner'))
+const QnAPage = lazy(() => import('./QnAPage'))
+
+const DASHBOARD_REPORT_FIELDS = [
+  'id',
+  'date',
+  'created_at',
+  'unit',
+  'base',
+  'inspector',
+  'e_status',
+  'k_cert',
+  'p_mix',
+  'r_mezuzot_missing',
+  'reliability_score',
+  'gps_lat',
+  'gps_lon',
+  'latitude',
+  'longitude',
+  'gps_status',
+  'gps_distance_km',
+  'gps_accuracy_meters',
+].join(', ')
 
 // ─── טאבים מאוחדים: 11 → 5 קטגוריות ───
 // כל הפונקציות המקוריות שמורות — רק מוצגות תחת תת-ניווט פנימי
@@ -62,6 +84,14 @@ function SubTabs({ tabs, active, onChange }) {
   )
 }
 
+function SectionFallback() {
+  return (
+    <div className="flex justify-center py-14">
+      <Spinner size="lg" />
+    </div>
+  )
+}
+
 // ─── קטגוריה: סטטוס ───
 function StatusCategory({ reports }) {
   const [sub, setSub] = useState(0)
@@ -73,9 +103,9 @@ function StatusCategory({ reports }) {
   return (
     <>
       <SubTabs tabs={subs} active={sub} onChange={setSub} />
-      {sub === 0 && <BaseStatusBoard reports={reports} />}
-      {sub === 1 && <MapView reports={reports} />}
-      {sub === 2 && <DeficitHeatMap reports={reports} />}
+      {sub === 0 && <Suspense fallback={<SectionFallback />}><BaseStatusBoard reports={reports} /></Suspense>}
+      {sub === 1 && <Suspense fallback={<SectionFallback />}><MapView reports={reports} /></Suspense>}
+      {sub === 2 && <Suspense fallback={<SectionFallback />}><DeficitHeatMap reports={reports} /></Suspense>}
     </>
   )
 }
@@ -119,8 +149,8 @@ function HalachaCategory({ reports, unit }) {
   return (
     <>
       <SubTabs tabs={subs} active={sub} onChange={setSub} />
-      {sub === 0 && <ShabbatPrep reports={reports} unit={unit} embedded />}
-      {sub === 1 && <QnAPage embedded />}
+      {sub === 0 && <Suspense fallback={<SectionFallback />}><ShabbatPrep reports={reports} unit={unit} embedded /></Suspense>}
+      {sub === 1 && <Suspense fallback={<SectionFallback />}><QnAPage embedded /></Suspense>}
     </>
   )
 }
@@ -136,9 +166,9 @@ function PerfCategory({ reports }) {
   return (
     <>
       <SubTabs tabs={subs} active={sub} onChange={setSub} />
-      {sub === 0 && <SLADashboard reports={reports} />}
-      {sub === 1 && <RoutePlanner embedded reports={reports} />}
-      {sub === 2 && <SLADashboard reports={reports} />}
+      {sub === 0 && <Suspense fallback={<SectionFallback />}><SLADashboard reports={reports} /></Suspense>}
+      {sub === 1 && <Suspense fallback={<SectionFallback />}><RoutePlanner embedded reports={reports} /></Suspense>}
+      {sub === 2 && <Suspense fallback={<SectionFallback />}><SLADashboard reports={reports} /></Suspense>}
     </>
   )
 }
@@ -154,7 +184,7 @@ export default function Dashboard() {
   const isPikud = canAccess('ugda')
   const isManager = hasManagerAccess
 
-  const { data: reports = [], isLoading } = useReports()
+  const { data: reports = [], isLoading } = useReports({ select: DASHBOARD_REPORT_FIELDS })
   const { data: defStats } = useDeficitStats()
   const canManageUnitTasks = Boolean(user?.canManageTasks || (hasManagerAccess && canAccess('gdud')))
 
@@ -196,13 +226,15 @@ export default function Dashboard() {
             <div className="p-4">
               {soldierTab === 0 && <TopInspectorsTab reports={reports} />}
               {soldierTab === 1 && (
-                <MapView
-                  reports={reports}
-                  showControls={false}
-                  showLegend={false}
-                  showStatusDetails={false}
-                  showFooterSummary={false}
-                />
+                <Suspense fallback={<SectionFallback />}>
+                  <MapView
+                    reports={reports}
+                    showControls={false}
+                    showLegend={false}
+                    showStatusDetails={false}
+                    showFooterSummary={false}
+                  />
+                </Suspense>
               )}
               {soldierTab === 2 && <ActivityHoursTab reports={reports} />}
               {soldierTab === 3 && <ProgressChartTab reports={reports} />}
@@ -245,7 +277,11 @@ export default function Dashboard() {
       <PageLayout>
         {isLoading
           ? <div className="flex justify-center py-20"><Spinner size="lg" /></div>
-          : <CommandDashboard role={user?.role} unit={user?.unit} accessibleUnits={ALL_UNITS} />
+          : (
+            <Suspense fallback={<SectionFallback />}>
+              <CommandDashboard role={user?.role} unit={user?.unit} accessibleUnits={ALL_UNITS} />
+            </Suspense>
+          )
         }
       </PageLayout>
     )
@@ -423,8 +459,12 @@ function ManagementTab({ reports, unit }) {
           <p className="text-sm text-gray-500 mt-1">מבקרים פעילים</p>
         </div>
       </div>
-      <StatsCharts reports={reports} />
-      <LeaderboardTable reports={reports} />
+      <Suspense fallback={<SectionFallback />}>
+        <StatsCharts reports={reports} />
+      </Suspense>
+      <Suspense fallback={<SectionFallback />}>
+        <LeaderboardTable reports={reports} />
+      </Suspense>
     </div>
   )
 }

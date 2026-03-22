@@ -4,11 +4,12 @@ import { useAuth } from '../context/AuthContext'
 
 export function useReports(filters = {}) {
   const { user } = useAuth()
+  const selectFields = filters.select || '*'
 
   return useQuery({
-    queryKey: ['reports', user?.unit, filters],
+    queryKey: ['reports', user?.unit, user?.role, selectFields, filters],
     queryFn: async () => {
-      let q = supabase.from('reports').select('*').order('date', { ascending: false })
+      let q = supabase.from('reports').select(selectFields).order('date', { ascending: false })
 
       if (filters.unit) q = q.eq('unit', filters.unit)
       else if (user?.role !== 'pikud' && user?.role !== 'ugda') q = q.eq('unit', user.unit)

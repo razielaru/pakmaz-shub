@@ -7,6 +7,20 @@ import PageLayout from '../components/layout/PageLayout'
 import Badge from '../components/ui/Badge'
 import Spinner from '../components/ui/Spinner'
 
+const ROUTE_PLANNER_REPORT_FIELDS = [
+  'id',
+  'date',
+  'unit',
+  'base',
+  'inspector',
+  'e_status',
+  'k_cert',
+  'k_issues',
+  'p_mix',
+  'r_mezuzot_missing',
+  'reliability_score',
+].join(', ')
+
 function urgencyScore(baseName, reports) {
   const baseReports = reports
     .filter(r => r.base === baseName)
@@ -44,8 +58,8 @@ export default function RoutePlanner({ embedded = false }) {
   const { baseNames } = useBaseRegistry(user?.unit)
   // פיקוד/אוגדה רואים הכל — מסנן לפי יחידה כדי לראות רק המוצבים הרלוונטיים
   const unitFilter = (user?.role === 'pikud' || user?.role === 'ugda')
-    ? { unit: user.unit }
-    : {}
+    ? { unit: user.unit, select: ROUTE_PLANNER_REPORT_FIELDS }
+    : { select: ROUTE_PLANNER_REPORT_FIELDS }
   const { data: reports = [], isLoading } = useReports(unitFilter)
 
   const basePriorities = useMemo(() => {

@@ -8,6 +8,27 @@ import { useReports } from '../hooks/useReports'
 import { getGpsStatusKey, getGpsStatusMeta } from '../utils/reportStatus'
 import { buildGpsAssessment } from '../utils/gpsAssessment'
 
+const GPS_ANOMALY_REPORT_FIELDS = [
+  'id',
+  'date',
+  'created_at',
+  'unit',
+  'base',
+  'inspector',
+  'e_status',
+  'k_cert',
+  'p_mix',
+  'r_mezuzot_missing',
+  'gps_lat',
+  'gps_lon',
+  'latitude',
+  'longitude',
+  'gps_distance_km',
+  'gps_accuracy_meters',
+  'device_label',
+  'gps_status',
+].join(', ')
+
 function getAnomalyReports(reports) {
   return [...reports]
     .map((report) => {
@@ -32,7 +53,7 @@ function getAnomalyReports(reports) {
 
 export default function GpsAnomalies() {
   useBaseRegistry()
-  const { data: reports = [], isLoading } = useReports()
+  const { data: reports = [], isLoading } = useReports({ select: GPS_ANOMALY_REPORT_FIELDS })
 
   const anomalies = useMemo(() => getAnomalyReports(reports), [reports])
   const suspiciousCount = anomalies.filter((report) => report._gpsStatusKey === 'suspicious').length
