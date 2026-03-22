@@ -64,24 +64,41 @@ export default function TaskBoard({
   unit,
   canManageTasks = false,
   title = '🎯 משימות לחיילים',
-  subtitle = 'ניהול משימות לביצוע במוצבים ובשטח',
+  subtitle = null,
   presetTasks = null,
   showGroupingTabs = false,
+  showQuickFilters = false,
+  hideModeBadge = false,
 }) {
   const { user } = useAuth()
   const [form, setForm] = useState(EMPTY_FORM)
   const [showCreate, setShowCreate] = useState(false)
   const [groupingTab, setGroupingTab] = useState(0)
+  const [assigneeFilter, setAssigneeFilter] = useState('')
+  const [baseFilter, setBaseFilter] = useState('')
   const { data: queryTasks = [], isLoading, error, refetch } = useTasks({ unit, enabled: presetTasks == null })
   const createTask = useCreateTask()
   const updateTaskStatus = useUpdateTaskStatus()
   const tasks = presetTasks ?? queryTasks
+  const normalizedAssigneeFilter = assigneeFilter.trim().toLowerCase()
+  const normalizedBaseFilter = baseFilter.trim().toLowerCase()
+
+  const filteredTasks = useMemo(() => {
+    return tasks.filter((task) => {
+      const assigneeMatches = !normalizedAssigneeFilter
+        || (task.assignee_name || '').toLowerCase().includes(normalizedAssigneeFilter)
+      const baseMatches = !normalizedBaseFilter
+        || (task.base || '').toLowerCase().includes(normalizedBaseFilter)
+
+      return assigneeMatches && baseMatches
+    })
+  }, [tasks, normalizedAssigneeFilter, normalizedBaseFilter])
 
   const taskGroups = useMemo(() => {
-    const open = sortTasks(tasks.filter((task) => task.status !== 'done'))
-    const done = sortTasks(tasks.filter((task) => task.status === 'done'))
+    const open = sortTasks(filteredTasks.filter((task) => task.status !== 'done'))
+    const done = sortTasks(filteredTasks.filter((task) => task.status === 'done'))
     return { open, done }
-  }, [tasks])
+  }, [filteredTasks])
 
   const summary = useMemo(() => ({
     total: tasks.length,
@@ -90,14 +107,14 @@ export default function TaskBoard({
     done: tasks.filter((task) => task.status === 'done').length,
   }), [tasks])
 
-  const priorityGroups = useMemo(() => ({
-    high: sortTasks(tasks.filter((task) => task.priority === 'high')),
-    medium: sortTasks(tasks.filter((task) => task.priority === 'medium')),
-    low: sortTasks(tasks.filter((task) => task.priority === 'low')),
-  }), [tasks])
+  const resolvedSubtitle = subtitle ?? (
+    showQuickFilters
+      ? `מציג ${filteredTasks.length} משימות מתוך ${tasks.length}`
+      : 'ניהול משימות לביצוע במוצבים ובשטח'
+  )
 
   const locationGroups = useMemo(() => {
-    const grouped = tasks.reduce((acc, task) => {
+    const grouped = filteredTasks.reduce((acc, task) => {
       const key = task.base?.trim() || 'ללא מיקום מוגדר'
       if (!acc[key]) acc[key] = []
       acc[key].push(task)
@@ -112,7 +129,7 @@ export default function TaskBoard({
         doneCount: items.filter((task) => task.status === 'done').length,
       }))
       .sort((left, right) => right.items.length - left.items.length)
-  }, [tasks])
+  }, [filteredTasks])
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }))
@@ -172,10 +189,10 @@ export default function TaskBoard({
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <div className="section-title mb-2">{title}</div>
-          <p className="text-sm text-gray-500">{subtitle}</p>
+          <p className="text-sm text-gray-500">{resolvedSubtitle}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {(!showGroupingTabs || canManageTasks) && (
+          {!hideModeBadge && (!showGroupingTabs || canManageTasks) && (
             <span className={`text-xs font-bold rounded-full px-3 py-1 ${canManageTasks ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
               {canManageTasks ? 'יכול לנהל' : 'קריאה בלבד'}
             </span>
@@ -191,6 +208,23 @@ export default function TaskBoard({
           )}
         </div>
       </div>
+
+      {showQuickFilters && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <input
+            value={assigneeFilter}
+            onChange={(event) => setAssigneeFilter(event.target.value)}
+            className="input-field"
+            placeholder="חיפוש לפי חייל"
+          />
+          <input
+            value={baseFilter}
+            onChange={(event) => setBaseFilter(event.target.value)}
+            className="input-field"
+            placeholder="חיפוש לפי מוצב"
+          />
+        </div>
+      )}
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
         <div className="card text-center">

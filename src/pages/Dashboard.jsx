@@ -182,8 +182,9 @@ export default function Dashboard() {
           <TaskBoard
             unit={user?.unit}
             canManageTasks={false}
-            title="🎯 משימות היחידה"
-            subtitle="כאן החיילים רואים את המשימות שהוקצו ליחידה ולמוצבים"
+            title="🎯 לוח משימות יחידתי"
+            showQuickFilters
+            hideModeBadge
           />
 
           <Link to="/report/new" className="btn-primary w-full py-6 text-xl font-bold flex items-center justify-center gap-2 rounded-2xl shadow-lg border-b-4 border-idf-blueDark">
