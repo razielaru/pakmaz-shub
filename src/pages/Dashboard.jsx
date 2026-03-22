@@ -185,48 +185,47 @@ export default function Dashboard() {
             subtitle="כאן החיילים רואים את המשימות שהוקצו ליחידה ולמוצבים"
           />
 
+          <Link to="/report/new" className="btn-primary w-full py-6 text-xl font-bold flex items-center justify-center gap-2 rounded-2xl shadow-lg border-b-4 border-idf-blueDark">
+            📝 דוח חדש
+          </Link>
+
           <div className="bg-white dark:bg-dark-surface rounded-xl shadow-sm border border-idf-border dark:border-dark-border relative z-20">
             <TabsBar tabs={SOLDIER_TABS} activeTab={soldierTab} onChange={setSoldierTab} />
             <div className="p-4">
               {soldierTab === 0 && <TopInspectorsTab reports={reports} />}
-              {soldierTab === 1 && <MapView reports={reports} />}
+              {soldierTab === 1 && (
+                <MapView
+                  reports={reports}
+                  showControls={false}
+                  showLegend={false}
+                  showStatusDetails={false}
+                  showFooterSummary={false}
+                />
+              )}
               {soldierTab === 2 && <ActivityHoursTab reports={reports} />}
               {soldierTab === 3 && <ProgressChartTab reports={reports} />}
             </div>
           </div>
 
           {managerAccessEligible && (
-            <div className="bg-idf-surface dark:bg-dark-surface rounded-3xl border border-idf-border dark:border-dark-border p-6 shadow-lg">
-              <div className="flex items-start justify-between gap-4 flex-wrap">
-                <div>
-                  <h3 className="text-2xl font-extrabold text-idf-blue dark:text-dark-blue">🔐 כניסת מנהל</h3>
-                  <p className="text-sm text-gray-500 mt-2">
-                    רב החטמ״ר / רב החטיבה יכול להזין כאן סיסמת ניהול נפרדת כדי לפתוח את שאר הטאבים שלא גלויים לחייל.
-                  </p>
-                </div>
-                <Link to="/report/new" className="btn-primary whitespace-nowrap">
-                  📝 דוח חדש
-                </Link>
-              </div>
+            <div className="bg-white dark:bg-dark-surface rounded-[2rem] border border-idf-border dark:border-dark-border p-5 shadow-lg">
+              <div className="text-xl font-extrabold text-idf-blue dark:text-dark-blue mb-4">🔐 כניסת מנהל</div>
 
-              <form onSubmit={handleManagerUnlock} className="mt-5 grid grid-cols-1 md:grid-cols-[220px,1fr] gap-4 items-end">
+              <form onSubmit={handleManagerUnlock} className="grid grid-cols-1 md:grid-cols-[220px,1fr] gap-4 items-center">
                 <button
                   type="submit"
                   disabled={unlocking}
-                  className="btn-primary py-4 text-lg font-bold"
+                  className="btn-primary py-4 text-lg font-bold rounded-2xl"
                 >
                   {unlocking ? 'פותח...' : 'פתח ניהול'}
                 </button>
-                <div>
-                  <label className="label">סיסמת מנהל</label>
-                  <input
-                    type="password"
-                    value={managerPassword}
-                    onChange={(event) => setManagerPassword(event.target.value)}
-                    className="input-field text-center text-xl"
-                    placeholder="הקלד סיסמת מנהל"
-                  />
-                </div>
+                <input
+                  type="password"
+                  value={managerPassword}
+                  onChange={(event) => setManagerPassword(event.target.value)}
+                  className="input-field text-center text-xl rounded-2xl min-h-[72px]"
+                  placeholder="סיסמת מנהל"
+                />
               </form>
             </div>
           )}

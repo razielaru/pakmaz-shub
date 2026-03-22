@@ -47,7 +47,13 @@ function formatDate(value) {
   return new Date(value).toISOString().slice(0, 10)
 }
 
-export default function MapView({ reports }) {
+export default function MapView({
+  reports,
+  showControls = true,
+  showLegend = true,
+  showStatusDetails = true,
+  showFooterSummary = true,
+}) {
   const { coordinates } = useBaseRegistry()
   const [search, setSearch] = useState('')
   const [inspectorFilter, setInspectorFilter] = useState('all')
@@ -122,86 +128,92 @@ export default function MapView({ reports }) {
 
   const showPermanentLabels = filteredPoints.length > 0 && filteredPoints.length <= 18
 
+  const visiblePoints = showControls ? filteredPoints : points
+
   return (
     <div className="space-y-3">
-      <div className="card space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-          <div className="md:col-span-2">
-            <label className="label">חיפוש מהיר</label>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="input-field"
-              placeholder="חפש לפי מוצב או שם ממלא"
-            />
+      {showControls && (
+        <div className="card space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+            <div className="md:col-span-2">
+              <label className="label">חיפוש מהיר</label>
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="input-field"
+                placeholder="חפש לפי מוצב או שם ממלא"
+              />
+            </div>
+
+            <div>
+              <label className="label">מבקר</label>
+              <select value={inspectorFilter} onChange={(e) => setInspectorFilter(e.target.value)} className="select-field">
+                <option value="all">כל המבקרים</option>
+                {inspectors.map((inspector) => <option key={inspector} value={inspector}>{inspector}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="label">יחידה</label>
+              <select value={unitFilter} onChange={(e) => setUnitFilter(e.target.value)} className="select-field">
+                <option value="all">כל היחידות</option>
+                {units.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="label">מתאריך</label>
+              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="input-field" />
+            </div>
+
+            <div>
+              <label className="label">עד תאריך</label>
+              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="input-field" />
+            </div>
           </div>
 
-          <div>
-            <label className="label">מבקר</label>
-            <select value={inspectorFilter} onChange={(e) => setInspectorFilter(e.target.value)} className="select-field">
-              <option value="all">כל המבקרים</option>
-              {inspectors.map((inspector) => <option key={inspector} value={inspector}>{inspector}</option>)}
-            </select>
-          </div>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div className="min-w-[180px]">
+              <label className="label">סטטוס GPS</label>
+              <select value={gpsStatusFilter} onChange={(e) => setGpsStatusFilter(e.target.value)} className="select-field">
+                <option value="all">הכל</option>
+                <option value="matched">תואם</option>
+                <option value="review">דורש בדיקה</option>
+                <option value="suspicious">חשוד</option>
+              </select>
+            </div>
 
-          <div>
-            <label className="label">יחידה</label>
-            <select value={unitFilter} onChange={(e) => setUnitFilter(e.target.value)} className="select-field">
-              <option value="all">כל היחידות</option>
-              {units.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
-            </select>
-          </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('')
+                setInspectorFilter('all')
+                setUnitFilter('all')
+                setGpsStatusFilter('all')
+                setDateFrom('')
+                setDateTo('')
+              }}
+              className="btn-outline text-sm py-2.5"
+            >
+              נקה פילטרים
+            </button>
 
-          <div>
-            <label className="label">מתאריך</label>
-            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="input-field" />
-          </div>
-
-          <div>
-            <label className="label">עד תאריך</label>
-            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="input-field" />
+            {showLegend && (
+              <div className="mr-auto flex gap-4 text-xs text-gray-500 flex-wrap">
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" />תקין</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-orange-400 inline-block" />ליקוי</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />קריטי</span>
+                <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-400 inline-block border-2 border-blue-600" />GPS אמיתי</span>
+              </div>
+            )}
           </div>
         </div>
-
-        <div className="flex flex-wrap gap-3 items-end">
-          <div className="min-w-[180px]">
-            <label className="label">סטטוס GPS</label>
-            <select value={gpsStatusFilter} onChange={(e) => setGpsStatusFilter(e.target.value)} className="select-field">
-              <option value="all">הכל</option>
-              <option value="matched">תואם</option>
-              <option value="review">דורש בדיקה</option>
-              <option value="suspicious">חשוד</option>
-            </select>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSearch('')
-              setInspectorFilter('all')
-              setUnitFilter('all')
-              setGpsStatusFilter('all')
-              setDateFrom('')
-              setDateTo('')
-            }}
-            className="btn-outline text-sm py-2.5"
-          >
-            נקה פילטרים
-          </button>
-
-          <div className="mr-auto flex gap-4 text-xs text-gray-500 flex-wrap">
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block" />תקין</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-orange-400 inline-block" />ליקוי</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />קריטי</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-blue-400 inline-block border-2 border-blue-600" />GPS אמיתי</span>
-          </div>
-        </div>
-      </div>
+      )}
 
       <div className="rounded-xl overflow-hidden border border-idf-border shadow-sm" style={{ height: 460 }}>
         <MapContainer center={[31.9, 35.2]} zoom={9} style={{ height: '100%', width: '100%' }}>
           <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          {filteredPoints.map(({ report, lat, lon, mapLat, mapLon, isRealGPS, gpsAssessment, gpsStatusMeta }, index) => {
+          {visiblePoints.map(({ report, lat, lon, mapLat, mapLon, isRealGPS, gpsAssessment, gpsStatusMeta }, index) => {
             const { stroke, fill } = getColor(report)
             const isCritical = report.e_status === 'פסול' || report.k_cert === 'לא'
             const markerKey = report.id || `${report.base}-${report.inspector}-${report.date}-${index}`
@@ -233,29 +245,33 @@ export default function MapView({ reports }) {
                     <p style={{ fontSize: 12, color: '#374151', marginBottom: 4 }}>🏢 יחידה: {report.unit || '—'}</p>
                     <p style={{ fontSize: 12, color: '#374151', marginBottom: 8 }}>📅 תאריך: {report.date || '—'}</p>
 
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-                      <span style={{ fontSize: 11, fontWeight: 'bold', padding: '2px 8px', borderRadius: 99, background: isRealGPS ? '#dbeafe' : '#f3f4f6', color: isRealGPS ? '#1e40af' : '#6b7280' }}>
-                        {isRealGPS ? '📍 מיקום שנשמר מהטלפון' : '📌 מיקום משוער לפי רשימת מוצבים'}
-                      </span>
-                      <span style={{ fontSize: 11, fontWeight: 'bold', padding: '2px 8px', borderRadius: 99, background: gpsStatusMeta.bg, color: gpsStatusMeta.color }}>
-                        {gpsStatusMeta.label}
-                      </span>
-                    </div>
+                    {showStatusDetails && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                        <span style={{ fontSize: 11, fontWeight: 'bold', padding: '2px 8px', borderRadius: 99, background: isRealGPS ? '#dbeafe' : '#f3f4f6', color: isRealGPS ? '#1e40af' : '#6b7280' }}>
+                          {isRealGPS ? '📍 מיקום שנשמר מהטלפון' : '📌 מיקום משוער לפי רשימת מוצבים'}
+                        </span>
+                        <span style={{ fontSize: 11, fontWeight: 'bold', padding: '2px 8px', borderRadius: 99, background: gpsStatusMeta.bg, color: gpsStatusMeta.color }}>
+                          {gpsStatusMeta.label}
+                        </span>
+                      </div>
+                    )}
 
-                    {gpsAssessment && (
+                    {showStatusDetails && gpsAssessment && (
                       <p style={{ fontSize: 12, color: '#555', marginBottom: 6 }}>
                         פער מול המיקום הרשום: {gpsAssessment.distKm.toFixed(2)} ק"מ
                       </p>
                     )}
 
-                    <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 11, fontWeight: 'bold', padding: '2px 7px', borderRadius: 99, background: report.e_status === 'תקין' ? '#dcfce7' : '#fee2e2', color: report.e_status === 'תקין' ? '#166534' : '#991b1b' }}>
-                        עירוב: {report.e_status || '—'}
-                      </span>
-                      <span style={{ fontSize: 11, fontWeight: 'bold', padding: '2px 7px', borderRadius: 99, background: report.k_cert === 'כן' ? '#dcfce7' : '#fee2e2', color: report.k_cert === 'כן' ? '#166534' : '#991b1b' }}>
-                        כשרות: {report.k_cert === 'כן' ? '✓' : '✗'}
-                      </span>
-                    </div>
+                    {showStatusDetails && (
+                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, fontWeight: 'bold', padding: '2px 7px', borderRadius: 99, background: report.e_status === 'תקין' ? '#dcfce7' : '#fee2e2', color: report.e_status === 'תקין' ? '#166534' : '#991b1b' }}>
+                          עירוב: {report.e_status || '—'}
+                        </span>
+                        <span style={{ fontSize: 11, fontWeight: 'bold', padding: '2px 7px', borderRadius: 99, background: report.k_cert === 'כן' ? '#dcfce7' : '#fee2e2', color: report.k_cert === 'כן' ? '#166534' : '#991b1b' }}>
+                          כשרות: {report.k_cert === 'כן' ? '✓' : '✗'}
+                        </span>
+                      </div>
+                    )}
 
                     <p style={{ fontSize: 10, color: '#9ca3af', marginTop: 8 }}>
                       נקודה שנשמרה: {lat.toFixed(5)}, {lon.toFixed(5)}
@@ -268,11 +284,13 @@ export default function MapView({ reports }) {
         </MapContainer>
       </div>
 
-      <p className="text-xs text-gray-400 text-center">
-        {filteredPoints.filter((point) => point.isRealGPS).length} נקודות GPS אמיתיות ·{' '}
-        {filteredPoints.filter((point) => !point.isRealGPS).length} משוערות ·{' '}
-        {filteredPoints.length} דוחות מוצגים
-      </p>
+      {showFooterSummary && (
+        <p className="text-xs text-gray-400 text-center">
+          {visiblePoints.filter((point) => point.isRealGPS).length} נקודות GPS אמיתיות ·{' '}
+          {visiblePoints.filter((point) => !point.isRealGPS).length} משוערות ·{' '}
+          {visiblePoints.length} דוחות מוצגים
+        </p>
+      )}
     </div>
   )
 }
