@@ -55,6 +55,10 @@ export default function Tab6_Deficits({ data, onChange }) {
             <p className="text-xs text-gray-500 mb-1">תאריך</p>
             <p className="font-bold">{data.date || new Date().toLocaleDateString('he-IL')}</p>
           </div>
+          <div className="bg-gray-50 rounded-xl p-3 col-span-2">
+            <p className="text-xs text-gray-500 mb-1">שעת הדוח</p>
+            <p className="font-bold">{data.report_time || new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</p>
+          </div>
           <div className="bg-gray-50 rounded-xl p-3">
             <p className="text-xs text-gray-500 mb-1">עירוב</p>
             <Badge type={data.e_status === 'תקין' ? 'success' : data.e_status === 'פסול' ? 'error' : 'default'}>

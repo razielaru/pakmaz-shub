@@ -88,6 +88,7 @@ export default function NewReport() {
     inspector: user?.displayName || '',
     base: '',
     date: new Date().toISOString().split('T')[0],
+    report_time: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }),
     gps_verification_note: '',
   })
 
@@ -247,6 +248,7 @@ export default function NewReport() {
       delete finalData.k_shabbat_photo
       delete finalData.evidence_photo
       delete finalData.gps_verification_note
+      delete finalData.report_time
 
       const device = getDeviceDetails()
 

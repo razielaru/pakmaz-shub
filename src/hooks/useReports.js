@@ -9,17 +9,30 @@ export function useReports(filters = {}) {
   return useQuery({
     queryKey: ['reports', user?.unit, user?.role, selectFields, filters],
     queryFn: async () => {
-      let q = supabase.from('reports').select(selectFields).order('date', { ascending: false })
+      const applyFilters = (query) => {
+        let next = query.order('date', { ascending: false })
 
-      if (filters.unit) q = q.eq('unit', filters.unit)
-      else if (user?.role !== 'pikud' && user?.role !== 'ugda') q = q.eq('unit', user.unit)
+        if (filters.unit) next = next.eq('unit', filters.unit)
+        else if (user?.role !== 'pikud' && user?.role !== 'ugda') next = next.eq('unit', user.unit)
 
-      if (filters.base) q = q.ilike('base', `%${filters.base}%`)
-      if (filters.from) q = q.gte('date', filters.from)
-      if (filters.to) q = q.lte('date', filters.to)
-      if (filters.limit) q = q.limit(filters.limit)
+        if (filters.base) next = next.ilike('base', `%${filters.base}%`)
+        if (filters.from) next = next.gte('date', filters.from)
+        if (filters.to) next = next.lte('date', filters.to)
+        if (filters.limit) next = next.limit(filters.limit)
 
-      const { data, error } = await q
+        return next
+      }
+
+      let q = applyFilters(supabase.from('reports').select(selectFields))
+      let { data, error } = await q
+
+      if (error && selectFields !== '*' && /column|does not exist|schema cache/i.test(error.message || '')) {
+        const fallbackQuery = applyFilters(supabase.from('reports').select('*'))
+        const fallbackResult = await fallbackQuery
+        data = fallbackResult.data
+        error = fallbackResult.error
+      }
+
       if (error) throw error
       return data || []
     },
