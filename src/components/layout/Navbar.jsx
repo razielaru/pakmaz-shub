@@ -71,6 +71,12 @@ export default function Navbar() {
     ? fullVisibleItems
     : NAV_ITEMS.filter((item) => item.path === '/' || item.path === '/report/new')
 
+  const primaryStripItems = [
+    { path: '/', label: 'בקרה', icon: '🏠' },
+    { path: '/report/new', label: 'דוח חדש', icon: '📝' },
+    { path: '/tasks', label: 'משימות', icon: '🎯' },
+  ]
+
   const isPikudRole = canAccess('ugda') && hasManagerAccess // פיקוד/אוגדה — מציגים טאבים
 
   const roleLabel = user?.role === 'inspector' ? 'מבקר שטח'
@@ -146,12 +152,14 @@ export default function Navbar() {
                 {dark ? '☀️' : '🌙'}
               </button>
 
-              <Link
-                to="/reset-password"
-                className="bg-white/10 hover:bg-white/20 text-white rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all"
-              >
-                סיסמה
-              </Link>
+              {hasManagerAccess && (
+                <Link
+                  to="/reset-password"
+                  className="bg-white/10 hover:bg-white/20 text-white rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all"
+                >
+                  סיסמה
+                </Link>
+              )}
 
               {hasManagerAccess && !canAccess('ugda') && (
                 <button
@@ -179,6 +187,29 @@ export default function Navbar() {
           </div>
         </div>
 
+        {!isPikudRole && (
+          <div className="border-t border-white/10 bg-idf-blueDark/80 backdrop-blur-sm">
+            <div className="max-w-7xl mx-auto px-4">
+              <div className="flex items-center gap-2 overflow-x-auto py-2">
+                {primaryStripItems.map((item) => (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${
+                      location.pathname === item.path
+                        ? 'bg-white text-idf-blue shadow-sm'
+                        : 'bg-white/10 text-white hover:bg-white/20'
+                    }`}
+                  >
+                    <span>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Mobile menu */}
         {menuOpen && (
           <div className="md:hidden bg-idf-blueDark dark:bg-dark-bg border-t border-blue-700 dark:border-dark-border px-4 py-3 space-y-1 animate-fade-in absolute w-full left-0 shadow-xl z-50">
@@ -204,14 +235,16 @@ export default function Navbar() {
               ))
             )}
 
-            <Link
-              to="/reset-password"
-              onClick={() => setMenuOpen(false)}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all text-blue-200 hover:bg-white/10 hover:text-white"
-            >
-              <span className="text-lg">🔐</span>
-              <span>שינוי סיסמה</span>
-            </Link>
+            {hasManagerAccess && (
+              <Link
+                to="/reset-password"
+                onClick={() => setMenuOpen(false)}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all text-blue-200 hover:bg-white/10 hover:text-white"
+              >
+                <span className="text-lg">🔐</span>
+                <span>שינוי סיסמה</span>
+              </Link>
+            )}
 
             {hasManagerAccess && !canAccess('ugda') && (
               <button

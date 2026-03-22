@@ -324,11 +324,11 @@ function TopInspectorsTab({ reports }) {
         else if (i === 2) { medal = '🥉'; colorClass = 'text-amber-600 text-2xl'; bgClass = 'bg-amber-50/30' }
         return (
           <div key={name} className={`flex items-center justify-between border shadow-sm py-3 px-4 rounded-xl transition-all ${bgClass}`}>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 min-w-0">
               <span className={`font-bold w-8 text-center ${colorClass}`}>{medal}</span>
-              <span className="font-bold text-gray-800 text-lg">{name}</span>
+              <span className="font-bold text-gray-800 text-base truncate max-w-[220px] sm:max-w-[320px]">{name}</span>
             </div>
-            <span className="bg-idf-blue text-white px-3 py-1 rounded-full text-xs font-bold shadow-sm">{count} דוחות</span>
+            <span className="bg-idf-blue text-white px-3 py-1 rounded-full text-xs font-bold shadow-sm shrink-0">{count} דוחות</span>
           </div>
         )
       })}

@@ -49,7 +49,7 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/report/new" element={<ProtectedRoute><NewReport /></ProtectedRoute>} />
-          <Route path="/tasks" element={<ProtectedRoute minRole="gdud" managerOnly><TasksPage /></ProtectedRoute>} />
+          <Route path="/tasks" element={<ProtectedRoute><TasksPage /></ProtectedRoute>} />
           <Route path="/deficits" element={<ProtectedRoute minRole="gdud" managerOnly><DeficitTracker /></ProtectedRoute>} />
           <Route path="/analytics" element={<ProtectedRoute minRole="gdud" managerOnly><Analytics /></ProtectedRoute>} />
           <Route path="/halacha" element={<ProtectedRoute minRole="gdud" managerOnly><QnAPage /></ProtectedRoute>} />

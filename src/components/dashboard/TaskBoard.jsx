@@ -175,9 +175,11 @@ export default function TaskBoard({
           <p className="text-sm text-gray-500">{subtitle}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <span className={`text-xs font-bold rounded-full px-3 py-1 ${canManageTasks ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
-            {canManageTasks ? 'יכול לנהל' : 'קריאה בלבד'}
-          </span>
+          {(!showGroupingTabs || canManageTasks) && (
+            <span className={`text-xs font-bold rounded-full px-3 py-1 ${canManageTasks ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+              {canManageTasks ? 'יכול לנהל' : 'קריאה בלבד'}
+            </span>
+          )}
           {canManageTasks && (
             <button
               onClick={() => setShowCreate((current) => !current)}
@@ -323,14 +325,6 @@ export default function TaskBoard({
 
           {(!showGroupingTabs || groupingTab === 0) && (
             <div className="space-y-5">
-              {showGroupingTabs && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <PrioritySummaryCard title="דחיפות גבוהה" count={priorityGroups.high.length} tone="high" />
-                  <PrioritySummaryCard title="דחיפות בינונית" count={priorityGroups.medium.length} tone="medium" />
-                  <PrioritySummaryCard title="דחיפות נמוכה" count={priorityGroups.low.length} tone="low" />
-                </div>
-              )}
-
               <TaskSection
                 title="משימות פתוחות"
                 emptyText="אין כרגע משימות פתוחות ביחידה"
@@ -361,21 +355,6 @@ export default function TaskBoard({
           )}
         </div>
       )}
-    </div>
-  )
-}
-
-function PrioritySummaryCard({ title, count, tone }) {
-  const tones = {
-    high: 'border-red-200 bg-red-50 text-red-700',
-    medium: 'border-amber-200 bg-amber-50 text-amber-700',
-    low: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  }
-
-  return (
-    <div className={`rounded-2xl border px-4 py-3 ${tones[tone] || tones.low}`}>
-      <div className="text-sm font-bold">{title}</div>
-      <div className="text-3xl font-extrabold mt-2">{count}</div>
     </div>
   )
 }
