@@ -32,11 +32,13 @@ const DASHBOARD_REPORT_FIELDS = [
   'unit',
   'base',
   'inspector',
+  '_elapsed_seconds',
   'e_status',
   'k_cert',
   'p_mix',
   'r_mezuzot_missing',
   'reliability_score',
+  'gps_suspicious',
   'gps_lat',
   'gps_lon',
   'latitude',
@@ -160,6 +162,7 @@ function PerfCategory({ reports }) {
   const [sub, setSub] = useState(0)
   const subs = [
     { icon: '🏆', label: 'טבלת תחרות' },
+    { icon: '🔍', label: 'אמינות מבקרים' },
     { icon: '🛤️', label: 'מסלול ביקורים' },
     { icon: '📈', label: 'SLA ומדדים' },
   ]
@@ -167,9 +170,192 @@ function PerfCategory({ reports }) {
     <>
       <SubTabs tabs={subs} active={sub} onChange={setSub} />
       {sub === 0 && <Suspense fallback={<SectionFallback />}><SLADashboard reports={reports} /></Suspense>}
-      {sub === 1 && <Suspense fallback={<SectionFallback />}><RoutePlanner embedded reports={reports} /></Suspense>}
-      {sub === 2 && <Suspense fallback={<SectionFallback />}><SLADashboard reports={reports} /></Suspense>}
+      {sub === 1 && <InspectorCredibilityTab reports={reports} />}
+      {sub === 2 && <Suspense fallback={<SectionFallback />}><RoutePlanner embedded reports={reports} /></Suspense>}
+      {sub === 3 && <Suspense fallback={<SectionFallback />}><SLADashboard reports={reports} /></Suspense>}
     </>
+  )
+}
+
+function InspectorCredibilityTab({ reports }) {
+  const inspectorStats = useMemo(() => {
+    const byInspector = {}
+
+    reports.forEach((report) => {
+      const inspector = normalizeInspectorName(report.inspector)
+      if (!inspector) return
+
+      if (!byInspector[inspector]) {
+        byInspector[inspector] = {
+          name: inspector,
+          unit: report.unit || '—',
+          count: 0,
+          totalTime: 0,
+          suspiciousGps: 0,
+          gpsDistances: [],
+          issueCount: 0,
+          patterns: new Set(),
+        }
+      }
+
+      const row = byInspector[inspector]
+      row.count += 1
+
+      const elapsed = Number(report._elapsed_seconds)
+      if (Number.isFinite(elapsed) && elapsed > 0) {
+        row.totalTime += elapsed
+      } else {
+        row.totalTime += 180
+      }
+
+      if (report.gps_suspicious) row.suspiciousGps += 1
+      if (report.gps_distance_km != null && Number.isFinite(Number(report.gps_distance_km))) {
+        row.gpsDistances.push(Number(report.gps_distance_km))
+      }
+
+      const hasIssue = (
+        report.e_status === 'פסול' ||
+        report.k_cert === 'לא' ||
+        report.p_mix === 'כן' ||
+        Number(report.r_mezuzot_missing || 0) > 0
+      )
+
+      if (hasIssue) row.issueCount += 1
+
+      row.patterns.add([
+        report.e_status || 'unknown',
+        report.k_cert || 'unknown',
+        report.p_mix || 'unknown',
+        Number(report.r_mezuzot_missing || 0) > 0 ? 'missing' : 'ok',
+      ].join('|'))
+    })
+
+    return Object.values(byInspector)
+      .map((item) => {
+        const avgTimeSec = Math.round(item.totalTime / item.count)
+        const defectRate = Math.round((item.issueCount / item.count) * 100)
+        const avgGpsDistance = item.gpsDistances.length
+          ? item.gpsDistances.reduce((sum, value) => sum + value, 0) / item.gpsDistances.length
+          : null
+
+        let trustScore = 100
+        const flags = []
+
+        if (avgTimeSec < 45) {
+          trustScore -= 20
+          flags.push('מילוי מהיר מאוד')
+        } else if (avgTimeSec < 90) {
+          trustScore -= 8
+          flags.push('מילוי מהיר')
+        }
+
+        if (item.patterns.size === 1 && item.count >= 4) {
+          trustScore -= 20
+          flags.push('דפוס תשובות קבוע')
+        }
+
+        if (item.suspiciousGps > 0) {
+          trustScore -= Math.min(18, item.suspiciousGps * 6)
+          flags.push('חריגות GPS')
+        }
+
+        if (defectRate === 0 && item.count >= 4) {
+          trustScore -= 12
+          flags.push('ללא ליקויים בכלל')
+        }
+
+        trustScore = Math.max(0, Math.min(100, trustScore))
+
+        let scoreClass = 'text-green-600'
+        let badge = 'אמין'
+
+        if (trustScore < 60) {
+          scoreClass = 'text-red-600'
+          badge = 'דורש בדיקה'
+        } else if (trustScore < 80) {
+          scoreClass = 'text-amber-600'
+          badge = 'מעקב'
+        }
+
+        return {
+          ...item,
+          avgTimeSec,
+          avgGpsDistance,
+          defectRate,
+          trustScore,
+          flags,
+          scoreClass,
+          badge,
+        }
+      })
+      .sort((a, b) => b.trustScore - a.trustScore)
+  }, [reports])
+
+  const formatTime = (seconds) => {
+    if (seconds < 60) return `${seconds} שנ'`
+    return `${Math.floor(seconds / 60)} דק'`
+  }
+
+  if (!inspectorStats.length) {
+    return <div className="text-center py-10 text-gray-400 font-bold">אין מספיק נתונים לניתוח אמינות</div>
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card bg-blue-50 border-blue-200">
+        <h3 className="font-bold text-blue-900">🔍 אמינות מבקרים</h3>
+        <p className="text-sm text-blue-800 mt-1">מדד משולב לפי זמן מילוי, חריגות GPS, שונות תשובות ודפוסי דיווח.</p>
+      </div>
+
+      <div className="space-y-3">
+        {inspectorStats.map((inspector) => (
+          <div key={inspector.name} className="card border border-gray-200">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="min-w-0">
+                <h4 className="font-bold text-lg text-gray-800 truncate">{inspector.name}</h4>
+                <p className="text-xs text-gray-400 mt-1">{inspector.unit}</p>
+              </div>
+
+              <div className="text-left shrink-0">
+                <p className={`text-3xl font-black ${inspector.scoreClass}`}>{inspector.trustScore}</p>
+                <p className="text-xs font-bold text-gray-500">{inspector.badge}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4 text-sm">
+              <div className="bg-gray-50 rounded-xl p-3">
+                <p className="text-xs text-gray-500 mb-1">דוחות</p>
+                <p className="font-bold">{inspector.count}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3">
+                <p className="text-xs text-gray-500 mb-1">זמן ממוצע</p>
+                <p className="font-bold">{formatTime(inspector.avgTimeSec)}</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3">
+                <p className="text-xs text-gray-500 mb-1">אחוז ליקויים</p>
+                <p className="font-bold">{inspector.defectRate}%</p>
+              </div>
+              <div className="bg-gray-50 rounded-xl p-3">
+                <p className="text-xs text-gray-500 mb-1">GPS ממוצע</p>
+                <p className="font-bold">
+                  {inspector.avgGpsDistance != null ? `${inspector.avgGpsDistance.toFixed(1)} ק"מ` : '—'}
+                </p>
+              </div>
+            </div>
+
+            {inspector.flags.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-4">
+                {inspector.flags.map((flag) => (
+                  <span key={`${inspector.name}-${flag}`} className="px-2 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-bold">
+                    {flag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
