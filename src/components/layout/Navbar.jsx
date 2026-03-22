@@ -69,13 +69,7 @@ export default function Navbar() {
 
   const visibleItems = hasManagerAccess
     ? fullVisibleItems
-    : NAV_ITEMS.filter((item) => item.path === '/' || item.path === '/report/new')
-
-  const primaryStripItems = [
-    { path: '/', label: 'בקרה', icon: '🏠' },
-    { path: '/report/new', label: 'דוח חדש', icon: '📝' },
-    { path: '/tasks', label: 'משימות', icon: '🎯' },
-  ]
+    : NAV_ITEMS.filter((item) => item.path === '/' || item.path === '/report/new' || item.path === '/tasks')
 
   const isPikudRole = canAccess('ugda') && hasManagerAccess // פיקוד/אוגדה — מציגים טאבים
 
@@ -186,29 +180,6 @@ export default function Navbar() {
             </div>
           </div>
         </div>
-
-        {!isPikudRole && (
-          <div className="border-t border-white/10 bg-idf-blueDark/80 backdrop-blur-sm">
-            <div className="max-w-7xl mx-auto px-4">
-              <div className="flex items-center gap-2 overflow-x-auto py-2">
-                {primaryStripItems.map((item) => (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${
-                      location.pathname === item.path
-                        ? 'bg-white text-idf-blue shadow-sm'
-                        : 'bg-white/10 text-white hover:bg-white/20'
-                    }`}
-                  >
-                    <span>{item.icon}</span>
-                    <span>{item.label}</span>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Mobile menu */}
         {menuOpen && (
