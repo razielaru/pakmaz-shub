@@ -9,13 +9,15 @@ export function calculateReliabilityScore(data, options = {}) {
   const flags = []
 
   // זמן מילוי קצר מדי
-  const elapsed = data._elapsed_seconds || 0
-  if (elapsed < 60) {
-    score -= 30
-    flags.push('זמן מילוי קצר מדי (<60 שניות)')
-  } else if (elapsed < 120) {
-    score -= 15
-    flags.push('זמן מילוי קצר (<120 שניות)')
+  const elapsed = Number(data._elapsed_seconds)
+  if (Number.isFinite(elapsed) && elapsed > 0) {
+    if (elapsed < 45) {
+      score -= 18
+      flags.push('זמן מילוי קצר מדי (<45 שניות)')
+    } else if (elapsed < 90) {
+      score -= 8
+      flags.push('זמן מילוי קצר (<90 שניות)')
+    }
   }
 
   // Honeypot נלכד
@@ -41,14 +43,13 @@ export function calculateReliabilityScore(data, options = {}) {
       data._gps_distance_km = assessment.distKm
 
       if (assessment.level === 'danger') {
-        score -= 40
+        score -= 18
         flags.push(`🚨 שיגור מרחוק: ${assessment.distKm.toFixed(1)} ק"מ מ-${data.base}`)
         data._gps_suspicious = true
       } else if (assessment.level === 'uncertain') {
-        score -= 15
         flags.push(`⚠️ GPS רחוק ${assessment.distKm.toFixed(1)} ק"מ, אבל הדיוק חלש (${assessment.accuracyMeters} מ')`)
       } else if (assessment.level === 'warning') {
-        score -= 10
+        score -= 5
         flags.push(`⚠️ מרחק חריג מהמוצב: ${assessment.distKm.toFixed(1)} ק"מ`)
       }
     } else {
@@ -58,7 +59,7 @@ export function calculateReliabilityScore(data, options = {}) {
 
   // חסר GPS
   if (lat == null || lon == null) {
-    score -= 10
+    score -= 5
     flags.push('חסר מיקום GPS')
   }
 
