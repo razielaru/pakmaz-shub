@@ -105,6 +105,22 @@ export default function NewReport() {
   const draftKey = useMemo(() => getDraftStorageKey(user), [user])
 
   useEffect(() => {
+    const syncClock = () => {
+      setFormData((prev) => ({
+        ...prev,
+        report_time: new Date().toLocaleTimeString('he-IL', {
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      }))
+    }
+
+    syncClock()
+    const interval = window.setInterval(syncClock, 30000)
+    return () => window.clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
     setTabStartTimes((prev) => ({ ...prev, [activeTab]: Date.now() }))
   }, [activeTab])
 
@@ -318,7 +334,7 @@ export default function NewReport() {
     <PageLayout title="📋 דיווח ביקורת שטח" subtitle={user?.unit}>
       <div className="max-w-4xl mx-auto bg-white dark:bg-dark-surface rounded-2xl shadow-sm border border-idf-border dark:border-dark-border overflow-hidden pb-6 mb-20">
         <div className="p-4 sm:p-5 bg-gray-50 dark:bg-dark-surface2 border-b border-gray-200 dark:border-dark-border">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
             <div>
               <label className="label">שם ממלא הדוח *</label>
               <input
@@ -359,6 +375,16 @@ export default function NewReport() {
                 className="input-field"
                 value={formData.date}
                 onChange={(e) => setFormData((prev) => ({ ...prev, date: e.target.value }))}
+              />
+            </div>
+
+            <div>
+              <label className="label">שעת הדוח</label>
+              <input
+                type="text"
+                className="input-field font-semibold"
+                value={formData.report_time || ''}
+                readOnly
               />
             </div>
           </div>

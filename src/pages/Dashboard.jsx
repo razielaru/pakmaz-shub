@@ -340,10 +340,21 @@ export default function Dashboard() {
 // קומפוננטות פנימיות — ללא שינוי מהמקור
 // ─────────────────────────────────────────────
 
+function normalizeInspectorName(name) {
+  return (name || '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function TopInspectorsTab({ reports }) {
   const insp = useMemo(() => {
     const map = {}
-    reports.forEach(r => { if (r.inspector) map[r.inspector] = (map[r.inspector] || 0) + 1 })
+    reports.forEach((r) => {
+      const normalizedName = normalizeInspectorName(r.inspector)
+      if (!normalizedName) return
+      map[normalizedName] = (map[normalizedName] || 0) + 1
+    })
     return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 9)
   }, [reports])
 
@@ -441,7 +452,13 @@ function ProgressChartTab({ reports }) {
 }
 
 function ManagementTab({ reports, unit }) {
-  const inspectors = [...new Set(reports.map(r => r.inspector).filter(Boolean))]
+  const inspectors = [
+    ...new Set(
+      reports
+        .map((r) => normalizeInspectorName(r.inspector))
+        .filter(Boolean)
+    ),
+  ]
   return (
     <div className="space-y-6">
       <div className="section-title">📊 ניהול ודיווח</div>
