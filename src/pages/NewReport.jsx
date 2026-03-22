@@ -345,7 +345,7 @@ export default function NewReport() {
           {
             tabIndex: 1,
             label: 'טרקלין/ויקוק',
-            minMs: 30000,
+            minMs: 15000,
             fields: LOUNGE_REQUIRED_FIELDS,
           },
         ]
@@ -384,7 +384,7 @@ export default function NewReport() {
 
       const duration = now - (tabStartTimes[group.tabIndex] || now)
       if (duration <= 0 || duration < group.minMs) {
-        nextSpeedFlags.push(`מילוי מהיר מדי בטאב ${group.label} (מינימום ${Math.round(group.minMs / 1000)} שניות)`)
+        nextSpeedFlags.push(`נראה שעברת על טאב ${group.label} מהר מדי, אתה בטוח שמילאת כמו שצריך? אם לא שים לב: תשובות נכונות יתנו מענה טוב לחיילים בקצה, אשריך!`)
       }
     })
 
