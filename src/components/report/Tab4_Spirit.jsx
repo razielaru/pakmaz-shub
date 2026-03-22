@@ -94,7 +94,6 @@ export default function Tab4_Spirit({ data, onChange }) {
           /* חטמ"ר — שאלות שיעור בסיסיות */
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <RadioWithExplanation label="האם יש ימי ישיבה?" field="soldier_yeshiva" value={data.soldier_yeshiva} onChange={set} />
-            <RadioWithExplanation label="האם המענה הכשרותי מספק?" field="soldier_food" value={data.soldier_food} onChange={set} />
             
             {/* שאלה: יש שיעור תורה? */}
             <RadioWithExplanation label="יש שיעור תורה במוצב?" field="soldier_has_lesson" value={data.soldier_has_lesson} onChange={set} />
