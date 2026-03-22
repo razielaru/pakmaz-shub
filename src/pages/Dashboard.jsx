@@ -156,6 +156,7 @@ export default function Dashboard() {
 
   const { data: reports = [], isLoading } = useReports()
   const { data: defStats } = useDeficitStats()
+  const canManageUnitTasks = Boolean(user?.canManageTasks || (hasManagerAccess && canAccess('gdud')))
 
   async function handleManagerUnlock(event) {
     event.preventDefault()
@@ -285,7 +286,7 @@ export default function Dashboard() {
                 histFilter={histFilter}
                 setHistFilter={setHistFilter}
                 isPikud={false}
-                canManageTasks={Boolean(user?.canManageTasks)}
+                canManageTasks={canManageUnitTasks}
               />
             )}
             {currentTabId === 'halacha' && <HalachaCategory reports={reports} unit={user?.unit} />}

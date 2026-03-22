@@ -42,12 +42,13 @@ function exportTasksCSV(tasks) {
 }
 
 export default function TasksPage() {
-  const { user } = useAuth()
+  const { user, hasManagerAccess, canAccess } = useAuth()
   const [statusFilter, setStatusFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
   const [assigneeFilter, setAssigneeFilter] = useState('')
   const [baseFilter, setBaseFilter] = useState('')
   const { data: tasks = [], isLoading, error, refetch } = useTasks()
+  const canManageUnitTasks = Boolean(user?.canManageTasks || (hasManagerAccess && canAccess('gdud')))
 
   const filtered = useMemo(() => {
     return tasks.filter((task) => {
@@ -81,8 +82,8 @@ export default function TasksPage() {
       subtitle="ניהול, בקרה ויצוא של משימות לחיילים"
       actions={(
         <div className="flex items-center gap-2 flex-wrap">
-          <Badge type={user?.canManageTasks ? 'success' : 'info'}>
-            {user?.canManageTasks ? 'הרשאת ניהול מלאה' : 'קריאה בלבד'}
+          <Badge type={canManageUnitTasks ? 'success' : 'info'}>
+            {canManageUnitTasks ? 'הרשאת ניהול מלאה' : 'קריאה בלבד'}
           </Badge>
           <button
             type="button"
@@ -140,7 +141,7 @@ export default function TasksPage() {
             message={error.message || 'אירעה שגיאת הרשאה או חיבור ל-Supabase'}
             action={<button type="button" onClick={() => refetch()} className="btn-danger">נסה שוב</button>}
           />
-        ) : filtered.length === 0 && tasks.length === 0 && !user?.canManageTasks ? (
+        ) : filtered.length === 0 && tasks.length === 0 && !canManageUnitTasks ? (
           <EmptyState
             icon="🗂️"
             title="עדיין אין משימות ביחידה"
@@ -155,7 +156,7 @@ export default function TasksPage() {
         ) : (
           <TaskBoard
             unit={user?.unit}
-            canManageTasks={Boolean(user?.canManageTasks)}
+            canManageTasks={canManageUnitTasks}
             title="🎯 לוח משימות מלא"
             subtitle={`מציג ${filtered.length} משימות מתוך ${tasks.length}`}
             presetTasks={filtered}

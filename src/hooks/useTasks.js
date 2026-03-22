@@ -7,6 +7,10 @@ function isMissingTasksTable(error) {
   return /relation|does not exist|unit_tasks/i.test(error?.message || '')
 }
 
+function isTaskPermissionError(error) {
+  return /row-level security|permission denied|violates row-level security/i.test(error?.message || '')
+}
+
 export function useTasks(filters = {}) {
   const { user } = useAuth()
   const enabled = filters.enabled ?? true
@@ -57,6 +61,9 @@ export function useCreateTask() {
         if (isMissingTasksTable(error)) {
           throw new Error('טבלת המשימות עדיין לא קיימת. יש להריץ את עדכון ה-SQL החדש ב-Supabase.')
         }
+        if (isTaskPermissionError(error)) {
+          throw new Error('לחשבון הזה עדיין אין הרשאת שרת להוספת משימות. יש להפעיל can_manage_tasks ב-Supabase עבור היחידה.')
+        }
         throw error
       }
 
@@ -104,6 +111,9 @@ export function useUpdateTaskStatus() {
       if (error) {
         if (isMissingTasksTable(error)) {
           throw new Error('טבלת המשימות עדיין לא קיימת. יש להריץ את עדכון ה-SQL החדש ב-Supabase.')
+        }
+        if (isTaskPermissionError(error)) {
+          throw new Error('לחשבון הזה עדיין אין הרשאת שרת לעדכון משימות. יש להפעיל can_manage_tasks ב-Supabase עבור היחידה.')
         }
         throw error
       }
