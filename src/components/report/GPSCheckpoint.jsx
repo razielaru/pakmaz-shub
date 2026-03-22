@@ -159,8 +159,12 @@ export default function GPSCheckpoint({ checkpointNum, base, referenceCoords, on
                   ✅ מיקום נשמר — {gps.nearestBase?.name} ({gps.nearestBase?.distanceKm.toFixed(1)} ק"מ)
                 </p>
               )
+            ) : gps.loading ? (
+              <p className="text-xs text-blue-700 dark:text-blue-400 font-medium">📡 מאתר מיקום אוטומטית...</p>
             ) : (
-              <p className="text-xs text-gray-500 dark:text-dark-muted">לחץ לאישור מיקום פיזי</p>
+              <p className="text-xs text-gray-500 dark:text-dark-muted">
+                יש לאפשר גישת מיקום כדי לשלוח דוח
+              </p>
             )}
             {gps.hasFix && (
               <p className="text-[11px] text-gray-500 dark:text-dark-muted mt-1">
@@ -184,16 +188,11 @@ export default function GPSCheckpoint({ checkpointNum, base, referenceCoords, on
           )}
 
           {/* כפתור GPS */}
-          {gps.hasFix ? (
-            <button type="button" onClick={gps.reset}
-              className="text-xs text-gray-500 hover:text-red-600 flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-300 hover:border-red-300 transition-all">
-              🔄 עדכן
-            </button>
-          ) : (
+          {!gps.hasFix && !gps.loading && (
             <button type="button" onClick={handleCapture} disabled={gps.loading}
               className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5">
               {gps.loading ? <Spinner size="sm" color="white" /> : '📍'}
-              {gps.loading ? 'מאתר...' : 'אשר מיקום'}
+              {gps.loading ? 'מאתר...' : gps.isDenied ? 'אפשר מיקום מחדש' : 'אשר מיקום'}
             </button>
           )}
         </div>

@@ -1,9 +1,9 @@
 // src/hooks/useGPS.js
 //
 // זרימה:
-// 1. watchPosition רץ ברקע — שומר מיקום ב-state בלבד
-// 2. ברגע שליחת הדוח — handleSubmit לוקח gps.lat/lon = המיקום הנוכחי
-// 3. אם ביטל הרשאה — hasFix=false, שליחה נחסמת
+// 1. אם יש הרשאת מיקום פעילה — watchPosition רץ בשקט ברקע
+// 2. אין ביטול פנימי של הרשאת מיקום; ביטול רק דרך הדפדפן / מערכת ההפעלה
+// 3. אם ההרשאה נחסמה — hasFix=false, שליחה נחסמת עד שההרשאה תחזור
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { findNearestBase } from '../utils/haversine'
@@ -74,15 +74,23 @@ export function useGPS(storageKey = 'gps_default') {
   useEffect(() => {
     checkPermission().then(state => {
       setPermission(state)
-      if (state === 'granted') { setLoading(true); startWatch() }
+      if (state === 'granted') {
+        setLoading(true)
+        startWatch()
+      }
     })
 
     if (navigator.permissions) {
       navigator.permissions.query({ name: 'geolocation' }).then(result => {
         result.onchange = () => {
           setPermission(result.state)
-          if (result.state === 'granted') { setLoading(true); startWatch() }
-          else if (result.state === 'denied') { stopWatch(); handleDenied() }
+          if (result.state === 'granted') {
+            setLoading(true)
+            startWatch()
+          } else if (result.state === 'denied') {
+            stopWatch()
+            handleDenied()
+          }
         }
       })
     }
@@ -119,9 +127,10 @@ export function useGPS(storageKey = 'gps_default') {
   }, [])
 
   const reset = useCallback(() => {
-    setLat(null); setLon(null); setAccuracy(null)
-    latestFixRef.current = { lat: null, lon: null, accuracy: null }
-    // watch ממשיך — יעדכן מחדש תוך שניות
+    if (permission === 'granted') {
+      setLoading(true)
+      startWatch()
+    }
   }, [])
 
   const nearestBase    = lat != null && lon != null ? findNearestBase(lat, lon) : null

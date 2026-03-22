@@ -1,9 +1,7 @@
 import Badge from '../ui/Badge'
-import { buildAlertsList } from '../../utils/alerts'
 import { calculateReliabilityScore } from '../../utils/reliabilityScore'
 
 export default function Tab6_Deficits({ data, onChange }) {
-  const alerts = buildAlertsList(data)
   const { score, flags } = calculateReliabilityScore({ ...data })
 
   function set(field, value) { onChange(prev => ({ ...prev, [field]: value })) }
@@ -26,22 +24,6 @@ export default function Tab6_Deficits({ data, onChange }) {
           </ul>
         )}
       </div>
-
-      {/* Alerts */}
-      {alerts.length > 0 && (
-        <div className="card space-y-2">
-          <h3 className="font-bold text-red-700 flex items-center gap-2">
-            🚨 התראות שיישלחו אוטומטית
-          </h3>
-          {alerts.map((a, i) => (
-            <div key={i} className={`rounded-lg px-3 py-2 text-sm font-medium flex items-center gap-2 ${
-              a.type === 'error' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
-            }`}>
-              {a.type === 'error' ? '🔴' : '⚠️'} {a.msg}
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Report summary */}
       <div className="card space-y-3">

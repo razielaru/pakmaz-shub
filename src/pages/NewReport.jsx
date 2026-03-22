@@ -31,6 +31,129 @@ const TABS = [
 ]
 
 const DRAFT_VERSION = 2
+const COMBAT_BRIGADES = ['חטיבה 35', 'חטיבה 89', 'חטיבה 900']
+
+const KASHRUT_REQUIRED_FIELDS = [
+  ['k_cook_type', 'סוג מטבח'],
+  ['k_cert', 'תעודת כשרות מתוקפת'],
+  ['k_bishul', 'בישול ישראל'],
+  ['k_issues', 'יש תקלות כשרות'],
+  ['k_shabbat_supervisor', 'יש נאמן כשרות בשבת'],
+  ['k_separation', 'הפרדה'],
+  ['k_briefing', 'תדריך טבחים'],
+  ['k_products', 'רכש חוץ לפי פקודה'],
+  ['k_dates', 'דף תאריכים לתבלינים'],
+  ['k_leafs', 'שטיפת ירק'],
+  ['k_holes', 'חירור גסטרונומים'],
+  ['k_eggs', 'בדיקת ביצים'],
+  ['k_heater', 'חימום נפרד בין בשר ודגים'],
+  ['k_app', 'מולאה אפליקציה'],
+]
+
+const KASHRUT_NON_COMBAT_EXTRA_FIELDS = [
+  ['k_machshir', 'חדר מכ״ש במפג״ד'],
+]
+
+const LOUNGE_REQUIRED_FIELDS = [
+  ['t_private', 'כלים פרטיים בטרקלין'],
+  ['t_kitchen_tools', 'כלי מטבח בטרקלין'],
+  ['t_procedure', 'נוהל סגירה בטרקלין'],
+  ['t_friday', 'כלים חשמליים סגורים בשבת'],
+  ['t_app', 'אפליקציית טרקלין'],
+  ['w_location', 'מיקום הוויקוק'],
+  ['w_private', 'כלים פרטיים בוויקוק'],
+  ['w_kitchen_tools', 'כלי מטבח בוויקוק'],
+  ['w_procedure', 'עבודה לפי פקודה בוויקוק'],
+  ['w_guidelines', 'הנחיות לוויקוק'],
+  ['p_pakal', 'פק״ל רבנות'],
+  ['p_marked', 'הכלים מסומנים'],
+  ['p_mix', 'ערבוב כלים'],
+  ['p_kasher', 'נדרשת הכשרת כלים'],
+]
+
+const SYNAGOGUE_REQUIRED_FIELDS = [
+  ['s_torah_id', 'מספר ספר תורה'],
+  ['s_torah_nusach', 'נוסח ספר התורה'],
+  ['hq_shul_sefer_torah', 'ס״ת, תפילין, טליתות, כיפות, נרות מסודרים'],
+  ['s_board', 'לוח רבנות מעודכן'],
+  ['s_clean', 'בית הכנסת נקי'],
+  ['s_havdala', 'ערכת הבדלה והדלקת נרות שבת'],
+  ['s_gemach', 'גמ״ח טלית ותפילין'],
+  ['s_smartbis', 'תקלת בינוי / סמארט-ביס'],
+  ['s_geniza', 'פח גניזה'],
+  ['hq_shul_clean', 'בית הכנסת מטופל ונקי'],
+  ['hq_shul_equip_missing', 'ציוד חסר בבית הכנסת'],
+  ['hq_holiday_equipment', 'מענה בחגים'],
+  ['hq_holiday_equip_recv', 'ציוד מותאם לחגים'],
+  ['hq_religion_equip_req', 'בקשת ציוד דת'],
+  ['hq_mezuzot_gap', 'פער במזוזות ביחידה'],
+  ['r_mezuzot_missing', 'כמות מזוזות חסרות'],
+  ['e_status', 'סטטוס עירוב'],
+  ['e_check', 'בוצעה בדיקה פיזית'],
+  ['e_doc', 'בוצע תיעוד'],
+  ['e_photo', 'קיימת תצ״א'],
+  ['hq_eruv_problem', 'בעיה בעירוב קיבלה מענה'],
+]
+
+const SYNAGOGUE_COMBAT_EXTRA_FIELDS = [
+  ['hq_board_info', 'לוח רבנות מורחב'],
+  ['hq_tefillin_stand', 'עמדת טלית ותפילין'],
+  ['hq_eruv_door_shape', 'צורת הפתח לעירוב'],
+  ['hq_eruv_fence_work', 'עבודת גדר שפוגעת בעירוב'],
+  ['hq_shabbat_device_board', 'שילוט על התקני שבת'],
+]
+
+const SPIRIT_REQUIRED_FIELDS = [
+  ['r_sg', 'הוראות רבנות בש.ג'],
+  ['r_hamal', 'הוראות רבנות בחמ״ל'],
+  ['r_sign', 'שילוט שבת'],
+  ['r_netilot', 'נטלות'],
+]
+
+const SPIRIT_COMBAT_REQUIRED_FIELDS = [
+  ['command', 'פיקוד'],
+  ['activity_date', 'תאריך הפעילות'],
+  ['lesson_name', 'שם השיעור'],
+  ['is_rabbi_instructor', 'האם המעביר הוא רב היחידה'],
+  ['instructor_name', 'שם המעביר'],
+  ['participants_count', 'כמות משתתפים'],
+  ['participants_type', 'סוג משתתפים'],
+]
+
+const SPIRIT_NON_COMBAT_REQUIRED_FIELDS = [
+  ['soldier_yeshiva', 'יש ימי ישיבה'],
+  ['soldier_has_lesson', 'יש שיעור תורה במוצב'],
+  ['soldier_want_lesson', 'יש רצון לשיעור תורה'],
+]
+
+function isAnswered(value) {
+  if (value == null) return false
+  if (typeof value === 'number') return true
+  if (typeof value === 'string') return value.trim() !== ''
+  return true
+}
+
+function isExplainWithoutReason(value) {
+  return typeof value === 'string'
+    && value.startsWith('לא יודע')
+    && !/\((.*?)\)/.test(value.replace(/\(\s*\)/, ''))
+}
+
+function hasMeaningfulValue(value) {
+  if (value == null) return false
+  if (typeof value === 'string') return value.trim() !== ''
+  return true
+}
+
+function getMissingFields(formData, requiredFields) {
+  return requiredFields
+    .filter(([field]) => !isAnswered(formData[field]))
+    .map(([, label]) => label)
+}
+
+function hasLoungeContent(formData) {
+  return LOUNGE_REQUIRED_FIELDS.some(([field]) => hasMeaningfulValue(formData[field]))
+}
 
 function getDraftStorageKey(user) {
   return `pakmaz:new-report-draft:${user?.unit || 'guest'}`
@@ -210,28 +333,85 @@ export default function NewReport() {
     const warnings = []
     const nextSpeedFlags = []
     const now = Date.now()
+    const isCombatBrigade = COMBAT_BRIGADES.includes(user?.unit)
+    const loungeMode = !isCombatBrigade && hasLoungeContent(formData)
 
     if (!formData.base) warnings.push('חובה להזין שם מוצב')
     if (!formData.inspector?.trim()) warnings.push('חובה להזין שם ממלא')
     if (!gps.hasFix) warnings.push('חובה לאשר מיקום GPS לפני השליחה')
 
-    if (!formData.k_cert || formData.k_cert.startsWith('לא יודע')) warnings.push('חובה לבדוק תעודת כשרות (טאב כשרות)')
-    if (!formData.e_status) warnings.push('חובה לציין סטטוס עירוב (טאב ביה״כ)')
-    if (!formData.r_sg?.includes('כן') && !formData.r_hamal?.includes('כן') && !['חטיבה 35', 'חטיבה 89', 'חטיבה 900'].includes(user?.unit)) {
-      warnings.push('חובה לבדוק נהלים בש.ג או בחמ״ל')
-    }
+    const requiredGroups = loungeMode
+      ? [
+          {
+            tabIndex: 1,
+            label: 'טרקלין/ויקוק',
+            minMs: 30000,
+            fields: LOUNGE_REQUIRED_FIELDS,
+          },
+        ]
+      : [
+          {
+            tabIndex: 0,
+            label: 'כשרות',
+            minMs: 30000,
+            fields: isCombatBrigade
+              ? KASHRUT_REQUIRED_FIELDS
+              : [...KASHRUT_REQUIRED_FIELDS, ...KASHRUT_NON_COMBAT_EXTRA_FIELDS],
+          },
+          {
+            tabIndex: 2,
+            label: 'ביה"כ ועירוב',
+            minMs: 30000,
+            fields: isCombatBrigade
+              ? [...SYNAGOGUE_REQUIRED_FIELDS, ...SYNAGOGUE_COMBAT_EXTRA_FIELDS]
+              : SYNAGOGUE_REQUIRED_FIELDS,
+          },
+          {
+            tabIndex: 3,
+            label: 'נהלים ורוח',
+            minMs: 15000,
+            fields: isCombatBrigade
+              ? [...SPIRIT_REQUIRED_FIELDS, ...SPIRIT_COMBAT_REQUIRED_FIELDS]
+              : [...SPIRIT_REQUIRED_FIELDS, ...SPIRIT_NON_COMBAT_REQUIRED_FIELDS],
+          },
+        ]
 
-    Object.keys(formData).forEach((key) => {
-      if (typeof formData[key] === 'string' && formData[key] === 'לא יודע / לא בדקתי') {
-        warnings.push("חסר הסבר מילולי עבור אחת התשובות של 'לא יודע/לא נבדק'")
+    requiredGroups.forEach((group) => {
+      const missingFields = getMissingFields(formData, group.fields)
+      if (missingFields.length > 0) {
+        warnings.push(`בטאב ${group.label} חסרים: ${missingFields.join(', ')}`)
+      }
+
+      const duration = now - (tabStartTimes[group.tabIndex] || now)
+      if (duration <= 0 || duration < group.minMs) {
+        nextSpeedFlags.push(`מילוי מהיר מדי בטאב ${group.label} (מינימום ${Math.round(group.minMs / 1000)} שניות)`)
       }
     })
 
-    const thresholds = { 0: 15000, 2: 10000 }
-    Object.entries(thresholds).forEach(([tabIdx, minMs]) => {
-      const duration = now - (tabStartTimes[tabIdx] || now)
-      if (duration > 0 && duration < minMs) {
-        nextSpeedFlags.push(`מילוי מהיר מדי בטאב ${TABS[tabIdx].label}`)
+    if (formData.k_issues === 'כן' && !formData.k_issues_description?.trim()) {
+      warnings.push('בטאב כשרות חובה לפרט את תקלות הכשרות שנמצאו')
+    }
+
+    if (formData.k_shabbat_supervisor === 'כן') {
+      if (!formData.k_shabbat_supervisor_name?.trim()) warnings.push('בטאב כשרות חובה להזין שם נאמן כשרות')
+      if (!formData.k_shabbat_supervisor_phone?.trim()) warnings.push('בטאב כשרות חובה להזין טלפון נאמן כשרות')
+    }
+
+    if (!isCombatBrigade) {
+      if (formData.soldier_has_lesson === 'כן') {
+        if (!formData.soldier_lesson_teacher?.trim()) warnings.push('בטאב נהלים ורוח חובה להזין שם מעביר שיעור')
+        if (!formData.soldier_lesson_phone?.trim()) warnings.push('בטאב נהלים ורוח חובה להזין טלפון מעביר שיעור')
+      }
+
+      if (formData.soldier_want_lesson === 'כן') {
+        if (!formData.soldier_want_lesson_qty?.toString().trim()) warnings.push('בטאב נהלים ורוח חובה להזין כמה אנשים רוצים שיעור')
+        if (!formData.soldier_want_lesson_phone?.trim()) warnings.push('בטאב נהלים ורוח חובה להזין טלפון איש קשר לשיעור')
+      }
+    }
+
+    Object.entries(formData).forEach(([key, value]) => {
+      if (isExplainWithoutReason(value)) {
+        warnings.push(`חסר הסבר מילולי עבור "${key}" שסומן כ"לא נבדק"`)
       }
     })
 
