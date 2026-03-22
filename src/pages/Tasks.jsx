@@ -48,7 +48,9 @@ export default function TasksPage() {
   const [assigneeFilter, setAssigneeFilter] = useState('')
   const [baseFilter, setBaseFilter] = useState('')
   const { data: tasks = [], isLoading, error, refetch } = useTasks()
-  const canManageUnitTasks = Boolean(user?.canManageTasks || (hasManagerAccess && canAccess('gdud')))
+  const canManageUnitTasks = Boolean(
+    hasManagerAccess && (user?.canManageTasks || canAccess('gdud'))
+  )
 
   const filtered = useMemo(() => {
     return tasks.filter((task) => {
