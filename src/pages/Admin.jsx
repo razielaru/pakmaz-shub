@@ -28,6 +28,7 @@ export default function Admin() {
   const [loginEmail, setLoginEmail] = useState('')
   const [selectedRole, setSelectedRole] = useState('gdud')
   const [canManageTasks, setCanManageTasks] = useState(false)
+  const [managerAccessCode, setManagerAccessCode] = useState('')
   const [loadingPwd, setLoadingPwd] = useState(false)
   const { data: accounts = [], isLoading: accountsLoading, error: accountsError, refetch } = useUnitAccounts()
   const updateUnitAccount = useUpdateUnitAccount()
@@ -47,6 +48,7 @@ export default function Admin() {
     setLoginEmail(selectedAccount.login_email || '')
     setSelectedRole(selectedAccount.role || 'gdud')
     setCanManageTasks(Boolean(selectedAccount.can_manage_tasks))
+    setManagerAccessCode('')
   }, [selectedAccount])
 
   async function handleAccountUpdate(e) {
@@ -63,6 +65,15 @@ export default function Admin() {
         role: selectedRole,
         can_manage_tasks: canManageTasks,
       })
+
+      if (managerAccessCode.trim()) {
+        const { error: codeError } = await supabase.rpc('set_unit_manager_access_code', {
+          target_unit: selectedUnitPwd,
+          new_code: managerAccessCode.trim(),
+        })
+        if (codeError) throw codeError
+      }
+
       await logAdminAudit({
         action: 'unit_account_updated',
         actorName: user?.displayName,
@@ -72,11 +83,44 @@ export default function Admin() {
           login_email: loginEmail.trim().toLowerCase(),
           role: selectedRole,
           can_manage_tasks: canManageTasks,
+          manager_access_code_updated: Boolean(managerAccessCode.trim()),
         }),
       })
-      toast.success(`כתובת ההתחברות עודכנה בהצלחה ליחידה ${selectedUnitPwd}`)
+      setManagerAccessCode('')
+      toast.success(`חשבון היחידה עודכן בהצלחה עבור ${selectedUnitPwd}`)
     } catch (err) {
       toast.error('שגיאה בעדכון החשבון: ' + err.message)
+    } finally {
+      setLoadingPwd(false)
+    }
+  }
+
+  async function handleClearManagerCode() {
+    if (!selectedUnitPwd) {
+      toast.error('בחר קודם יחידה')
+      return
+    }
+
+    setLoadingPwd(true)
+    try {
+      const { error } = await supabase.rpc('set_unit_manager_access_code', {
+        target_unit: selectedUnitPwd,
+        new_code: null,
+      })
+      if (error) throw error
+
+      await logAdminAudit({
+        action: 'unit_manager_access_cleared',
+        actorName: user?.displayName,
+        actorUnit: user?.unit,
+        targetUnit: selectedUnitPwd,
+        details: 'manager access cleared',
+      })
+
+      setManagerAccessCode('')
+      toast.success('סיסמת פתיחת הניהול נוקתה')
+    } catch (err) {
+      toast.error('שגיאה בניקוי סיסמת הניהול: ' + err.message)
     } finally {
       setLoadingPwd(false)
     }
@@ -186,6 +230,29 @@ export default function Admin() {
                         <span className="font-semibold text-sm text-gray-700">הרשאת ניהול משימות</span>
                         <input type="checkbox" checked={canManageTasks} onChange={(e) => setCanManageTasks(e.target.checked)} />
                       </label>
+                    </div>
+                    <div className="card space-y-3">
+                      <div>
+                        <label className="label">סיסמת פתיחת ניהול לרב החטמ״ר</label>
+                        <input
+                          type="password"
+                          className="input-field text-center"
+                          value={managerAccessCode}
+                          onChange={(e) => setManagerAccessCode(e.target.value)}
+                          placeholder="השאר ריק אם לא רוצים לשנות"
+                        />
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        הסיסמה הזו פותחת את הטאבים המנהליים מתוך מסך הבקרה של היחידה. היא נשמרת כ-hash מאובטח ב-Supabase.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleClearManagerCode}
+                        disabled={loadingPwd || updateUnitAccount.isPending}
+                        className="btn-outline w-full"
+                      >
+                        נקה סיסמת פתיחת ניהול
+                      </button>
                     </div>
                     {selectedAccount && (
                       <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm">

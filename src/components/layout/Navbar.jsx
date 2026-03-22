@@ -48,7 +48,7 @@ function useDarkMode() {
 }
 
 export default function Navbar() {
-  const { user, logout, canAccess } = useAuth()
+  const { user, logout, canAccess, hasManagerAccess, lockManagerAccess } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -61,13 +61,17 @@ export default function Navbar() {
     navigate('/login')
   }
 
-  const visibleItems = NAV_ITEMS.filter(item => {
+  const fullVisibleItems = NAV_ITEMS.filter(item => {
     if (!item.minRole) return true
     if (user?.role === 'inspector' || user?.role === 'soldier') return false
     return canAccess(item.minRole)
   })
 
-  const isPikudRole = canAccess('ugda') // פיקוד ואוגדה — מציגים טאבים
+  const visibleItems = hasManagerAccess
+    ? fullVisibleItems
+    : NAV_ITEMS.filter((item) => item.path === '/' || item.path === '/report/new')
+
+  const isPikudRole = canAccess('ugda') && hasManagerAccess // פיקוד/אוגדה — מציגים טאבים
 
   const roleLabel = user?.role === 'inspector' ? 'מבקר שטח'
     : user?.role === 'soldier' ? 'חייל'
@@ -142,6 +146,26 @@ export default function Navbar() {
                 {dark ? '☀️' : '🌙'}
               </button>
 
+              <Link
+                to="/reset-password"
+                className="bg-white/10 hover:bg-white/20 text-white rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all"
+              >
+                סיסמה
+              </Link>
+
+              {hasManagerAccess && !canAccess('ugda') && (
+                <button
+                  onClick={async () => {
+                    await lockManagerAccess()
+                    toast.success('מצב מנהל ננעל')
+                    navigate('/')
+                  }}
+                  className="bg-white/10 hover:bg-white/20 text-white rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all"
+                >
+                  נעל ניהול
+                </button>
+              )}
+
               <button onClick={() => setLogoutModal(true)}
                 className="bg-white/10 hover:bg-white/20 text-white rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all">
                 יציאה
@@ -178,6 +202,31 @@ export default function Navbar() {
                   <span>{item.label}</span>
                 </Link>
               ))
+            )}
+
+            <Link
+              to="/reset-password"
+              onClick={() => setMenuOpen(false)}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all text-blue-200 hover:bg-white/10 hover:text-white"
+            >
+              <span className="text-lg">🔐</span>
+              <span>שינוי סיסמה</span>
+            </Link>
+
+            {hasManagerAccess && !canAccess('ugda') && (
+              <button
+                type="button"
+                onClick={async () => {
+                  setMenuOpen(false)
+                  await lockManagerAccess()
+                  toast.success('מצב מנהל ננעל')
+                  navigate('/')
+                }}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all text-blue-200 hover:bg-white/10 hover:text-white w-full"
+              >
+                <span className="text-lg">🔒</span>
+                <span>נעל ניהול</span>
+              </button>
             )}
           </div>
         )}

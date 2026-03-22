@@ -81,9 +81,17 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
   
-  const { login } = useAuth();
+  const { login, requestPasswordReset } = useAuth();
   const navigate = useNavigate();
+
+  function maskEmail(email) {
+    const [localPart = '', domain = ''] = email.split('@');
+    if (!localPart || !domain) return email;
+    if (localPart.length <= 2) return `${localPart[0] || '*'}***@${domain}`;
+    return `${localPart.slice(0, 2)}***${localPart.slice(-1)}@${domain}`;
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -100,6 +108,23 @@ export default function Login() {
       toast.error(err.message || 'שגיאה בהתחברות');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleForgotPassword() {
+    if (!selectedUnit) {
+      toast.error('בחר יחידה לפני שליחת קישור איפוס');
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      const result = await requestPasswordReset(selectedUnit);
+      toast.success(`נשלח קישור איפוס ל-${maskEmail(result.email)}`);
+    } catch (err) {
+      toast.error(err.message || 'שליחת קישור האיפוס נכשלה');
+    } finally {
+      setResetLoading(false);
     }
   }
 
@@ -176,6 +201,15 @@ export default function Login() {
                 className="w-full bg-idf-blue hover:bg-idf-blueDark text-white font-bold text-lg py-4 rounded-xl transition-all transform active:scale-95 shadow-lg flex justify-center items-center gap-2"
               >
                 {loading ? <Spinner size="sm" color="white" /> : 'התחבר למערכת'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleForgotPassword}
+                disabled={resetLoading}
+                className="w-full text-idf-blue hover:text-idf-blueDark font-semibold text-sm py-2 transition-colors disabled:opacity-60"
+              >
+                {resetLoading ? 'שולח קישור איפוס...' : 'שכחתי סיסמה'}
               </button>
             </form>
           </div>

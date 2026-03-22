@@ -41,7 +41,6 @@ const SOLDIER_TABS = [
   { icon: '🗺️', label: 'מפת דיווחים',   id: 'map'      },
   { icon: '⏱️', label: 'שעות פעילות',   id: 'hours'    },
   { icon: '📈', label: 'התקדמות',       id: 'progress' },
-  { icon: '🎯', label: 'משימות',        id: 'tasks'    },
 ]
 
 // ─── תת-ניווט פנימי בתוך כל קטגוריה ───
@@ -145,27 +144,46 @@ function PerfCategory({ reports }) {
 }
 
 export default function Dashboard() {
-  const { user, canAccess } = useAuth()
+  const { user, canAccess, hasManagerAccess, managerAccessEligible, unlockManagerAccess } = useAuth()
   const [activeTab, setActiveTab] = useState(0)
   const [soldierTab, setSoldierTab] = useState(0)
   const [histFilter, setHistFilter] = useState('')
+  const [managerPassword, setManagerPassword] = useState('')
+  const [unlocking, setUnlocking] = useState(false)
 
   const isPikud = canAccess('ugda')
-  const isManager = canAccess('gdud')
+  const isManager = hasManagerAccess
 
   const { data: reports = [], isLoading } = useReports()
   const { data: defStats } = useDeficitStats()
+
+  async function handleManagerUnlock(event) {
+    event.preventDefault()
+    setUnlocking(true)
+    try {
+      await unlockManagerAccess(managerPassword)
+      setManagerPassword('')
+      toast.success('מצב מנהל נפתח בהצלחה')
+    } catch (error) {
+      toast.error(error.message || 'פתיחת מצב מנהל נכשלה')
+    } finally {
+      setUnlocking(false)
+    }
+  }
 
   // --- תצוגה נעולה (חייל שטח / חטמ"ר נעול) ---
   if (!isManager) {
     return (
       <PageLayout>
-        <div className="max-w-4xl mx-auto space-y-6 relative z-10">
+        <div className="max-w-5xl mx-auto space-y-6 relative z-10">
           <MorningBriefing reports={reports} unit={user?.unit} />
 
-          <Link to="/report/new" className="btn-primary w-full py-6 text-xl font-bold flex items-center justify-center gap-2 rounded-2xl shadow-lg border-b-4 border-idf-blueDark">
-            📝 דוח שטח חדש
-          </Link>
+          <TaskBoard
+            unit={user?.unit}
+            canManageTasks={false}
+            title="🎯 משימות היחידה"
+            subtitle="כאן החיילים רואים את המשימות שהוקצו ליחידה ולמוצבים"
+          />
 
           <div className="bg-white dark:bg-dark-surface rounded-xl shadow-sm border border-idf-border dark:border-dark-border relative z-20">
             <TabsBar tabs={SOLDIER_TABS} activeTab={soldierTab} onChange={setSoldierTab} />
@@ -174,18 +192,44 @@ export default function Dashboard() {
               {soldierTab === 1 && <MapView reports={reports} />}
               {soldierTab === 2 && <ActivityHoursTab reports={reports} />}
               {soldierTab === 3 && <ProgressChartTab reports={reports} />}
-              {soldierTab === 4 && (
-                <TaskBoard
-                  unit={user?.unit}
-                  canManageTasks={Boolean(user?.canManageTasks)}
-                  title="🎯 משימות שטח"
-                  subtitle={user?.canManageTasks
-                    ? 'החשבון הזה מורשה גם ליצור ולעדכן משימות לחיילים'
-                    : 'כאן רואים את המשימות שהוקצו ליחידה'}
-                />
-              )}
             </div>
           </div>
+
+          {managerAccessEligible && (
+            <div className="bg-idf-surface dark:bg-dark-surface rounded-3xl border border-idf-border dark:border-dark-border p-6 shadow-lg">
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <h3 className="text-2xl font-extrabold text-idf-blue dark:text-dark-blue">🔐 כניסת מנהל</h3>
+                  <p className="text-sm text-gray-500 mt-2">
+                    רב החטמ״ר / רב החטיבה יכול להזין כאן סיסמת ניהול נפרדת כדי לפתוח את שאר הטאבים שלא גלויים לחייל.
+                  </p>
+                </div>
+                <Link to="/report/new" className="btn-primary whitespace-nowrap">
+                  📝 דוח חדש
+                </Link>
+              </div>
+
+              <form onSubmit={handleManagerUnlock} className="mt-5 grid grid-cols-1 md:grid-cols-[220px,1fr] gap-4 items-end">
+                <button
+                  type="submit"
+                  disabled={unlocking}
+                  className="btn-primary py-4 text-lg font-bold"
+                >
+                  {unlocking ? 'פותח...' : 'פתח ניהול'}
+                </button>
+                <div>
+                  <label className="label">סיסמת מנהל</label>
+                  <input
+                    type="password"
+                    value={managerPassword}
+                    onChange={(event) => setManagerPassword(event.target.value)}
+                    className="input-field text-center text-xl"
+                    placeholder="הקלד סיסמת מנהל"
+                  />
+                </div>
+              </form>
+            </div>
+          )}
         </div>
       </PageLayout>
     )

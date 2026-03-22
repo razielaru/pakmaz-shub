@@ -7,6 +7,7 @@ begin;
 
 create schema if not exists private;
 revoke all on schema private from public;
+create extension if not exists pgcrypto with schema extensions;
 
 -- ================================================
 -- Shared helpers
@@ -31,6 +32,7 @@ create table if not exists public.unit_passwords (
   auth_user_id     uuid unique references auth.users(id) on delete set null,
   role             text not null default 'garin',
   can_manage_tasks boolean not null default false,
+  manager_access_hash text,
   logo_url         text,
   created_at       timestamptz default now(),
   updated_at       timestamptz default now()
@@ -41,6 +43,7 @@ alter table public.unit_passwords
   add column if not exists auth_user_id uuid unique references auth.users(id) on delete set null,
   add column if not exists role text not null default 'garin',
   add column if not exists can_manage_tasks boolean not null default false,
+  add column if not exists manager_access_hash text,
   add column if not exists logo_url text,
   add column if not exists created_at timestamptz default now(),
   add column if not exists updated_at timestamptz default now();
@@ -127,6 +130,62 @@ as $$
     limit 1
   ), false)
 $$;
+
+create or replace function public.verify_manager_access(access_code text)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public, extensions
+as $$
+declare
+  stored_hash text;
+begin
+  if auth.uid() is null or access_code is null or btrim(access_code) = '' then
+    return false;
+  end if;
+
+  select up.manager_access_hash
+    into stored_hash
+  from public.unit_passwords up
+  where up.auth_user_id = auth.uid()
+  limit 1;
+
+  if stored_hash is null then
+    return false;
+  end if;
+
+  return crypt(access_code, stored_hash) = stored_hash;
+end;
+$$;
+
+grant execute on function public.verify_manager_access(text) to authenticated;
+
+create or replace function public.set_unit_manager_access_code(target_unit text, new_code text)
+returns void
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+begin
+  if private.current_role() <> 'pikud' then
+    raise exception 'not authorized to set manager access code';
+  end if;
+
+  update public.unit_passwords
+  set manager_access_hash = case
+    when new_code is null or btrim(new_code) = '' then null
+    else crypt(new_code, gen_salt('bf'))
+  end
+  where unit_name = target_unit;
+
+  if not found then
+    raise exception 'unit not found';
+  end if;
+end;
+$$;
+
+grant execute on function public.set_unit_manager_access_code(text, text) to authenticated;
 
 create or replace function private.can_access_unit(target_unit text)
 returns boolean
